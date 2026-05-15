@@ -1,4 +1,5 @@
 # LiteLLM Agent Memories — AI Coding Workflow Stack
+![Cybernetic octopus cover image](assets/litellm-agent-memories-cover.jpeg)
 
 A small, reusable memory pack for LiteLLM Proxy `/v1/memory` that turns an AI-coding workflow into durable, retrievable agent instructions.
 
@@ -35,6 +36,7 @@ This repository packages those practices as LiteLLM memory entries that can be i
 | `litellm_agent_memories_matt_pocock_ai_coding.jsonl` | Same memories as JSONL for pipelines. |
 | `large_memory_ai_coding_agent_operating_doctrine.md` | Single large playbook version for direct prompt injection or manual reference. |
 | `import_litellm_memories.py` | Idempotent importer using `PUT /v1/memory/{key}`. |
+| `assets/litellm-agent-memories-cover.jpeg` | Cover image for the repository README. |
 | `LICENSE` | MIT license for reuse and adaptation. |
 
 Current pack size: **24 memory entries**.
