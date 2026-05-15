@@ -35,6 +35,7 @@ This repository packages those practices as LiteLLM memory entries that can be i
 | `litellm_agent_memories_matt_pocock_ai_coding.jsonl` | Same memories as JSONL for pipelines. |
 | `large_memory_ai_coding_agent_operating_doctrine.md` | Single large playbook version for direct prompt injection or manual reference. |
 | `import_litellm_memories.py` | Idempotent importer using `PUT /v1/memory/{key}`. |
+| `LICENSE` | MIT license for reuse and adaptation. |
 
 Current pack size: **24 memory entries**.
 
@@ -235,7 +236,7 @@ Before making a fork public:
 - replace private LiteLLM URLs with placeholders
 - confirm no real `sk-...` keys are committed
 - decide whether to keep or rename the `allspark` namespace
-- add an explicit license if you want others to reuse the repository
+- verify the `LICENSE` matches the reuse policy you want
 - verify attribution links to upstream skill repos remain intact
 
 ## Attribution
@@ -246,6 +247,10 @@ This repository is a derived memory pack inspired by public AI-coding workflow m
 - [obra/superpowers](https://github.com/obra/superpowers) by Jesse Vincent / Prime Radiant
 
 The upstream repositories are not vendored here. This pack stores compact routing summaries and LiteLLM memory entries that point agents toward the right kind of skill for the current workflow phase.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
 
 ## Is this worth making public?
 
