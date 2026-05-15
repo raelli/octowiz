@@ -1,140 +1,252 @@
-# LiteLLM Agent Memories — Matt Pocock AI Coding Workflow
+# LiteLLM Agent Memories — AI Coding Workflow Stack
 
-This folder contains prepared LiteLLM `/v1/memory` entries derived from:
+A small, reusable memory pack for LiteLLM Proxy `/v1/memory` that turns an AI-coding workflow into durable, retrievable agent instructions.
 
-- `Full Walkthrough_ Workflow for AI Coding — Matt Pocock.md`
-- LiteLLM `/memory` endpoint notes from `markdown.md eingefügt`
-- External skill sources:
-  - `https://github.com/mattpocock/skills`
-  - `https://github.com/obra/superpowers`
+The pack combines:
 
-## Files
+- workflow memories for planning, implementation, review, QA, and orchestration
+- role-specific agent memories for planner, implementer, reviewer, and QA agents
+- curated pointers to two external skill systems:
+  - [mattpocock/skills](https://github.com/mattpocock/skills)
+  - [obra/superpowers](https://github.com/obra/superpowers)
 
-- `litellm_agent_memories_matt_pocock_ai_coding.json`  
-  Importable list of `{key, value, metadata}` memory objects.
+The goal is not to dump a giant prompt into every agent turn. The goal is to store useful operating doctrine once, retrieve the relevant slices by key or prefix, and keep agent context focused.
 
-- `litellm_agent_memories_matt_pocock_ai_coding.jsonl`  
-  Same content as JSONL, useful for pipelines.
+## Why this is useful
 
-- `large_memory_ai_coding_agent_operating_doctrine.md`  
-  One large memory/playbook for direct prompt injection or single LiteLLM memory entry.
+LLM coding agents perform better when the software process is explicit:
 
-- `import_litellm_memories.py`  
-  Idempotent importer using `PUT /v1/memory/{key}`.
+- align before implementation
+- convert vague requests into PRDs or destination documents
+- slice work into small vertical issues
+- distinguish human-in-the-loop decisions from AFK-safe implementation
+- use TDD and fast feedback loops
+- review in a fresh context
+- keep human QA and product taste in the loop
+- retrieve only the memories relevant to the current agent role
 
-## Recommended import
+This repository packages those practices as LiteLLM memory entries that can be imported into a LiteLLM Proxy and reused across agents.
+
+## Contents
+
+| File | Purpose |
+| --- | --- |
+| `litellm_agent_memories_matt_pocock_ai_coding.json` | Importable JSON list of `{key, value, metadata}` memory objects. |
+| `litellm_agent_memories_matt_pocock_ai_coding.jsonl` | Same memories as JSONL for pipelines. |
+| `large_memory_ai_coding_agent_operating_doctrine.md` | Single large playbook version for direct prompt injection or manual reference. |
+| `import_litellm_memories.py` | Idempotent importer using `PUT /v1/memory/{key}`. |
+
+Current pack size: **24 memory entries**.
+
+## Memory layout
+
+The memories use namespaced keys:
+
+- `team:allspark:playbook:ai-coding-workflow:*` — shared workflow doctrine
+- `team:allspark:skills:*` — curated external skill-source summaries
+- `agent:{role}:memory:ai-coding-workflow` — role-specific operating memory
+- `project:allspark:config:*` — import and namespacing guidance
+
+`allspark` is an example team/project namespace. Forks should replace it with their own namespace if they want organization-specific keys.
+
+## Key memories
+
+Core workflow memories include:
+
+- `overview`
+- `context-smart-zone`
+- `grill-me-alignment`
+- `prd-destination-document`
+- `kanban-tracer-bullets`
+- `hitl-vs-afk`
+- `ralph-loop`
+- `tdd-feedback-loops`
+- `fresh-context-review`
+- `manual-qa-taste`
+- `deep-modules`
+- `module-interface-first`
+- `push-pull-standards`
+- `frontend-prototypes`
+- `doc-rot`
+- `parallel-agents`
+
+External skill-source memories:
+
+- `team:allspark:playbook:ai-coding-workflow:skill-sources`
+- `team:allspark:skills:matt-pocock:ai-engineering`
+- `team:allspark:skills:obra-superpowers:agent-methodology`
+
+Agent role memories:
+
+- `agent:planner:memory:ai-coding-workflow`
+- `agent:implementer:memory:ai-coding-workflow`
+- `agent:reviewer:memory:ai-coding-workflow`
+- `agent:qa:memory:ai-coding-workflow`
+
+## Installation
+
+Install the only runtime dependency:
 
 ```bash
-cd litellm_agent_memories
 python -m pip install httpx
-export LITELLM_BASE_URL="https://llm.integrahub.de"
-export LITELLM_ADMIN_API_KEY="sk-..."
-export LITELLM_API_KEY="sk-..."
+```
 
+Set your LiteLLM Proxy URL and an API key that is allowed to write memories:
+
+```bash
+export LITELLM_BASE_URL="https://your-litellm-proxy.example.com"
+export LITELLM_ADMIN_API_KEY="sk-..."
+```
+
+Use a real LiteLLM virtual key value that starts with `sk-`. Do not wrap key values in `{{ ... }}` when exporting them.
+
+## Dry run
+
+Preview what will be imported without writing anything:
+
+```bash
 python import_litellm_memories.py litellm_agent_memories_matt_pocock_ai_coding.json --dry-run
+```
+
+Expected shape:
+
+```text
+Preparing to upsert 24 memories into https://your-litellm-proxy.example.com
+DRY RUN: team:allspark:playbook:ai-coding-workflow:overview (... chars)
+...
+```
+
+## Import
+
+Run the importer:
+
+```bash
 python import_litellm_memories.py litellm_agent_memories_matt_pocock_ai_coding.json
 ```
 
-Important:
-- Use a real LiteLLM virtual key value that starts with `sk-`.
-- Do not wrap key values in `{{ ... }}` when exporting.
-- Team-scoped writes (for example `team:allspark:*`) may require a proxy-admin-capable key on stricter deployments.
+The importer uses `PUT /v1/memory/{key}`, so the operation is idempotent for stable keys. Re-running the import updates existing entries instead of creating duplicates.
 
-## Verified import runbook
+Team-scoped writes such as `team:allspark:*` may require a proxy-admin-capable key depending on your LiteLLM Proxy configuration. The importer prefers `LITELLM_ADMIN_API_KEY` and falls back to `LITELLM_API_KEY` if the admin key is not set.
 
-The following flow was validated end-to-end for this project:
+## Import only a subset
 
-1. Export:
-   - `LITELLM_BASE_URL=https://llm.integrahub.de`
-   - `LITELLM_ADMIN_API_KEY=sk-...` (proxy-admin-capable key)
-2. Run:
-   - `python import_litellm_memories.py litellm_agent_memories_matt_pocock_ai_coding.json`
-3. Expected result:
-   - `Preparing to upsert 24 memories ...`
-   - `OK: ...` for all 24 keys
-   - Exit code `0`
-4. Verification:
-   - Queried each imported key via `GET /v1/memory/{key}`
-   - Current extended import target: `Total keys checked: 24`, `OK: 24`, `FAIL: 0`
-5. Cleanup:
-   - `unset LITELLM_ADMIN_API_KEY LITELLM_API_KEY`
+Use `--key-prefix` to import or test a subset:
 
-## Migration completion record
-Base migration status: complete.
-Skill-source extension status: source prepared and dry-run validated; run the import command again with `LITELLM_ADMIN_API_KEY` exported to upsert the three new skill memories.
+```bash
+python import_litellm_memories.py litellm_agent_memories_matt_pocock_ai_coding.json \
+  --key-prefix "team:allspark:skills:"
+```
 
-Final migration execution:
-- Command: `python import_litellm_memories.py litellm_agent_memories_matt_pocock_ai_coding.json`
-- Auth used: `LITELLM_ADMIN_API_KEY` (valid LiteLLM virtual key starting with `sk-`)
-- Base result: 21/21 keys upserted successfully (`OK` for all entries, exit code `0`)
-- Extension result: 3 additional skill-source keys added for Matt Pocock Skills and Obra Superpowers, bringing the source file to 24 memories
+## Verify imported memories
 
-Post-migration verification:
-- Single-key API verification: `team:allspark:playbook:ai-coding-workflow:overview` returned HTTP `200`
-- Remaining critical verification via API:
-  - Team playbook keys: 15/15
-  - Agent role memories: 4/4
-  - Project config key: 1/1
-- Base aggregate retrieval verification: 21/21 keys retrievable, 0 failures
-- Extended source validation: 24/24 JSON entries, 24 unique keys, JSONL synchronized, importer dry-run successful
-- Skill-source live API verification: 3/3 new keys retrievable, 0 failures
-  - `team:allspark:playbook:ai-coding-workflow:skill-sources` returned HTTP `200`
-  - `team:allspark:skills:matt-pocock:ai-engineering` returned HTTP `200`
-  - `team:allspark:skills:obra-superpowers:agent-methodology` returned HTTP `200`
+Fetch one memory:
 
-Authentication fix confirmed:
-- Importer now prefers `LITELLM_ADMIN_API_KEY` for write operations and falls back to `LITELLM_API_KEY` only if admin key is unset.
-- Keys exported with literal `{{ ... }}` wrappers will fail authentication; export raw key values only.
+```bash
+curl "$LITELLM_BASE_URL/v1/memory/team%3Aallspark%3Askills%3Amatt-pocock%3Aai-engineering" \
+  -H "Authorization: Bearer $LITELLM_ADMIN_API_KEY"
+```
 
-## External skill source memories
-
-The memory set includes three curated skill-source memories:
-
-- `team:allspark:playbook:ai-coding-workflow:skill-sources`  
-  Routes external skills to the right workflow phase: alignment, PRD, issue slicing, implementation, review, QA, parallel agents, or meta skill work.
-- `team:allspark:skills:matt-pocock:ai-engineering`  
-  Summarizes `mattpocock/skills` as a composable engineering skill catalog. Best fit: grill sessions, PRDs, vertical-slice issues, TDD, diagnosis, architecture improvement, prototyping, and handoff.
-- `team:allspark:skills:obra-superpowers:agent-methodology`  
-  Summarizes `obra/superpowers` as an end-to-end agentic development methodology. Best fit: brainstorming, planning, git worktrees, subagent-driven development, TDD, systematic debugging, code review, verification, and finishing branches.
-
-Retrieval rule:
-Use these memories selectively by workflow phase. Do not inject the full external skill-source set into every agent turn.
-
-## Recommended retrieval
-
-Fetch all shared workflow memories:
+Fetch a prefix, if your LiteLLM Proxy supports prefix listing:
 
 ```bash
 curl "$LITELLM_BASE_URL/v1/memory?key_prefix=team:allspark:playbook:ai-coding-workflow:" \
-  -H "Authorization: Bearer $LITELLM_API_KEY"
+  -H "Authorization: Bearer $LITELLM_ADMIN_API_KEY"
 ```
 
-Fetch one agent role memory:
+A completed import of this pack should upsert **24/24** memory entries. The three external skill-source memories have been verified with HTTP `200` responses in a live LiteLLM Proxy environment.
+
+## Retrieval strategy
+
+Do not inject every memory into every agent turn. Retrieve by phase and role.
+
+Planner agents usually need:
+
+- `team:allspark:playbook:ai-coding-workflow:overview`
+- `team:allspark:playbook:ai-coding-workflow:grill-me-alignment`
+- `team:allspark:playbook:ai-coding-workflow:prd-destination-document`
+- `team:allspark:playbook:ai-coding-workflow:kanban-tracer-bullets`
+- `team:allspark:playbook:ai-coding-workflow:skill-sources`
+- `agent:planner:memory:ai-coding-workflow`
+
+Implementer agents usually need:
+
+- `team:allspark:playbook:ai-coding-workflow:context-smart-zone`
+- `team:allspark:playbook:ai-coding-workflow:tdd-feedback-loops`
+- `team:allspark:playbook:ai-coding-workflow:ralph-loop`
+- `team:allspark:skills:matt-pocock:ai-engineering`
+- `team:allspark:skills:obra-superpowers:agent-methodology`
+- `agent:implementer:memory:ai-coding-workflow`
+
+Reviewer agents usually need:
+
+- `team:allspark:playbook:ai-coding-workflow:fresh-context-review`
+- `team:allspark:playbook:ai-coding-workflow:push-pull-standards`
+- `team:allspark:skills:obra-superpowers:agent-methodology`
+- `agent:reviewer:memory:ai-coding-workflow`
+
+QA agents usually need:
+
+- `team:allspark:playbook:ai-coding-workflow:manual-qa-taste`
+- `team:allspark:playbook:ai-coding-workflow:frontend-prototypes`
+- `agent:qa:memory:ai-coding-workflow`
+
+## External skill-source routing
+
+The included skill-source memories are intentionally summaries and routing guidance, not vendored copies of the upstream skill repos.
+
+Use [mattpocock/skills](https://github.com/mattpocock/skills) when a task needs stronger support for:
+
+- grilling/alignment
+- PRD generation
+- vertical-slice issue creation
+- TDD
+- diagnosis/debugging
+- architecture improvement
+- prototyping
+- handoff
+
+Use [obra/superpowers](https://github.com/obra/superpowers) when a task needs a stricter end-to-end agent methodology:
+
+- brainstorming before coding
+- writing plans
+- git worktrees
+- subagent-driven development
+- test-driven development
+- systematic debugging
+- code review
+- verification before completion
+- finishing branches
+
+## Security notes
+
+- Never commit real LiteLLM API keys.
+- Prefer short-lived or scoped keys where possible.
+- Use `LITELLM_ADMIN_API_KEY` only for memory writes that require elevated permissions.
+- Unset credentials after import if you are working in a shared shell:
 
 ```bash
-curl "$LITELLM_BASE_URL/v1/memory/agent:planner:memory:ai-coding-workflow" \
-  -H "Authorization: Bearer $LITELLM_API_KEY"
+unset LITELLM_ADMIN_API_KEY LITELLM_API_KEY
 ```
 
-## Prompt injection pattern
+## Public release checklist
 
-Do not inject every memory into every agent turn. Retrieve by prefix and role.
+Before making a fork public:
 
-Example:
-- Planner gets:
-  - `team:allspark:playbook:ai-coding-workflow:overview`
-  - `team:allspark:playbook:ai-coding-workflow:grill-me-alignment`
-  - `team:allspark:playbook:ai-coding-workflow:prd-destination-document`
-  - `team:allspark:playbook:ai-coding-workflow:kanban-tracer-bullets`
-  - `agent:planner:memory:ai-coding-workflow`
+- replace private LiteLLM URLs with placeholders
+- confirm no real `sk-...` keys are committed
+- decide whether to keep or rename the `allspark` namespace
+- add an explicit license if you want others to reuse the repository
+- verify attribution links to upstream skill repos remain intact
 
-- Implementer gets:
-  - `team:allspark:playbook:ai-coding-workflow:context-smart-zone`
-  - `team:allspark:playbook:ai-coding-workflow:tdd-feedback-loops`
-  - `team:allspark:playbook:ai-coding-workflow:ralph-loop`
-  - `agent:implementer:memory:ai-coding-workflow`
+## Attribution
 
-- Reviewer gets:
-  - `team:allspark:playbook:ai-coding-workflow:fresh-context-review`
-  - `team:allspark:playbook:ai-coding-workflow:push-pull-standards`
-  - `agent:reviewer:memory:ai-coding-workflow`
+This repository is a derived memory pack inspired by public AI-coding workflow material and by the following public skill libraries:
+
+- [mattpocock/skills](https://github.com/mattpocock/skills) by Matt Pocock
+- [obra/superpowers](https://github.com/obra/superpowers) by Jesse Vincent / Prime Radiant
+
+The upstream repositories are not vendored here. This pack stores compact routing summaries and LiteLLM memory entries that point agents toward the right kind of skill for the current workflow phase.
+
+## Is this worth making public?
+
+Yes, if it is positioned as a practical example of using LiteLLM memory as an agent operating layer rather than as a universal framework. The valuable part is the combination of durable memory keys, role-specific retrieval, idempotent import, and links to external skill systems. Keep the scope clear: this is a starter memory pack and runbook, not a replacement for the upstream skill repos.
