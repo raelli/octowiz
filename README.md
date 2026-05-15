@@ -77,6 +77,10 @@ Post-migration verification:
   - Project config key: 1/1
 - Base aggregate retrieval verification: 21/21 keys retrievable, 0 failures
 - Extended source validation: 24/24 JSON entries, 24 unique keys, JSONL synchronized, importer dry-run successful
+- Skill-source live API verification: 3/3 new keys retrievable, 0 failures
+  - `team:allspark:playbook:ai-coding-workflow:skill-sources` returned HTTP `200`
+  - `team:allspark:skills:matt-pocock:ai-engineering` returned HTTP `200`
+  - `team:allspark:skills:obra-superpowers:agent-methodology` returned HTTP `200`
 
 Authentication fix confirmed:
 - Importer now prefers `LITELLM_ADMIN_API_KEY` for write operations and falls back to `LITELLM_API_KEY` only if admin key is unset.
