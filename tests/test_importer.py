@@ -75,6 +75,14 @@ class TestRewriteNamespace(unittest.TestCase):
         self.assertEqual(result[1]["key"], "project:acme:config:setup")
         self.assertEqual(result[2]["key"], "agent:planner:memory:workflow")
 
+    def test_rewrites_allspark_refs_in_value(self):
+        contract = '{"A_fresh": ["team:allspark:playbook:overview", "team:allspark:skills:hub"]}'
+        memories = [{"key": "team:allspark:config:retrieval-contract", "value": contract}]
+        result = rewrite_namespace(memories, "myorg")
+        self.assertNotIn("allspark", result[0]["value"])
+        self.assertIn("team:myorg:playbook:overview", result[0]["value"])
+        self.assertIn("team:myorg:skills:hub", result[0]["value"])
+
 
 class TestLoadMemories(unittest.TestCase):
     def _write_temp(self, content, suffix):

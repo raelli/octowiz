@@ -38,14 +38,15 @@ Run:
 
 ```bash
 curl -s "$LITELLM_BASE_URL/v1/memory/team%3Aallspark%3Aconfig%3Aretrieval-contract" \
-  -H "Authorization: Bearer $LITELLM_API_KEY" 2>/dev/null
+  -H "Authorization: Bearer ${LITELLM_ADMIN_API_KEY:-$LITELLM_API_KEY}" 2>/dev/null
 ```
 
-If `LITELLM_BASE_URL` or `LITELLM_API_KEY` are not set, tell the developer:
+If `LITELLM_BASE_URL` is not set, or neither `LITELLM_ADMIN_API_KEY` nor `LITELLM_API_KEY`
+is set, tell the developer:
 
-> "Set LITELLM_BASE_URL and LITELLM_API_KEY in ~/.claude/settings.json to enable
-> memory-backed doctrine. See the octowiz README for setup instructions. Continuing
-> with built-in workflow."
+> "Set LITELLM_BASE_URL and LITELLM_ADMIN_API_KEY (or LITELLM_API_KEY) in
+> ~/.claude/settings.json to enable memory-backed doctrine. See the octowiz README
+> for setup instructions. Continuing with built-in workflow."
 
 Then continue using the built-in routing below — do not stop.
 

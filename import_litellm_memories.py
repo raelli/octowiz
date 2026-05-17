@@ -60,11 +60,12 @@ def rewrite_namespace(memories: List[Dict[str, Any]], namespace: str) -> List[Di
     result = []
     for m in memories:
         m = dict(m)
-        m["key"] = (
-            m["key"]
-            .replace("team:allspark:", f"team:{namespace}:")
-            .replace("project:allspark:", f"project:{namespace}:")
-        )
+        for field in ("key", "value"):
+            m[field] = (
+                m[field]
+                .replace("team:allspark:", f"team:{namespace}:")
+                .replace("project:allspark:", f"project:{namespace}:")
+            )
         result.append(m)
     return result
 
