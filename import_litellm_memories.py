@@ -11,7 +11,8 @@ Usage:
 
 Optional:
   --dry-run        Print what would be imported.
-  --key-prefix X  Only import memories whose key starts with X.
+  --key-prefix X   Only import memories whose key starts with X.
+  --namespace X    Rewrite 'allspark' namespace to X in all memory keys.
 
 The script uses PUT /v1/memory/{key} for idempotent upsert.
 """
@@ -57,7 +58,16 @@ def validate_memories(memories: List[Dict[str, Any]]) -> None:
 
 def rewrite_namespace(memories: List[Dict[str, Any]], old: str, new: str) -> List[Dict[str, Any]]:
     """Rewrite memory keys from old namespace to new namespace."""
-    return memories
+    result = []
+    for m in memories:
+        m = dict(m)
+        m["key"] = (
+            m["key"]
+            .replace(f"team:{old}:", f"team:{new}:")
+            .replace(f"project:{old}:", f"project:{new}:")
+        )
+        result.append(m)
+    return result
 
 
 def main() -> int:
@@ -65,6 +75,11 @@ def main() -> int:
     parser.add_argument("memory_file")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--key-prefix", default="")
+    parser.add_argument(
+        "--namespace",
+        default="",
+        help="Rewrite 'allspark' namespace to this value in all memory keys.",
+    )
     args = parser.parse_args()
 
     base_url = os.getenv("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/")
@@ -77,6 +92,8 @@ def main() -> int:
 
     memories = load_memories(args.memory_file)
     validate_memories(memories)
+    if args.namespace:
+        memories = rewrite_namespace(memories, "allspark", args.namespace)
     if args.key_prefix:
         memories = [m for m in memories if m["key"].startswith(args.key_prefix)]
 
