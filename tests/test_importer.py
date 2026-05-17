@@ -39,5 +39,38 @@ class TestValidateMemories(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 1)
 
 
+class TestRewriteNamespace(unittest.TestCase):
+    def test_rewrites_team_namespace(self):
+        memories = [{"key": "team:allspark:playbook:overview", "value": "v"}]
+        result = rewrite_namespace(memories, "integrahub")
+        self.assertEqual(result[0]["key"], "team:integrahub:playbook:overview")
+
+    def test_rewrites_project_namespace(self):
+        memories = [{"key": "project:allspark:config:setup", "value": "v"}]
+        result = rewrite_namespace(memories, "myteam")
+        self.assertEqual(result[0]["key"], "project:myteam:config:setup")
+
+    def test_does_not_modify_agent_keys(self):
+        memories = [{"key": "agent:planner:memory:workflow", "value": "v"}]
+        result = rewrite_namespace(memories, "integrahub")
+        self.assertEqual(result[0]["key"], "agent:planner:memory:workflow")
+
+    def test_does_not_mutate_original(self):
+        memories = [{"key": "team:allspark:test", "value": "v"}]
+        rewrite_namespace(memories, "x")
+        self.assertEqual(memories[0]["key"], "team:allspark:test")
+
+    def test_rewrites_both_prefixes_in_one_call(self):
+        memories = [
+            {"key": "team:allspark:playbook:overview", "value": "v1"},
+            {"key": "project:allspark:config:setup", "value": "v2"},
+            {"key": "agent:planner:memory:workflow", "value": "v3"},
+        ]
+        result = rewrite_namespace(memories, "acme")
+        self.assertEqual(result[0]["key"], "team:acme:playbook:overview")
+        self.assertEqual(result[1]["key"], "project:acme:config:setup")
+        self.assertEqual(result[2]["key"], "agent:planner:memory:workflow")
+
+
 if __name__ == "__main__":
     unittest.main()

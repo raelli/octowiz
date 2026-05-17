@@ -56,15 +56,14 @@ def validate_memories(memories: List[Dict[str, Any]]) -> None:
         raise SystemExit(1)
 
 
-def rewrite_namespace(memories: List[Dict[str, Any]], old: str, new: str) -> List[Dict[str, Any]]:
-    """Rewrite memory keys from old namespace to new namespace."""
+def rewrite_namespace(memories: List[Dict[str, Any]], namespace: str) -> List[Dict[str, Any]]:
     result = []
     for m in memories:
         m = dict(m)
         m["key"] = (
             m["key"]
-            .replace(f"team:{old}:", f"team:{new}:")
-            .replace(f"project:{old}:", f"project:{new}:")
+            .replace("team:allspark:", f"team:{namespace}:")
+            .replace("project:allspark:", f"project:{namespace}:")
         )
         result.append(m)
     return result
@@ -92,10 +91,10 @@ def main() -> int:
 
     memories = load_memories(args.memory_file)
     validate_memories(memories)
-    if args.namespace:
-        memories = rewrite_namespace(memories, "allspark", args.namespace)
     if args.key_prefix:
         memories = [m for m in memories if m["key"].startswith(args.key_prefix)]
+    if args.namespace:
+        memories = rewrite_namespace(memories, args.namespace)
 
     print(f"Preparing to upsert {len(memories)} memories into {base_url}")
 
