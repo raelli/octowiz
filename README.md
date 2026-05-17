@@ -13,43 +13,46 @@ A skill-backed memory stack for coding agents.
   <img src="https://img.shields.io/badge/skills-routed,_not_vendored-f97316.svg" alt="skills routed, not vendored">
 </p>
 
-octowiz is a curated memory collection for [LiteLLM Proxy](https://docs.litellm.ai/) `/v1/memory`, not LiteLLM-exclusive though, it works with pretty much any memory system that supports keyed retrieval. It holds AI-coding operating doctrine — how to plan, how to write tests, how to review, how to ship — outside the system prompt, so agents can fetch just the parts that match their current `(role, phase)` at runtime, rather than baked into every agent's system prompt. One source of truth, updates propagate the moment they hit the store, and each call's context window only carries what's actually relevant to the step the agent is on — not the entire rulebook.
+octowiz is a memory stack and coordinator skill for AI-assisted development in Claude Code. It stores AI-coding operating doctrine in [LiteLLM Proxy](https://docs.litellm.ai/) `/v1/memory` — how to plan, write tests, review, and ship — and exposes a `/octowiz` entry point that reads those memories at runtime and routes to the right combination of [superpowers](https://github.com/obra/superpowers) and [mattpocock/skills](https://github.com/mattpocock/skills) for the current phase. One source of truth; each session fetches only what is relevant to the step it is on.
 
 ## Architecture
 
 ```
+        Developer in Claude Code
+          │
+          │  /octowiz
+          ▼
+        ┌──────────────────────────────────────┐
+        │     /octowiz coordinator skill       │
+        │  skills/octowiz-workflow/skill.md    │
+        │ ──────────────────────────────────── │
+        │  reads project state + git status    │
+        │  fetches retrieval contract          │
+        │  routes A / B / C / D               │
+        └─────────────────┬────────────────────┘
+                          │
+                          │  GET /v1/memory
+                          ▼
         ┌──────────────────────────────────────┐
         │     LiteLLM Proxy · /v1/memory       │
         │ ──────────────────────────────────── │
         │     playbook:*           16 entries  │
-        │     skills:*              3 entries  │
+        │     skills:*              4 entries  │
         │     agent:{role}:*        4 entries  │
-        │     config:*            import setup │
+        │     config:*              2 entries  │
         └─────────────────┬────────────────────┘
                           │
-                          │  retrieve by role + phase
+                          │  routes to installed skills
                           ▼
         ┌──────────────────────────────────────┐
-        │             Coding Agents            │
-        │ ──────────────────────────────────── │
-        │     ▸ Planner                        │
-        │     ▸ Implementer                    │
-        │     ▸ Reviewer                       │
-        │     ▸ QA                             │
-        └─────────────────┬────────────────────┘
-                          │
-                          │  follow pointers
-                          ▼
-        ┌──────────────────────────────────────┐
-        │     External skill sources           │
-        │                                      │
+        │   integrahub marketplace skills      │
         │ ──────────────────────────────────── │
         │     ▸ mattpocock/skills              │
         │     ▸ obra/superpowers               │
         └──────────────────────────────────────┘
 ```
 
-Three layers. Doctrine at the top, agents in the middle, external skill libraries at the bottom — referenced, never copied. Agents fetch by role and phase, and follow pointers when they need deeper skill material.
+Four layers. The coordinator reads the project and fetches the relevant doctrine slice; LiteLLM holds the doctrine; installed skills do the work — referenced, never copied.
 
 ## Contents
 
