@@ -52,7 +52,7 @@ octowiz is a memory stack and coordinator skill for AI-assisted development in C
         └──────────────────────────────────────┘
 ```
 
-Four layers. The coordinator reads the project and fetches the relevant doctrine slice; LiteLLM holds the doctrine; installed skills do the work — referenced, never copied.
+Three layers. The coordinator reads the project and fetches the relevant doctrine slice; LiteLLM holds the doctrine; installed skills do the work — referenced, never copied.
 
 ## Contents
 
@@ -119,7 +119,7 @@ python import_litellm_memories.py litellm_agent_memories_matt_pocock_ai_coding.j
 
 ## Claude Code setup
 
-Install the integrahub marketplace once — no per-repo setup needed.
+Install the marketplace plugin once — no per-repo setup needed.
 
 Add to `~/.claude/settings.json`:
 
@@ -132,20 +132,20 @@ Add to `~/.claude/settings.json`:
     }
   },
   "env": {
-    "LITELLM_BASE_URL": "https://llm.integrahub.de",
+    "LITELLM_BASE_URL": "https://your-proxy.example.com",
     "LITELLM_API_KEY": "sk-..."
   }
 }
 ```
 
-Get your API key from [llm.integrahub.de](https://llm.integrahub.de). Skills are public — the key is only needed for memory retrieval and AI model access.
+Point `LITELLM_BASE_URL` at your own LiteLLM proxy. Skills are public — the key is only needed for memory retrieval and AI model access.
 
 **Per-repo alternative:** add a `.env` file (gitignored) if you prefer project-scoped keys:
 
 ```bash
 # .env
-LITELLM_BASE_URL=https://llm.integrahub.de
-LITELLM_API_KEY=sk-your-integrahub-key
+LITELLM_BASE_URL=https://your-proxy.example.com
+LITELLM_API_KEY=sk-your-key
 ```
 
 ## Using /octowiz
