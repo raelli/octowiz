@@ -73,7 +73,7 @@ Always show all four options regardless of the suggestion:
 Where are you starting from?
 
 A) Fresh idea — no plan yet
-   brainstorming → grill-with-docs → to-prd → writing-plans → to-issues → triage
+   brainstorming → grill-with-docs (if CONTEXT.md/ADRs exist) → to-prd → writing-plans → to-issues → triage
 
 B) I have a plan to stress-test
    grill-me → to-prd → writing-plans → to-issues → triage
@@ -83,7 +83,7 @@ C) Plan exists — ready to implement
 
 D) Code done — need review
    zoom-out → requesting-code-review → receiving-code-review →
-   verification-before-completion → finishing-a-development-branch
+   verification-before-completion → finishing-a-development-branch → handoff
 ```
 
 Wait for the user to choose before proceeding.
