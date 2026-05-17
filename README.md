@@ -55,7 +55,7 @@ Three layers. Doctrine at the top, agents in the middle, external skill librarie
 
 | File | Purpose |
 |---|---|
-| `litellm_agent_memories_matt_pocock_ai_coding.json` | The 24 memories, ready to import. |
+| `litellm_agent_memories_matt_pocock_ai_coding.json` | The 26 memories, ready to import. |
 | `litellm_agent_memories_matt_pocock_ai_coding.jsonl` | Same content as JSONL, for streaming or pipeline use. |
 | `large_memory_ai_coding_agent_operating_doctrine.md` | The whole playbook as one document, if you'd rather read than retrieve. |
 | `import_litellm_memories.py` | The importer. Idempotent. Uses `PUT /v1/memory/{key}`. |
@@ -73,7 +73,7 @@ project:allspark:config:*                     import / namespacing
 `allspark` is the example namespace. If you fork this, swap it for your own — nobody wants to debug under someone else's project name.
 
 <details>
-<summary><b>Full memory inventory (24 entries)</b></summary>
+<summary><b>Full memory inventory (26 entries)</b></summary>
 
 **Workflow doctrine** — `overview`, `context-smart-zone`, `grill-me-alignment`, `prd-destination-document`, `kanban-tracer-bullets`, `hitl-vs-afk`, `ralph-loop`, `tdd-feedback-loops`, `fresh-context-review`, `manual-qa-taste`, `deep-modules`, `module-interface-first`, `push-pull-standards`, `frontend-prototypes`, `doc-rot`, `parallel-agents`
 
@@ -141,6 +141,7 @@ Get your API key from [llm.integrahub.de](https://llm.integrahub.de). Skills are
 
 ```bash
 # .env
+LITELLM_BASE_URL=https://llm.integrahub.de
 LITELLM_API_KEY=sk-your-integrahub-key
 ```
 
@@ -200,7 +201,7 @@ curl "$LITELLM_BASE_URL/v1/memory?key_prefix=team:allspark:playbook:ai-coding-wo
   -H "Authorization: Bearer $LITELLM_ADMIN_API_KEY"
 ```
 
-A clean import upserts 24/24. The three external skill-source entries have been verified live with `HTTP 200`.
+A clean import upserts 26/26. The three external skill-source entries have been verified live with `HTTP 200`.
 
 ## Security
 
