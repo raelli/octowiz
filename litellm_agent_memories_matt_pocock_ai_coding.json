@@ -587,5 +587,35 @@
       "version": 1,
       "created_at": "2026-05-15"
     }
+  },
+  {
+    "key": "team:allspark:config:retrieval-contract",
+    "value": "{\"entry_points\": {\"A_fresh\": [\"team:allspark:playbook:ai-coding-workflow:overview\", \"team:allspark:playbook:ai-coding-workflow:grill-me-alignment\", \"team:allspark:playbook:ai-coding-workflow:context-smart-zone\", \"team:allspark:skills:matt-pocock:ai-engineering\", \"team:allspark:skills:obra-superpowers:agent-methodology\", \"team:allspark:skills:integrahub:skills-hub\"], \"B_stress_test\": [\"team:allspark:playbook:ai-coding-workflow:grill-me-alignment\", \"team:allspark:playbook:ai-coding-workflow:prd-destination-document\", \"team:allspark:skills:matt-pocock:ai-engineering\"], \"C_implement\": [\"team:allspark:playbook:ai-coding-workflow:ralph-loop\", \"team:allspark:playbook:ai-coding-workflow:tdd-feedback-loops\", \"team:allspark:playbook:ai-coding-workflow:hitl-vs-afk\", \"team:allspark:playbook:ai-coding-workflow:deep-modules\", \"team:allspark:skills:matt-pocock:ai-engineering\", \"team:allspark:skills:obra-superpowers:agent-methodology\"], \"D_review\": [\"team:allspark:playbook:ai-coding-workflow:fresh-context-review\", \"team:allspark:playbook:ai-coding-workflow:push-pull-standards\", \"team:allspark:skills:obra-superpowers:agent-methodology\"]}}",
+    "metadata": {
+      "title": "Octowiz Retrieval Contract",
+      "prepared_for": "LiteLLM /v1/memory",
+      "scope_recommendation": "team",
+      "tags": ["retrieval", "routing", "coordinator", "config"],
+      "agent_roles": ["orchestrator", "coordinator"],
+      "priority": "high",
+      "version": 1,
+      "created_at": "2026-05-17"
+    }
+  },
+  {
+    "key": "team:allspark:skills:integrahub:skills-hub",
+    "value": "# integrahub Skills Hub — Skill Distribution Gateway\n\nSource: https://llm.integrahub.de\n\nThe integrahub Skills Hub is a LiteLLM Skills Gateway that registers and serves Claude Code skills from multiple upstream repositories through a single public endpoint. Skills are public and require no API key.\n\nInstall as a Claude Code marketplace:\n```json\n{\n  \"extraKnownMarketplaces\": {\n    \"litellm\": {\n      \"source\": \"url\",\n      \"url\": \"https://llm.integrahub.de/claude-code/marketplace.json\"\n    }\n  }\n}\n```\n\nAvailable skill packages:\n- superpowers (obra/superpowers) — agentic development methodology: brainstorming, writing-plans, using-git-worktrees, test-driven-development, executing-plans, requesting-code-review, verification-before-completion, finishing-a-development-branch\n- mattpo-skills (mattpocock/skills) — AI engineering practices: grill-me, grill-with-docs, to-prd, to-issues, triage, tdd, prototype, diagnose, zoom-out, improve-codebase-architecture, handoff\n- antfu-skills — TypeScript/Vue tooling conventions\n\nMCPs and AI Models at llm.integrahub.de require an API key. Skills do not.\n\nUse when: An agent needs to surface the marketplace install path to a developer who has not yet configured extraKnownMarketplaces.",
+    "metadata": {
+      "title": "integrahub Skills Hub — Skill Distribution Gateway",
+      "source": "integrahub",
+      "source_url": "https://llm.integrahub.de",
+      "prepared_for": "LiteLLM /v1/memory",
+      "scope_recommendation": "team",
+      "tags": ["skills", "marketplace", "integrahub", "routing"],
+      "agent_roles": ["planner", "implementer", "reviewer", "qa-agent", "orchestrator"],
+      "priority": "high",
+      "version": 1,
+      "created_at": "2026-05-17"
+    }
   }
 ]
