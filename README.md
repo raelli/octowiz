@@ -9,7 +9,7 @@ A skill-backed memory stack for coding agents.
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-eab308.svg" alt="license: MIT"></a>
   <img src="https://img.shields.io/badge/python-3.8%2B-3776AB.svg?logo=python&logoColor=white" alt="python 3.8+">
   <img src="https://img.shields.io/badge/LiteLLM_Proxy-compatible-7C3AED.svg" alt="LiteLLM Proxy compatible">
-  <img src="https://img.shields.io/badge/memories-24-22c55e.svg" alt="24 memories">
+  <img src="https://img.shields.io/badge/memories-26-22c55e.svg" alt="26 memories">
   <img src="https://img.shields.io/badge/skills-routed,_not_vendored-f97316.svg" alt="skills routed, not vendored">
 </p>
 
@@ -55,7 +55,7 @@ Three layers. Doctrine at the top, agents in the middle, external skill librarie
 
 | File | Purpose |
 |---|---|
-| `litellm_agent_memories_matt_pocock_ai_coding.json` | The 24 memories, ready to import. |
+| `litellm_agent_memories_matt_pocock_ai_coding.json` | The 26 memories, ready to import. |
 | `litellm_agent_memories_matt_pocock_ai_coding.jsonl` | Same content as JSONL, for streaming or pipeline use. |
 | `large_memory_ai_coding_agent_operating_doctrine.md` | The whole playbook as one document, if you'd rather read than retrieve. |
 | `import_litellm_memories.py` | The importer. Idempotent. Uses `PUT /v1/memory/{key}`. |
@@ -73,7 +73,7 @@ project:allspark:config:*                     import / namespacing
 `allspark` is the example namespace. If you fork this, swap it for your own — nobody wants to debug under someone else's project name.
 
 <details>
-<summary><b>Full memory inventory (24 entries)</b></summary>
+<summary><b>Full memory inventory (26 entries)</b></summary>
 
 **Workflow doctrine** — `overview`, `context-smart-zone`, `grill-me-alignment`, `prd-destination-document`, `kanban-tracer-bullets`, `hitl-vs-afk`, `ralph-loop`, `tdd-feedback-loops`, `fresh-context-review`, `manual-qa-taste`, `deep-modules`, `module-interface-first`, `push-pull-standards`, `frontend-prototypes`, `doc-rot`, `parallel-agents`
 
@@ -114,6 +114,56 @@ python import_litellm_memories.py litellm_agent_memories_matt_pocock_ai_coding.j
   --key-prefix "team:allspark:skills:"
 ```
 
+## Claude Code setup
+
+Install the integrahub marketplace once — no per-repo setup needed.
+
+Add to `~/.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "litellm": {
+      "source": "url",
+      "url": "https://llm.integrahub.de/claude-code/marketplace.json"
+    }
+  },
+  "env": {
+    "LITELLM_BASE_URL": "https://llm.integrahub.de",
+    "LITELLM_API_KEY": "sk-..."
+  }
+}
+```
+
+Get your API key from [llm.integrahub.de](https://llm.integrahub.de). Skills are public — the key is only needed for memory retrieval and AI model access.
+
+**Per-repo alternative:** add a `.env` file (gitignored) if you prefer project-scoped keys:
+
+```bash
+# .env
+LITELLM_BASE_URL=https://llm.integrahub.de
+LITELLM_API_KEY=sk-your-integrahub-key
+```
+
+## Using /octowiz
+
+After importing memories and installing the marketplace, invoke the coordinator from any repo:
+
+```
+/octowiz
+```
+
+The coordinator reads your project setup, fetches the relevant memories from LiteLLM, and asks where you are in the workflow:
+
+| Option | Starting point | Entry skill |
+|---|---|---|
+| A | Fresh idea | `brainstorming` |
+| B | Have a plan to stress-test | `grill-me` |
+| C | Ready to implement | `using-git-worktrees` + TDD |
+| D | Code done, need review | `zoom-out` + `requesting-code-review` |
+
+Run `/mattpocock-skills:setup-matt-pocock-skills` once per repo before first use — it wires up your issue tracker and domain docs so `to-prd`, `to-issues`, `triage`, and `diagnose` work correctly.
+
 ## Retrieval per role
 
 Each role only needs a slice of the pack. Suggested mapping:
@@ -151,7 +201,7 @@ curl "$LITELLM_BASE_URL/v1/memory?key_prefix=team:allspark:playbook:ai-coding-wo
   -H "Authorization: Bearer $LITELLM_ADMIN_API_KEY"
 ```
 
-A clean import upserts 24/24. The three external skill-source entries have been verified live with `HTTP 200`.
+A clean import upserts 26/26. The three external skill-source entries have been verified live with `HTTP 200`.
 
 ## Security
 
