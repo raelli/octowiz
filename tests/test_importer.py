@@ -72,5 +72,111 @@ class TestRewriteNamespace(unittest.TestCase):
         self.assertEqual(result[2]["key"], "agent:planner:memory:workflow")
 
 
+class TestLoadMemories(unittest.TestCase):
+    def _write_temp(self, content, suffix):
+        f = tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False)
+        f.write(content)
+        f.close()
+        return f.name
+
+    def test_load_json_list(self):
+        data = [{"key": "k1", "value": "v1"}, {"key": "k2", "value": "v2"}]
+        path = self._write_temp(json.dumps(data), ".json")
+        try:
+            self.assertEqual(load_memories(path), data)
+        finally:
+            os.unlink(path)
+
+    def test_load_json_object_with_memories_key(self):
+        data = {"memories": [{"key": "k1", "value": "v1"}]}
+        path = self._write_temp(json.dumps(data), ".json")
+        try:
+            self.assertEqual(load_memories(path), data["memories"])
+        finally:
+            os.unlink(path)
+
+    def test_load_jsonl(self):
+        lines = '{"key": "k1", "value": "v1"}\n{"key": "k2", "value": "v2"}\n'
+        path = self._write_temp(lines, ".jsonl")
+        try:
+            result = load_memories(path)
+            self.assertEqual(len(result), 2)
+            self.assertEqual(result[1]["key"], "k2")
+        finally:
+            os.unlink(path)
+
+
+class TestPrefixFilter(unittest.TestCase):
+    def test_prefix_filter_excludes_non_matching(self):
+        memories = [
+            {"key": "team:allspark:playbook:overview", "value": "v1"},
+            {"key": "team:allspark:skills:mattpocock", "value": "v2"},
+            {"key": "agent:planner:memory:workflow", "value": "v3"},
+        ]
+        filtered = [m for m in memories if m["key"].startswith("team:allspark:skills:")]
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0]["key"], "team:allspark:skills:mattpocock")
+
+
+class TestUrlEncoding(unittest.TestCase):
+    def test_colons_encoded_correctly(self):
+        import urllib.parse
+        key = "team:allspark:playbook:overview"
+        self.assertEqual(
+            urllib.parse.quote(key, safe=""),
+            "team%3Aallspark%3Aplaybook%3Aoverview",
+        )
+
+
+class TestDryRun(unittest.TestCase):
+    def test_dry_run_makes_no_http_calls(self):
+        data = [{"key": "k1", "value": "v1"}]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(data, f)
+            path = f.name
+        try:
+            with patch("httpx.Client") as mock_client:
+                with patch("sys.argv", ["import_litellm_memories.py", path, "--dry-run"]):
+                    import importlib
+                    import import_litellm_memories as _importer_module
+                    importlib.reload(_importer_module)
+                    result = _importer_module.main()
+                mock_client.assert_not_called()
+                self.assertEqual(result, 0)
+        finally:
+            os.unlink(path)
+
+
+class TestBadHttpResponse(unittest.TestCase):
+    def test_failed_http_response_exits_1(self):
+        import httpx
+        data = [{"key": "k1", "value": "v1"}]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(data, f)
+            path = f.name
+        try:
+            mock_response = MagicMock()
+            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "404 Not Found",
+                request=MagicMock(),
+                response=MagicMock(status_code=404, text="Not Found"),
+            )
+            mock_client_instance = MagicMock()
+            mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
+            mock_client_instance.__exit__ = MagicMock(return_value=False)
+            mock_client_instance.put.return_value = mock_response
+
+            with patch("httpx.Client", return_value=mock_client_instance):
+                with patch.dict(os.environ, {"LITELLM_API_KEY": "sk-test", "LITELLM_BASE_URL": "http://localhost:4000"}):
+                    with patch("sys.argv", ["import_litellm_memories.py", path]):
+                        import importlib
+                        import import_litellm_memories as _importer_module
+                        importlib.reload(_importer_module)
+                        result = _importer_module.main()
+            self.assertEqual(result, 1)
+        finally:
+            os.unlink(path)
+
+
 if __name__ == "__main__":
     unittest.main()
