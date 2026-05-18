@@ -32,23 +32,38 @@ If an issue tracker is configured in CLAUDE.md, list open issues. Note whether:
 - Open issues exist
 - There are uncommitted changes or a plan file in docs/
 
-## Step 2 — Fetch memories from LiteLLM
+## Step 2 — Load routing doctrine
 
 Run:
 
 ```bash
-curl -s "$LITELLM_BASE_URL/v1/memory/team%3Aallspark%3Aconfig%3Aretrieval-contract" \
-  -H "Authorization: Bearer ${LITELLM_ADMIN_API_KEY:-$LITELLM_API_KEY}" 2>/dev/null
+octowiz-cache get --role routing --namespace "${OCTOWIZ_NAMESPACE:-allspark}"
 ```
 
-If `LITELLM_BASE_URL` is not set, or neither `LITELLM_ADMIN_API_KEY` nor `LITELLM_API_KEY`
-is set, tell the developer:
+If `octowiz-cache` is not installed or exits non-zero, fall back to:
+
+```bash
+curl -s "$LITELLM_BASE_URL/v1/memory/team%3A${OCTOWIZ_NAMESPACE:-allspark}%3Aconfig%3Aretrieval-contract" \
+  -H "Authorization: Bearer ${LITELLM_ADMIN_API_KEY:-$LITELLM_API_KEY}"
+```
+
+If both fail, or if `LITELLM_BASE_URL` and API key env vars are not set, tell the developer:
 
 > "Set LITELLM_BASE_URL and LITELLM_ADMIN_API_KEY (or LITELLM_API_KEY) in
 > ~/.claude/settings.json to enable memory-backed doctrine. See the octowiz README
 > for setup instructions. Continuing with built-in workflow."
 
 Then continue using the built-in routing below — do not stop.
+
+After the user chooses a workflow option, load the corresponding role bundle before
+appending fresh project state:
+
+- Options A or B → `octowiz-cache get --role planner --namespace "${OCTOWIZ_NAMESPACE:-allspark}"`
+- Option C → `octowiz-cache get --role implementer --namespace "${OCTOWIZ_NAMESPACE:-allspark}"`
+- Option D → `octowiz-cache get --role reviewer --namespace "${OCTOWIZ_NAMESPACE:-allspark}"`
+
+Prepend the bundle content to the context before fresh git status, open issues, and user request.
+Do not suppress stderr from `octowiz-cache` — let warnings surface to the developer.
 
 ## Step 3 — Check for setup-matt-pocock-skills
 
