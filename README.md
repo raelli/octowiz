@@ -98,7 +98,7 @@ project:allspark:config:*                     import / namespacing
 ## Install
 
 ```bash
-pip install httpx
+pip install -e .
 export LITELLM_BASE_URL="https://your-proxy.example.com"
 export LITELLM_ADMIN_API_KEY="sk-..."
 ```
@@ -230,6 +230,51 @@ curl "$LITELLM_BASE_URL/v1/memory?key_prefix=team:allspark:playbook:ai-coding-wo
 ```
 
 A clean import upserts 26/26. The three external skill-source entries have been verified live with `HTTP 200`.
+
+## Memory caching
+
+Octowiz caches stable doctrine bundles locally so repeated `/octowiz` runs load instantly without hitting LiteLLM every time.
+
+```
+LiteLLM /v1/memory
+        │
+        ▼
+octowiz-cache (hash + manifest)
+        │
+        ▼
+~/.cache/octowiz/namespaces/allspark/bundles/
+        │
+        ▼
+/octowiz skill — doctrine prepended, fresh project state appended
+```
+
+**What is cached:** role playbooks, routing contracts, skill references — stable doctrine only.
+
+**Never cached:** git status, source files, test output, open issues, user requests, review conclusions.
+
+### Commands
+
+```bash
+octowiz-cache build --all          # warm all role bundles
+octowiz-cache status               # check freshness at a glance
+octowiz-cache refresh --all        # force-rebuild from LiteLLM
+octowiz-cache get --role planner   # print planner bundle to stdout
+octowiz-cache clear                # delete cache for current namespace
+octowiz-cache clear --all-namespaces  # wipe entire cache
+```
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OCTOWIZ_CACHE_DIR` | `~/.cache/octowiz` | Cache root directory |
+| `OCTOWIZ_CACHE_TTL_SECONDS` | `3600` | Seconds before revalidation |
+| `OCTOWIZ_CACHE_BYPASS` | — | Set to `1` to skip cache entirely |
+| `OCTOWIZ_NAMESPACE` | `allspark` | Namespace for memory key substitution |
+
+### Behaviour when LiteLLM is unavailable
+
+If the cache is stale and LiteLLM cannot be reached, `octowiz-cache` serves the stale bundle with a stderr warning rather than failing. `/octowiz` continues normally. If no cached bundle exists at all, it falls back to built-in routing.
 
 ## Security
 
