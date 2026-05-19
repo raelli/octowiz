@@ -3,7 +3,7 @@ name: octowiz
 description: >
   Octowiz AI coding workflow coordinator. Reads LiteLLM memory doctrine at runtime,
   detects where you are in the development lifecycle, and routes to the right skill
-  combination from superpowers + mattpo-skills.
+  combination from superpowers + mattpocock-skills.
   Use this skill at the START of any development work — whether you have a fresh idea,
   an existing plan to stress-test, code ready to implement, or work ready for review.
   Invoke when the user types /octowiz, starts a new feature, asks how to begin a

@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -51,7 +52,7 @@ ROLE_MEMORY_KEYS: Dict[str, List[str]] = {
         "agent:qa:memory:ai-coding-workflow",
     ],
     "routing": [
-        "project:{namespace}:config:retrieval-contract",
+        "team:{namespace}:config:retrieval-contract",
         "team:{namespace}:skills:matt-pocock:ai-engineering",
         "team:{namespace}:skills:obra-superpowers:agent-methodology",
     ],
@@ -272,6 +273,10 @@ def get_bundle(
         raise ValueError(
             f"Unknown role {role!r}. Valid roles: {sorted(ROLE_MEMORY_KEYS)}"
         )
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+", namespace):
+        raise ValueError(
+            f"Invalid namespace {namespace!r}. Use only letters, digits, hyphens, and underscores."
+        )
     # Resolve cache directory
     if cache_dir is None:
         cache_dir = Path(os.environ.get("OCTOWIZ_CACHE_DIR", str(DEFAULT_CACHE_DIR)))
@@ -294,8 +299,9 @@ def get_bundle(
                     return cached_content
 
     # Step 2: Fetch from LiteLLM; fall back to stale cache on failure
-    client = get_litellm_client()
+    client = None
     try:
+        client = get_litellm_client()
         memories = fetch_role_memories(client, role, namespace)
     except Exception as exc:
         # Attempt stale fallback
@@ -314,10 +320,11 @@ def get_bundle(
                     return cached_content
         raise
     finally:
-        try:
-            client.close()
-        except Exception:
-            pass
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
 
     # Step 3: Build bundle and write to disk
     content = render_bundle(role, memories)

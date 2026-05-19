@@ -493,13 +493,13 @@ class TestCacheSchemaVersion(unittest.TestCase):
 
 
 class TestRoutingRoleConfigNamespace(unittest.TestCase):
-    def test_routing_config_key_uses_project_namespace(self):
+    def test_routing_config_key_uses_team_namespace(self):
         routing_keys = octowiz_cache.ROLE_MEMORY_KEYS["routing"]
         config_keys = [k for k in routing_keys if "config:retrieval-contract" in k]
         self.assertEqual(len(config_keys), 1, "routing role must have exactly one config:retrieval-contract key")
         self.assertTrue(
-            config_keys[0].startswith("project:"),
-            f"routing config key must use project:{{namespace}}: prefix, got {config_keys[0]!r}",
+            config_keys[0].startswith("team:"),
+            f"routing config key must use team:{{namespace}}: prefix, got {config_keys[0]!r}",
         )
 
 
