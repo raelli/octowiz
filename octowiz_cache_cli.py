@@ -85,7 +85,7 @@ def cmd_build(args) -> int:
                 namespace=args.namespace,
                 cache_dir=_cache_dir(args),
                 ttl_seconds=_ttl(args),
-                refresh=True,
+                refresh=False,
             )
             print(f"[octowiz-cache] built: {role}", file=sys.stderr)
         except Exception as exc:

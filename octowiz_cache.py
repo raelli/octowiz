@@ -51,7 +51,7 @@ ROLE_MEMORY_KEYS: Dict[str, List[str]] = {
         "agent:qa:memory:ai-coding-workflow",
     ],
     "routing": [
-        "team:{namespace}:config:retrieval-contract",
+        "project:{namespace}:config:retrieval-contract",
         "team:{namespace}:skills:matt-pocock:ai-engineering",
         "team:{namespace}:skills:obra-superpowers:agent-methodology",
     ],

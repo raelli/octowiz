@@ -129,7 +129,7 @@ Run the test suite to verify your setup:
 python -m pytest tests/ -v
 ```
 
-Expected: `58 passed`.
+Expected: all tests pass.
 
 Team-scoped writes under `team:allspark:*` usually want proxy-admin scope. The importer reads `LITELLM_ADMIN_API_KEY` first and falls back to `LITELLM_API_KEY` if you didn't set the admin one.
 

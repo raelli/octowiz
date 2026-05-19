@@ -43,7 +43,7 @@ octowiz-cache get --role routing --namespace "${OCTOWIZ_NAMESPACE:-allspark}"
 If `octowiz-cache` is not installed or exits non-zero, fall back to:
 
 ```bash
-curl -s "$LITELLM_BASE_URL/v1/memory/team%3A${OCTOWIZ_NAMESPACE:-allspark}%3Aconfig%3Aretrieval-contract" \
+curl -s "$LITELLM_BASE_URL/v1/memory/project%3A${OCTOWIZ_NAMESPACE:-allspark}%3Aconfig%3Aretrieval-contract" \
   -H "Authorization: Bearer ${LITELLM_ADMIN_API_KEY:-$LITELLM_API_KEY}"
 ```
 

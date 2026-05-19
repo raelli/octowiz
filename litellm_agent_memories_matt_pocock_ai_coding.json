@@ -589,12 +589,12 @@
     }
   },
   {
-    "key": "team:allspark:config:retrieval-contract",
+    "key": "project:allspark:config:retrieval-contract",
     "value": "{\"entry_points\": {\"A_fresh\": [\"team:allspark:playbook:ai-coding-workflow:overview\", \"team:allspark:playbook:ai-coding-workflow:grill-me-alignment\", \"team:allspark:playbook:ai-coding-workflow:context-smart-zone\", \"team:allspark:skills:matt-pocock:ai-engineering\", \"team:allspark:skills:obra-superpowers:agent-methodology\", \"team:allspark:skills:integrahub:skills-hub\"], \"B_stress_test\": [\"team:allspark:playbook:ai-coding-workflow:grill-me-alignment\", \"team:allspark:playbook:ai-coding-workflow:prd-destination-document\", \"team:allspark:skills:matt-pocock:ai-engineering\"], \"C_implement\": [\"team:allspark:playbook:ai-coding-workflow:ralph-loop\", \"team:allspark:playbook:ai-coding-workflow:tdd-feedback-loops\", \"team:allspark:playbook:ai-coding-workflow:hitl-vs-afk\", \"team:allspark:playbook:ai-coding-workflow:deep-modules\", \"team:allspark:skills:matt-pocock:ai-engineering\", \"team:allspark:skills:obra-superpowers:agent-methodology\"], \"D_review\": [\"team:allspark:playbook:ai-coding-workflow:fresh-context-review\", \"team:allspark:playbook:ai-coding-workflow:push-pull-standards\", \"team:allspark:skills:obra-superpowers:agent-methodology\"]}}",
     "metadata": {
       "title": "Octowiz Retrieval Contract",
       "prepared_for": "LiteLLM /v1/memory",
-      "scope_recommendation": "team",
+      "scope_recommendation": "project",
       "tags": ["retrieval", "routing", "coordinator", "config"],
       "agent_roles": ["orchestrator", "coordinator"],
       "priority": "high",
