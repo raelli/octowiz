@@ -15,6 +15,12 @@ A skill-backed memory stack for coding agents.
 
 octowiz is a memory stack and coordinator skill for AI-assisted development in Claude Code. It stores AI-coding operating doctrine in [LiteLLM Proxy](https://docs.litellm.ai/) `/v1/memory` — how to plan, write tests, review, and ship — and exposes a `/octowiz` entry point that reads those memories at runtime and routes to the right combination of [superpowers](https://github.com/obra/superpowers) and [mattpocock/skills](https://github.com/mattpocock/skills) for the current phase. One source of truth; each session fetches only what is relevant to the step it is on.
 
+## Why this exists
+
+Most AI coding tools give agents either a giant system prompt or nothing. Octowiz takes a third path: doctrine lives in a memory store, agents fetch only what is relevant to their current phase, and the coordinator skill routes to purpose-built skill libraries rather than trying to be everything itself.
+
+The result is a context window that stays small and focused. A planner gets planning doctrine. An implementer gets TDD loops and deep-module principles. A reviewer gets fresh-context review discipline. None of them get the others' doctrine as noise.
+
 ## Architecture
 
 ```
@@ -117,6 +123,14 @@ python import_litellm_memories.py litellm_agent_memories_matt_pocock_ai_coding.j
 
 `PUT /v1/memory/{key}` is idempotent. Safe to rerun — entries get refreshed, not duplicated.
 
+Run the test suite to verify your setup:
+
+```bash
+python -m pytest tests/ -v
+```
+
+Expected: `40 passed`.
+
 Team-scoped writes under `team:allspark:*` usually want proxy-admin scope. The importer reads `LITELLM_ADMIN_API_KEY` first and falls back to `LITELLM_API_KEY` if you didn't set the admin one.
 
 Want just a subset? Prefix-filter the import:
@@ -191,6 +205,15 @@ The coordinator reads your project setup, fetches the relevant memories from Lit
 | D | Code done, need review | `zoom-out` + `requesting-code-review` |
 
 Run `/mattpocock-skills:setup-matt-pocock-skills` once per repo before first use — it wires up your issue tracker and domain docs so `to-prd`, `to-issues`, `triage`, and `diagnose` work correctly.
+
+## What happens when you run /octowiz?
+
+1. **Project state is read** — CLAUDE.md, README, open issues, current branch, git log.
+2. **Routing doctrine is loaded** — `octowiz-cache get --role routing` fetches the cached retrieval contract. If the cache is cold, it pulls from LiteLLM. If LiteLLM is unreachable and the cache is stale, it serves the stale bundle with a warning.
+3. **You choose a starting point** — A (fresh idea), B (stress-test a plan), C (implement), or D (review). The coordinator suggests a default based on project state.
+4. **A role bundle is prepended to context** — planner doctrine for A/B, implementer for C, reviewer for D. This lands early in the context window so stable rules outweigh ephemeral noise.
+5. **Fresh project context is appended** — git status, open issues, your request. These change every run and are never cached.
+6. **The first skill in the chosen path is invoked** — brainstorming, grill-me, using-git-worktrees, or zoom-out, depending on your choice.
 
 ## Retrieval per role
 
@@ -275,6 +298,37 @@ octowiz-cache clear --all-namespaces  # wipe entire cache
 ### Behaviour when LiteLLM is unavailable
 
 If the cache is stale and LiteLLM cannot be reached, `octowiz-cache` serves the stale bundle with a stderr warning rather than failing. `/octowiz` continues normally. If no cached bundle exists at all, it falls back to built-in routing.
+
+### Demo
+
+```
+$ octowiz-cache build --all
+[octowiz-cache] built: planner
+[octowiz-cache] built: implementer
+[octowiz-cache] built: reviewer
+[octowiz-cache] built: qa
+[octowiz-cache] built: routing
+
+$ octowiz-cache status
+planner         ✓ fresh (0m ago)
+implementer     ✓ fresh (0m ago)
+reviewer        ✓ fresh (0m ago)
+qa              ✓ fresh (0m ago)
+routing         ✓ fresh (0m ago)
+
+$ octowiz-cache build --all   # run again — memories unchanged, same hashes, no fetch
+[octowiz-cache] built: planner
+[octowiz-cache] built: implementer
+[octowiz-cache] built: reviewer
+[octowiz-cache] built: qa
+[octowiz-cache] built: routing
+
+$ # Now with LiteLLM unreachable:
+$ LITELLM_BASE_URL=http://127.0.0.1:1 octowiz-cache get --role routing
+[octowiz-cache] LiteLLM unavailable (...) — serving stale bundle for role 'routing' (updated 42s ago)
+# Octowiz Doctrine Bundle: routing
+...
+```
 
 ## Security
 
