@@ -185,6 +185,10 @@ def fetch_role_memories(client: httpx.Client, role: str, namespace: str) -> List
     Expand {namespace} in keys and fetch each memory in order.
     Any KeyError propagates immediately (fails the whole bundle).
     """
+    if role not in ROLE_MEMORY_KEYS:
+        raise ValueError(
+            f"Unknown role {role!r}. Valid roles: {sorted(ROLE_MEMORY_KEYS)}"
+        )
     raw_keys = ROLE_MEMORY_KEYS.get(role, [])
     expanded_keys = [k.replace("{namespace}", namespace) for k in raw_keys]
     return [fetch_memory(client, key) for key in expanded_keys]
@@ -259,6 +263,10 @@ def get_bundle(
       2. Fetch from LiteLLM; if LiteLLM fails and stale cache exists: warn stderr + serve stale.
       3. Build bundle, write atomically, update manifest, return content.
     """
+    if role not in ROLE_MEMORY_KEYS:
+        raise ValueError(
+            f"Unknown role {role!r}. Valid roles: {sorted(ROLE_MEMORY_KEYS)}"
+        )
     # Resolve cache directory
     if cache_dir is None:
         cache_dir = Path(os.environ.get("OCTOWIZ_CACHE_DIR", str(DEFAULT_CACHE_DIR)))

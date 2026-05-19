@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import httpx
 
+import octowiz_cache
 import octowiz_cache as _module
 from octowiz_cache import (
     fetch_memory,
@@ -404,6 +405,25 @@ class TestManifestReadWrite(unittest.TestCase):
             ns_dir = Path(tmpdir) / "namespaces" / "allspark"
             result = _module._read_bundle(ns_dir, "planner", "nonexistent_hash")
         self.assertIsNone(result)
+
+
+class TestRoleValidation(unittest.TestCase):
+    def test_get_bundle_raises_value_error_for_unknown_role(self):
+        with self.assertRaises(ValueError) as ctx:
+            octowiz_cache.get_bundle(
+                role="nonexistent",
+                namespace="allspark",
+                cache_dir="/tmp/octowiz-test-unused",
+            )
+        self.assertIn("nonexistent", str(ctx.exception))
+        self.assertIn("planner", str(ctx.exception))
+
+    def test_fetch_role_memories_raises_value_error_for_unknown_role(self):
+        mock_client = MagicMock()
+        with self.assertRaises(ValueError) as ctx:
+            octowiz_cache.fetch_role_memories(mock_client, "ghost", "allspark")
+        self.assertIn("ghost", str(ctx.exception))
+        mock_client.get.assert_not_called()
 
 
 if __name__ == "__main__":

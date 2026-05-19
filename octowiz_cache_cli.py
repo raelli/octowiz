@@ -199,7 +199,7 @@ def _make_parser() -> argparse.ArgumentParser:
     )
 
     parser = argparse.ArgumentParser(
-        prog="octowiz_cache_cli",
+        prog="octowiz-cache",
         description="Manage Octowiz doctrine bundle cache.",
         parents=[common],
     )
