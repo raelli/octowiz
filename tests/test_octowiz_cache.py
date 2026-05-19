@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import httpx
 
+import octowiz_cache
 import octowiz_cache as _module
 from octowiz_cache import (
     fetch_memory,
@@ -404,6 +405,91 @@ class TestManifestReadWrite(unittest.TestCase):
             ns_dir = Path(tmpdir) / "namespaces" / "allspark"
             result = _module._read_bundle(ns_dir, "planner", "nonexistent_hash")
         self.assertIsNone(result)
+
+
+class TestRoleValidation(unittest.TestCase):
+    def test_get_bundle_raises_value_error_for_unknown_role(self):
+        with self.assertRaises(ValueError) as ctx:
+            octowiz_cache.get_bundle(
+                role="nonexistent",
+                namespace="allspark",
+                cache_dir="/tmp/octowiz-test-unused",
+            )
+        self.assertIn("nonexistent", str(ctx.exception))
+        self.assertIn("planner", str(ctx.exception))
+
+    def test_fetch_role_memories_raises_value_error_for_unknown_role(self):
+        mock_client = MagicMock()
+        with self.assertRaises(ValueError) as ctx:
+            octowiz_cache.fetch_role_memories(mock_client, "ghost", "allspark")
+        self.assertIn("ghost", str(ctx.exception))
+        mock_client.get.assert_not_called()
+
+
+class TestManifestDefensive(unittest.TestCase):
+    def test_manifest_is_fresh_handles_missing_updated_at(self):
+        manifest = {"roles": {}}
+        result = octowiz_cache.manifest_is_fresh(manifest, ttl_seconds=3600)
+        self.assertFalse(result)
+
+    def test_manifest_is_fresh_handles_none_updated_at(self):
+        manifest = {"updated_at": None}
+        result = octowiz_cache.manifest_is_fresh(manifest, ttl_seconds=3600)
+        self.assertFalse(result)
+
+    def test_manifest_is_fresh_handles_non_numeric_updated_at(self):
+        manifest = {"updated_at": "2024-01-01"}
+        result = octowiz_cache.manifest_is_fresh(manifest, ttl_seconds=3600)
+        self.assertFalse(result)
+
+
+class TestCacheSchemaVersion(unittest.TestCase):
+    def test_schema_version_constant_is_integer(self):
+        self.assertIsInstance(octowiz_cache.CACHE_SCHEMA_VERSION, int)
+        self.assertGreater(octowiz_cache.CACHE_SCHEMA_VERSION, 0)
+
+    def test_written_manifest_contains_schema_version(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            ns_dir = Path(tmpdir) / "namespaces" / "allspark"
+            manifest = {"namespace": "allspark", "updated_at": time.time(), "roles": {}}
+            octowiz_cache._write_manifest(ns_dir, manifest)
+            result = octowiz_cache._read_manifest(ns_dir)
+            self.assertIn("schema_version", result)
+            self.assertEqual(result["schema_version"], octowiz_cache.CACHE_SCHEMA_VERSION)
+
+    def test_stale_schema_version_triggers_rebuild(self):
+        memory = {"key": "team:allspark:config:retrieval-contract", "value": "v1", "metadata": {}}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            ns_dir = Path(tmpdir) / "namespaces" / "allspark"
+            old_manifest = {
+                "namespace": "allspark",
+                "updated_at": time.time(),
+                "schema_version": 99999,
+                "roles": {
+                    "routing": {
+                        "bundle_hash": "oldhash",
+                        "bundle_path": "bundles/routing/oldhash.md",
+                        "updated_at": time.time(),
+                        "memory_hashes": {},
+                    }
+                },
+            }
+            ns_dir.mkdir(parents=True, exist_ok=True)
+            (ns_dir / "manifest.json").write_text(json.dumps(old_manifest, indent=2), encoding="utf-8")
+            octowiz_cache._write_bundle(ns_dir, "routing", "oldhash", "# old bundle\n")
+
+            with patch("octowiz_cache.fetch_role_memories", return_value=[memory]) as mock_fetch:
+                with patch("octowiz_cache.get_litellm_client", return_value=MagicMock()):
+                    octowiz_cache.get_bundle(
+                        role="routing",
+                        namespace="allspark",
+                        cache_dir=tmpdir,
+                        ttl_seconds=3600,
+                        refresh=False,
+                    )
+            mock_fetch.assert_called_once()
 
 
 if __name__ == "__main__":
