@@ -112,7 +112,9 @@ def render_bundle(role: str, memories: List[Dict[str, Any]]) -> str:
 
 def manifest_is_fresh(manifest: Dict[str, Any], ttl_seconds: int) -> bool:
     """Return True if time.time() - manifest['updated_at'] < ttl_seconds."""
-    updated_at = manifest.get("updated_at") or 0
+    updated_at = manifest.get("updated_at")
+    if not isinstance(updated_at, (int, float)):
+        return False
     return time.time() - updated_at < ttl_seconds
 
 
@@ -216,7 +218,7 @@ def _read_manifest(ns_dir: Path) -> Optional[Dict[str, Any]]:
 
 def _write_manifest(ns_dir: Path, manifest: Dict[str, Any]) -> None:
     """Write manifest atomically using os.replace()."""
-    manifest["schema_version"] = CACHE_SCHEMA_VERSION
+    manifest = {**manifest, "schema_version": CACHE_SCHEMA_VERSION}
     ns_dir.mkdir(parents=True, exist_ok=True)
     target = ns_dir / "manifest.json"
     tmp = target.with_suffix(".json.tmp")

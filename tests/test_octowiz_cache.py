@@ -437,6 +437,11 @@ class TestManifestDefensive(unittest.TestCase):
         result = octowiz_cache.manifest_is_fresh(manifest, ttl_seconds=3600)
         self.assertFalse(result)
 
+    def test_manifest_is_fresh_handles_non_numeric_updated_at(self):
+        manifest = {"updated_at": "2024-01-01"}
+        result = octowiz_cache.manifest_is_fresh(manifest, ttl_seconds=3600)
+        self.assertFalse(result)
+
 
 class TestCacheSchemaVersion(unittest.TestCase):
     def test_schema_version_constant_is_integer(self):
