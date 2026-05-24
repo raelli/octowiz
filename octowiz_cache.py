@@ -14,6 +14,7 @@ import re
 import sys
 import time
 import urllib.parse
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -349,3 +350,69 @@ def get_bundle(
     _write_manifest(ns_dir, manifest)
 
     return content
+
+
+# ---------------------------------------------------------------------------
+# cache_status() — public freshness query
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class RoleStatus:
+    role: str
+    is_fresh: bool
+    age_seconds: Optional[float]  # None if not cached
+    updated_at: Optional[float]   # None if not cached
+
+
+def cache_status(
+    namespace: str,
+    cache_dir: Any = None,
+    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+) -> List[RoleStatus]:
+    """Return freshness status for all roles in the given namespace."""
+    resolved_dir = Path(cache_dir or os.environ.get("OCTOWIZ_CACHE_DIR", str(DEFAULT_CACHE_DIR)))
+    ns_dir = _namespace_cache_dir(resolved_dir, namespace)
+    manifest = _read_manifest(ns_dir)
+    results = []
+    for role in ROLE_MEMORY_KEYS:
+        if manifest is None or role not in manifest.get("roles", {}):
+            results.append(RoleStatus(role=role, is_fresh=False, age_seconds=None, updated_at=None))
+        else:
+            entry = manifest["roles"][role]
+            updated_at = entry.get("updated_at")
+            age = (time.time() - updated_at) if isinstance(updated_at, (int, float)) else None
+            fresh = manifest_is_fresh(entry, ttl_seconds)
+            results.append(RoleStatus(role=role, is_fresh=fresh, age_seconds=age, updated_at=updated_at))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# build_bundles() — public build/refresh loop
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class BuildResult:
+    built: List[str]          # role names that succeeded
+    failed: List[tuple]       # list of (role, error_message) that failed
+
+
+def build_bundles(
+    roles: List[str],
+    namespace: str,
+    cache_dir: Any = None,
+    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    refresh: bool = False,
+) -> BuildResult:
+    """Build (or refresh) bundles for the given roles. Collects all failures."""
+    built = []
+    failed = []
+    for role in roles:
+        try:
+            get_bundle(role=role, namespace=namespace, cache_dir=cache_dir,
+                       ttl_seconds=ttl_seconds, refresh=refresh)
+            built.append(role)
+        except Exception as exc:
+            failed.append((role, str(exc)))
+    return BuildResult(built=built, failed=failed)

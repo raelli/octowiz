@@ -10,7 +10,6 @@ import argparse
 import os
 import shutil
 import sys
-import time
 from pathlib import Path
 
 import octowiz_cache
@@ -18,9 +17,11 @@ from octowiz_cache import (
     DEFAULT_CACHE_DIR,
     DEFAULT_TTL_SECONDS,
     ROLE_MEMORY_KEYS,
-    _read_manifest,
+    BuildResult,
+    RoleStatus,
+    build_bundles,
+    cache_status,
     get_bundle,
-    manifest_is_fresh,
 )
 
 
@@ -40,6 +41,12 @@ def _ttl(args) -> int:
     return getattr(args, "ttl_seconds", None) or int(
         os.getenv("OCTOWIZ_CACHE_TTL_SECONDS", octowiz_cache.DEFAULT_TTL_SECONDS)
     )
+
+
+def _format_age(seconds: float) -> str:
+    if seconds < 3600:
+        return f"{int(seconds) // 60}m ago"
+    return f"{int(seconds) // 3600}h ago"
 
 
 # ---------------------------------------------------------------------------
@@ -72,84 +79,48 @@ def cmd_get(args) -> int:
 
 
 def cmd_build(args) -> int:
-    if getattr(args, "all", False):
-        roles = list(ROLE_MEMORY_KEYS)
-    else:
-        roles = [args.role]
-
-    failures: list[tuple[str, str]] = []
-    for role in roles:
-        try:
-            get_bundle(
-                role=role,
-                namespace=args.namespace,
-                cache_dir=_cache_dir(args),
-                ttl_seconds=_ttl(args),
-                refresh=False,
-            )
-            print(f"[octowiz-cache] built: {role}", file=sys.stderr)
-        except Exception as exc:
-            failures.append((role, str(exc)))
-            print(f"[octowiz-cache] FAILED: {role} — {exc}", file=sys.stderr)
-
-    if failures:
-        print(
-            f"[octowiz-cache] {len(failures)} role(s) failed: "
-            + ", ".join(r for r, _ in failures),
-            file=sys.stderr,
-        )
+    roles = list(ROLE_MEMORY_KEYS) if getattr(args, "all", False) else [args.role]
+    result = build_bundles(roles=roles, namespace=args.namespace,
+                           cache_dir=_cache_dir(args), ttl_seconds=_ttl(args), refresh=False)
+    for role in result.built:
+        print(f"[octowiz-cache] built: {role}", file=sys.stderr)
+    for role, err in result.failed:
+        print(f"[octowiz-cache] FAILED: {role} — {err}", file=sys.stderr)
+    if result.failed:
+        print(f"[octowiz-cache] {len(result.failed)} role(s) failed: " +
+              ", ".join(r for r, _ in result.failed), file=sys.stderr)
         return 1
     return 0
 
 
 def cmd_status(args) -> int:
-    cache_dir = _cache_dir(args)
-    ttl = _ttl(args)
-    namespace = args.namespace
-    ns_dir = octowiz_cache._namespace_cache_dir(cache_dir, namespace)
-    manifest = _read_manifest(ns_dir)
-
-    for role in ROLE_MEMORY_KEYS:
-        if manifest is None or role not in manifest.get("roles", {}):
-            print(f"{role:15s} ✗ missing")
+    statuses = cache_status(
+        namespace=args.namespace,
+        cache_dir=_cache_dir(args),
+        ttl_seconds=_ttl(args),
+    )
+    for s in statuses:
+        if s.age_seconds is None:
+            print(f"{s.role:15s} ✗ missing")
+        elif s.is_fresh:
+            age_str = _format_age(s.age_seconds)
+            print(f"{s.role:15s} ✓ fresh ({age_str})")
         else:
-            role_entry = manifest["roles"][role]
-            age = time.time() - role_entry["updated_at"]
-            if age < 3600:
-                age_str = f"{int(age) // 60}m ago"
-            else:
-                age_str = f"{int(age) // 3600}h ago"
-            fresh = manifest_is_fresh(role_entry, ttl)
-            if fresh:
-                print(f"{role:15s} ✓ fresh ({age_str})")
-            else:
-                print(f"{role:15s} ✗ stale ({age_str})")
+            age_str = _format_age(s.age_seconds)
+            print(f"{s.role:15s} ✗ stale ({age_str})")
     return 0
 
 
 def cmd_refresh(args) -> int:
-    # Force-rebuild all roles (same as build --all)
-    failures: list[tuple[str, str]] = []
-    for role in ROLE_MEMORY_KEYS:
-        try:
-            get_bundle(
-                role=role,
-                namespace=args.namespace,
-                cache_dir=_cache_dir(args),
-                ttl_seconds=_ttl(args),
-                refresh=True,
-            )
-            print(f"[octowiz-cache] built: {role}", file=sys.stderr)
-        except Exception as exc:
-            failures.append((role, str(exc)))
-            print(f"[octowiz-cache] FAILED: {role} — {exc}", file=sys.stderr)
-
-    if failures:
-        print(
-            f"[octowiz-cache] {len(failures)} role(s) failed: "
-            + ", ".join(r for r, _ in failures),
-            file=sys.stderr,
-        )
+    result = build_bundles(roles=list(ROLE_MEMORY_KEYS), namespace=args.namespace,
+                           cache_dir=_cache_dir(args), ttl_seconds=_ttl(args), refresh=True)
+    for role in result.built:
+        print(f"[octowiz-cache] built: {role}", file=sys.stderr)
+    for role, err in result.failed:
+        print(f"[octowiz-cache] FAILED: {role} — {err}", file=sys.stderr)
+    if result.failed:
+        print(f"[octowiz-cache] {len(result.failed)} role(s) failed: " +
+              ", ".join(r for r, _ in result.failed), file=sys.stderr)
         return 1
     return 0
 
