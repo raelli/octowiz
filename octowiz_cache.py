@@ -353,10 +353,10 @@ class CacheStore:
         self,
         role: str,
         namespace: str,
-        content: str,
         memories: List[Dict[str, Any]],
-    ) -> None:
+    ) -> str:
         """Write bundle to disk, update manifest, remove old bundle on hash change."""
+        content = render_bundle(role, memories)
         ns_dir = self._ns_dir(namespace)
         new_hash = hash_bundle(role, memories)
 
@@ -387,6 +387,7 @@ class CacheStore:
             "updated_at": time.time(),
         }
         _write_manifest(ns_dir, manifest)
+        return content
 
 
 # ---------------------------------------------------------------------------
@@ -453,8 +454,7 @@ def get_bundle(
                 pass
 
     # Step 3: Build bundle and write to disk
-    content = render_bundle(role, memories)
-    store.put(role, namespace, content, memories)
+    content = store.put(role, namespace, memories)
     return content
 
 

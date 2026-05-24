@@ -743,8 +743,7 @@ class TestCacheStorePut(unittest.TestCase):
             from pathlib import Path
             store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
             memories = self._make_memories()
-            content = octowiz_cache.render_bundle("routing", memories)
-            store.put("routing", "allspark", content, memories)
+            content = store.put("routing", "allspark", memories)
             result = store.get_fresh("routing", "allspark")
             self.assertEqual(result, content)
 
@@ -754,8 +753,7 @@ class TestCacheStorePut(unittest.TestCase):
             ns_dir = octowiz_cache._namespace_cache_dir(Path(tmpdir), "allspark")
             store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
             memories = self._make_memories()
-            content = octowiz_cache.render_bundle("routing", memories)
-            store.put("routing", "allspark", content, memories)
+            store.put("routing", "allspark", memories)
             manifest = octowiz_cache._read_manifest(ns_dir)
             self.assertIsNotNone(manifest)
             self.assertIn("routing", manifest["roles"])
@@ -787,9 +785,8 @@ class TestCacheStorePut(unittest.TestCase):
 
             # Now put a new bundle (different content → different hash)
             memories = self._make_memories()
-            content = octowiz_cache.render_bundle("routing", memories)
             store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
-            store.put("routing", "allspark", content, memories)
+            store.put("routing", "allspark", memories)
 
             # Old bundle file should be gone
             self.assertFalse(old_bundle_path.exists(), "Old bundle file should be deleted on hash change")
@@ -817,10 +814,9 @@ class TestCacheStorePut(unittest.TestCase):
             import json as _json
             (ns_dir / "manifest.json").write_text(_json.dumps(old_manifest), encoding="utf-8")
             memories = self._make_memories()
-            content = octowiz_cache.render_bundle("routing", memories)
             store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
             # Should not raise even though the old bundle file doesn't exist
-            store.put("routing", "allspark", content, memories)
+            store.put("routing", "allspark", memories)
             result = store.get_fresh("routing", "allspark")
             self.assertIsNotNone(result)
 
