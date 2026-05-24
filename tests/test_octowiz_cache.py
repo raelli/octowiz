@@ -1173,7 +1173,7 @@ class TestBuildBundles(unittest.TestCase):
             self.assertEqual(call.kwargs["refresh"], True)
 
     def test_key_error_classified_as_missing_key(self):
-        role = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())[0]
+        role = octowiz_cache.ROLE_REGISTRY.role_names()[0]
 
         def side_effect(role, namespace, cache_dir, ttl_seconds, refresh):
             raise KeyError("some-memory-key")
@@ -1187,7 +1187,7 @@ class TestBuildBundles(unittest.TestCase):
         self.assertEqual(result.failed[0].role, role)
 
     def test_runtime_error_with_api_key_classified_as_auth(self):
-        role = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())[0]
+        role = octowiz_cache.ROLE_REGISTRY.role_names()[0]
 
         def side_effect(role, namespace, cache_dir, ttl_seconds, refresh):
             raise RuntimeError("No LiteLLM API key configured")
@@ -1201,7 +1201,7 @@ class TestBuildBundles(unittest.TestCase):
         self.assertEqual(result.failed[0].role, role)
 
     def test_unknown_exception_classified_as_unknown(self):
-        role = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())[0]
+        role = octowiz_cache.ROLE_REGISTRY.role_names()[0]
 
         def side_effect(role, namespace, cache_dir, ttl_seconds, refresh):
             raise ValueError("something unexpected")
