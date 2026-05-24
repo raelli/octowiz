@@ -15,6 +15,7 @@ import sys
 import time
 import urllib.parse
 from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
@@ -516,10 +517,42 @@ def cache_status(
 # ---------------------------------------------------------------------------
 
 
+class FailureKind(Enum):
+    MISSING_KEY = auto()   # KeyError: memory key not found in LiteLLM
+    NETWORK = auto()       # httpx connectivity / timeout error
+    AUTH = auto()          # missing or invalid API key
+    UNKNOWN = auto()       # anything else
+
+
+@dataclass
+class BuildFailure:
+    role: str
+    exception: Exception
+    kind: FailureKind
+
+    def __str__(self) -> str:
+        return f"{self.role}: [{self.kind.name}] {self.exception}"
+
+
 @dataclass
 class BuildResult:
-    built: List[str]          # role names that succeeded
-    failed: List[tuple]       # list of (role, error_message) that failed
+    built: List[str]
+    failed: List[BuildFailure]
+
+
+def _classify_failure(exc: Exception) -> FailureKind:
+    if isinstance(exc, KeyError):
+        return FailureKind.MISSING_KEY
+    if isinstance(exc, RuntimeError) and "API key" in str(exc):
+        return FailureKind.AUTH
+    try:
+        import httpx as _httpx
+        if isinstance(exc, (_httpx.ConnectError, _httpx.TimeoutException,
+                             _httpx.NetworkError, _httpx.RemoteProtocolError)):
+            return FailureKind.NETWORK
+    except ImportError:
+        pass
+    return FailureKind.UNKNOWN
 
 
 def build_bundles(
@@ -538,5 +571,5 @@ def build_bundles(
                        ttl_seconds=ttl_seconds, refresh=refresh)
             built.append(role)
         except Exception as exc:
-            failed.append((role, str(exc)))
+            failed.append(BuildFailure(role=role, exception=exc, kind=_classify_failure(exc)))
     return BuildResult(built=built, failed=failed)

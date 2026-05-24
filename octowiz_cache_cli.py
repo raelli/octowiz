@@ -17,6 +17,7 @@ from octowiz_cache import (
     DEFAULT_CACHE_DIR,
     DEFAULT_TTL_SECONDS,
     ROLE_REGISTRY,
+    BuildFailure,
     BuildResult,
     RoleStatus,
     build_bundles,
@@ -84,11 +85,11 @@ def cmd_build(args) -> int:
                            cache_dir=_cache_dir(args), ttl_seconds=_ttl(args), refresh=False)
     for role in result.built:
         print(f"[octowiz-cache] built: {role}", file=sys.stderr)
-    for role, err in result.failed:
-        print(f"[octowiz-cache] FAILED: {role} — {err}", file=sys.stderr)
+    for failure in result.failed:
+        print(f"[octowiz-cache] FAILED: {failure.role} — {failure.exception}", file=sys.stderr)
     if result.failed:
         print(f"[octowiz-cache] {len(result.failed)} role(s) failed: " +
-              ", ".join(r for r, _ in result.failed), file=sys.stderr)
+              ", ".join(f.role for f in result.failed), file=sys.stderr)
         return 1
     return 0
 
@@ -116,11 +117,11 @@ def cmd_refresh(args) -> int:
                            cache_dir=_cache_dir(args), ttl_seconds=_ttl(args), refresh=True)
     for role in result.built:
         print(f"[octowiz-cache] built: {role}", file=sys.stderr)
-    for role, err in result.failed:
-        print(f"[octowiz-cache] FAILED: {role} — {err}", file=sys.stderr)
+    for failure in result.failed:
+        print(f"[octowiz-cache] FAILED: {failure.role} — {failure.exception}", file=sys.stderr)
     if result.failed:
         print(f"[octowiz-cache] {len(result.failed)} role(s) failed: " +
-              ", ".join(r for r, _ in result.failed), file=sys.stderr)
+              ", ".join(f.role for f in result.failed), file=sys.stderr)
         return 1
     return 0
 

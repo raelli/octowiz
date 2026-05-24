@@ -16,7 +16,9 @@ import httpx
 import octowiz_cache
 import octowiz_cache as _module
 from octowiz_cache import (
+    BuildFailure,
     BuildResult,
+    FailureKind,
     RoleStatus,
     build_bundles,
     cache_status,
@@ -1150,9 +1152,11 @@ class TestBuildBundles(unittest.TestCase):
                                    cache_dir="/tmp/test", ttl_seconds=3600, refresh=False)
 
         self.assertEqual(len(result.failed), 1)
-        failed_role, err_msg = result.failed[0]
-        self.assertEqual(failed_role, failing_role)
-        self.assertIn("fetch error", err_msg)
+        failure = result.failed[0]
+        self.assertIsInstance(failure, BuildFailure)
+        self.assertEqual(failure.role, failing_role)
+        self.assertIn("fetch error", str(failure.exception))
+        self.assertEqual(failure.kind, FailureKind.UNKNOWN)
         self.assertNotIn(failing_role, result.built)
         # All other roles should be in built
         for role in roles:
@@ -1168,6 +1172,47 @@ class TestBuildBundles(unittest.TestCase):
         for call in mock_gb.call_args_list:
             self.assertEqual(call.kwargs["refresh"], True)
 
+    def test_key_error_classified_as_missing_key(self):
+        role = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())[0]
+
+        def side_effect(role, namespace, cache_dir, ttl_seconds, refresh):
+            raise KeyError("some-memory-key")
+
+        with patch("octowiz_cache.get_bundle", side_effect=side_effect):
+            result = build_bundles(roles=[role], namespace="allspark",
+                                   cache_dir="/tmp/test", ttl_seconds=3600, refresh=False)
+
+        self.assertEqual(len(result.failed), 1)
+        self.assertEqual(result.failed[0].kind, FailureKind.MISSING_KEY)
+        self.assertEqual(result.failed[0].role, role)
+
+    def test_runtime_error_with_api_key_classified_as_auth(self):
+        role = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())[0]
+
+        def side_effect(role, namespace, cache_dir, ttl_seconds, refresh):
+            raise RuntimeError("No LiteLLM API key configured")
+
+        with patch("octowiz_cache.get_bundle", side_effect=side_effect):
+            result = build_bundles(roles=[role], namespace="allspark",
+                                   cache_dir="/tmp/test", ttl_seconds=3600, refresh=False)
+
+        self.assertEqual(len(result.failed), 1)
+        self.assertEqual(result.failed[0].kind, FailureKind.AUTH)
+        self.assertEqual(result.failed[0].role, role)
+
+    def test_unknown_exception_classified_as_unknown(self):
+        role = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())[0]
+
+        def side_effect(role, namespace, cache_dir, ttl_seconds, refresh):
+            raise ValueError("something unexpected")
+
+        with patch("octowiz_cache.get_bundle", side_effect=side_effect):
+            result = build_bundles(roles=[role], namespace="allspark",
+                                   cache_dir="/tmp/test", ttl_seconds=3600, refresh=False)
+
+        self.assertEqual(len(result.failed), 1)
+        self.assertEqual(result.failed[0].kind, FailureKind.UNKNOWN)
+        self.assertEqual(result.failed[0].role, role)
 
 
 if __name__ == "__main__":
