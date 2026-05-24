@@ -15,9 +15,60 @@ import sys
 import time
 import urllib.parse
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
 import httpx
+
+
+# ---------------------------------------------------------------------------
+# MemorySource Protocol
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class MemorySource(Protocol):
+    def fetch(self, key: str) -> Dict[str, Any]:
+        """Fetch one memory entry by key. Raises KeyError on 404."""
+        ...
+
+
+class LiteLLMMemorySource:
+    """Concrete MemorySource adapter backed by an httpx.Client."""
+
+    def __init__(self, client: httpx.Client) -> None:
+        self._client = client
+
+    def fetch(self, key: str) -> Dict[str, Any]:
+        """
+        GET /v1/memory/{url-encoded-key}.
+
+        On 404: raise KeyError naming the key.
+        Returns {"key": key, "value": str, "metadata": dict}.
+        """
+        encoded_key = urllib.parse.quote(key, safe="")
+        url = f"/v1/memory/{encoded_key}"
+        response = self._client.get(url)
+
+        if response.status_code == 404:
+            raise KeyError(f"Memory key not found in LiteLLM: {key!r}")
+
+        response.raise_for_status()
+        data = response.json()
+
+        value = data.get("value") or data.get("memory") or ""
+        if not isinstance(value, str):
+            print(
+                f"WARNING: Memory key {key!r} has non-string value, converting to JSON.",
+                file=sys.stderr,
+            )
+            value = json.dumps(value)
+
+        return {
+            "key": key,
+            "value": value,
+            "metadata": data.get("metadata", {}),
+        }
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -154,39 +205,16 @@ def get_litellm_client() -> httpx.Client:
 
 def fetch_memory(client: httpx.Client, key: str) -> Dict[str, Any]:
     """
-    GET /v1/memory/{url-encoded-key}.
+    Module-level convenience: delegates to LiteLLMMemorySource(client).fetch(key).
 
-    On 404: raise KeyError naming the key.
-    Returns {"key": key, "value": str, "metadata": dict}.
+    Kept for backward compatibility with existing callers.
     """
-    encoded_key = urllib.parse.quote(key, safe="")
-    url = f"/v1/memory/{encoded_key}"
-    response = client.get(url)
-
-    if response.status_code == 404:
-        raise KeyError(f"Memory key not found in LiteLLM: {key!r}")
-
-    response.raise_for_status()
-    data = response.json()
-
-    value = data.get("value") or data.get("memory") or ""
-    if not isinstance(value, str):
-        print(
-            f"WARNING: Memory key {key!r} has non-string value, converting to JSON.",
-            file=sys.stderr,
-        )
-        value = json.dumps(value)
-
-    return {
-        "key": key,
-        "value": value,
-        "metadata": data.get("metadata", {}),
-    }
+    return LiteLLMMemorySource(client).fetch(key)
 
 
-def fetch_role_memories(client: httpx.Client, role: str, namespace: str) -> List[Dict[str, Any]]:
+def fetch_role_memories(source: MemorySource, role: str, namespace: str) -> List[Dict[str, Any]]:
     """
-    Expand {namespace} in keys and fetch each memory in order.
+    Expand {namespace} in keys and fetch each memory in order via *source*.
     Any KeyError propagates immediately (fails the whole bundle).
     """
     if role not in ROLE_MEMORY_KEYS:
@@ -195,7 +223,7 @@ def fetch_role_memories(client: httpx.Client, role: str, namespace: str) -> List
         )
     raw_keys = ROLE_MEMORY_KEYS.get(role, [])
     expanded_keys = [k.replace("{namespace}", namespace) for k in raw_keys]
-    return [fetch_memory(client, key) for key in expanded_keys]
+    return [source.fetch(key) for key in expanded_keys]
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +278,89 @@ def _write_bundle(ns_dir: Path, role: str, bundle_hash: str, content: str) -> Pa
 
 
 # ---------------------------------------------------------------------------
+# CacheStore
+# ---------------------------------------------------------------------------
+
+
+class CacheStore:
+    """Encapsulates all disk I/O and freshness logic for bundled caches."""
+
+    def __init__(self, cache_dir: Path, ttl_seconds: int = DEFAULT_TTL_SECONDS) -> None:
+        self._cache_dir = cache_dir
+        self._ttl = ttl_seconds
+
+    def _ns_dir(self, namespace: str) -> Path:
+        return _namespace_cache_dir(self._cache_dir, namespace)
+
+    def get_fresh(self, role: str, namespace: str) -> Optional[str]:
+        """Return cached bundle content if fresh and schema-valid, else None."""
+        ns_dir = self._ns_dir(namespace)
+        manifest = _read_manifest(ns_dir)
+        if manifest is None:
+            return None
+        if manifest.get("schema_version") != CACHE_SCHEMA_VERSION:
+            return None  # schema mismatch — force rebuild
+        role_entry = manifest.get("roles", {}).get(role)
+        if not role_entry:
+            return None
+        if not manifest_is_fresh(role_entry, self._ttl):
+            return None
+        bundle_hash = role_entry.get("bundle_hash", "")
+        return _read_bundle(ns_dir, role, bundle_hash)
+
+    def get_stale(self, role: str, namespace: str) -> Optional[str]:
+        """Return any cached bundle regardless of freshness, else None."""
+        ns_dir = self._ns_dir(namespace)
+        manifest = _read_manifest(ns_dir)
+        if manifest is None:
+            return None
+        role_entry = manifest.get("roles", {}).get(role)
+        if not role_entry:
+            return None
+        bundle_hash = role_entry.get("bundle_hash", "")
+        return _read_bundle(ns_dir, role, bundle_hash)
+
+    def put(
+        self,
+        role: str,
+        namespace: str,
+        content: str,
+        memories: List[Dict[str, Any]],
+    ) -> None:
+        """Write bundle to disk, update manifest, remove old bundle on hash change."""
+        ns_dir = self._ns_dir(namespace)
+        new_hash = hash_bundle(role, memories)
+
+        # Remove old bundle file if the hash changed
+        old_manifest = _read_manifest(ns_dir)
+        if old_manifest is not None:
+            old_entry = old_manifest.get("roles", {}).get(role)
+            if old_entry:
+                old_hash = old_entry.get("bundle_hash", "")
+                if old_hash and old_hash != new_hash:
+                    old_bundle_path = ns_dir / "bundles" / role / f"{old_hash}.md"
+                    try:
+                        old_bundle_path.unlink()
+                    except OSError:
+                        pass
+
+        bundle_path = _write_bundle(ns_dir, role, new_hash, content)
+        memory_hashes = {m["key"]: hash_memory(m) for m in memories}
+
+        manifest = _read_manifest(ns_dir) or {"namespace": namespace, "roles": {}}
+        manifest["namespace"] = namespace
+        manifest["updated_at"] = time.time()
+        manifest["ttl_seconds"] = self._ttl
+        manifest.setdefault("roles", {})[role] = {
+            "bundle_hash": new_hash,
+            "bundle_path": str(bundle_path.relative_to(ns_dir)),
+            "memory_hashes": memory_hashes,
+            "updated_at": time.time(),
+        }
+        _write_manifest(ns_dir, manifest)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -277,47 +388,33 @@ def get_bundle(
         raise ValueError(
             f"Invalid namespace {namespace!r}. Use only letters, digits, hyphens, and underscores."
         )
-    # Resolve cache directory
-    if cache_dir is None:
-        cache_dir = Path(os.environ.get("OCTOWIZ_CACHE_DIR", str(DEFAULT_CACHE_DIR)))
-    else:
-        cache_dir = Path(cache_dir)
 
-    ns_dir = _namespace_cache_dir(cache_dir, namespace)
+    resolved_dir = Path(cache_dir) if cache_dir is not None else Path(
+        os.environ.get("OCTOWIZ_CACHE_DIR", str(DEFAULT_CACHE_DIR))
+    )
+    store = CacheStore(resolved_dir, ttl_seconds)
 
     # Step 1: serve from cache if fresh and not forced refresh
     if not refresh:
-        manifest = _read_manifest(ns_dir)
-        if manifest and manifest.get("schema_version") != CACHE_SCHEMA_VERSION:
-            manifest = None  # force rebuild — schema changed
-        if manifest is not None:
-            role_entry = manifest.get("roles", {}).get(role)
-            if role_entry and manifest_is_fresh(role_entry, ttl_seconds):
-                bundle_hash = role_entry.get("bundle_hash", "")
-                cached_content = _read_bundle(ns_dir, role, bundle_hash)
-                if cached_content is not None:
-                    return cached_content
+        cached = store.get_fresh(role, namespace)
+        if cached is not None:
+            return cached
 
     # Step 2: Fetch from LiteLLM; fall back to stale cache on failure
     client = None
     try:
         client = get_litellm_client()
-        memories = fetch_role_memories(client, role, namespace)
+        source = LiteLLMMemorySource(client)
+        memories = fetch_role_memories(source, role, namespace)
     except Exception as exc:
-        # Attempt stale fallback
-        manifest = _read_manifest(ns_dir)
-        if manifest is not None:
-            role_entry = manifest.get("roles", {}).get(role)
-            if role_entry:
-                bundle_hash = role_entry.get("bundle_hash", "")
-                cached_content = _read_bundle(ns_dir, role, bundle_hash)
-                if cached_content is not None:
-                    print(
-                        f"WARNING: LiteLLM unavailable ({exc}); serving stale cache for "
-                        f"role={role!r} namespace={namespace!r}.",
-                        file=sys.stderr,
-                    )
-                    return cached_content
+        stale = store.get_stale(role, namespace)
+        if stale is not None:
+            print(
+                f"WARNING: LiteLLM unavailable ({exc}); serving stale cache for "
+                f"role={role!r} namespace={namespace!r}.",
+                file=sys.stderr,
+            )
+            return stale
         raise
     finally:
         if client is not None:
@@ -328,24 +425,5 @@ def get_bundle(
 
     # Step 3: Build bundle and write to disk
     content = render_bundle(role, memories)
-    bundle_hash = hash_bundle(role, memories)
-
-    bundle_path = _write_bundle(ns_dir, role, bundle_hash, content)
-
-    # Build per-memory hash map (keyed by expanded key)
-    memory_hashes = {m["key"]: hash_memory(m) for m in memories}
-
-    # Update manifest
-    manifest = _read_manifest(ns_dir) or {"namespace": namespace, "roles": {}}
-    manifest["namespace"] = namespace
-    manifest["updated_at"] = time.time()
-    manifest["ttl_seconds"] = ttl_seconds
-    manifest.setdefault("roles", {})[role] = {
-        "bundle_hash": bundle_hash,
-        "bundle_path": str(bundle_path.relative_to(ns_dir)),
-        "memory_hashes": memory_hashes,
-        "updated_at": time.time(),
-    }
-    _write_manifest(ns_dir, manifest)
-
+    store.put(role, namespace, content, memories)
     return content

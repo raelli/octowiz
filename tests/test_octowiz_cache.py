@@ -503,5 +503,399 @@ class TestRoutingRoleConfigNamespace(unittest.TestCase):
         )
 
 
+# ---------------------------------------------------------------------------
+# MemorySource Protocol — DictMemorySource test double
+# ---------------------------------------------------------------------------
+
+
+class DictMemorySource:
+    """In-memory MemorySource backed by a plain dict. For use in tests."""
+
+    def __init__(self, data: dict):
+        # data: {key: {"key": ..., "value": ..., "metadata": {...}}}
+        self._data = data
+
+    def fetch(self, key: str) -> dict:
+        if key not in self._data:
+            raise KeyError(f"Memory key not found: {key!r}")
+        return dict(self._data[key])
+
+
+class TestMemorySourceProtocol(unittest.TestCase):
+    """DictMemorySource satisfies the MemorySource Protocol and works in fetch_role_memories."""
+
+    def _make_source_for_role(self, role="routing", namespace="allspark"):
+        from octowiz_cache import ROLE_MEMORY_KEYS
+        keys = [k.replace("{namespace}", namespace) for k in ROLE_MEMORY_KEYS[role]]
+        data = {k: {"key": k, "value": f"value for {k}", "metadata": {}} for k in keys}
+        return DictMemorySource(data)
+
+    def test_dict_memory_source_fetch_returns_entry(self):
+        source = DictMemorySource({"k:1": {"key": "k:1", "value": "v", "metadata": {}}})
+        result = source.fetch("k:1")
+        self.assertEqual(result["key"], "k:1")
+        self.assertEqual(result["value"], "v")
+
+    def test_dict_memory_source_fetch_raises_key_error_on_missing(self):
+        source = DictMemorySource({})
+        with self.assertRaises(KeyError):
+            source.fetch("missing:key")
+
+    def test_dict_memory_source_works_in_fetch_role_memories(self):
+        source = self._make_source_for_role("routing", "allspark")
+        results = octowiz_cache.fetch_role_memories(source, "routing", "allspark")
+        self.assertIsInstance(results, list)
+        self.assertTrue(len(results) > 0)
+        for mem in results:
+            self.assertIn("key", mem)
+            self.assertIn("value", mem)
+
+    def test_dict_memory_source_satisfies_protocol(self):
+        from octowiz_cache import MemorySource
+        source = DictMemorySource({})
+        self.assertIsInstance(source, MemorySource)
+
+
+# ---------------------------------------------------------------------------
+# LiteLLMMemorySource
+# ---------------------------------------------------------------------------
+
+
+class TestLiteLLMMemorySource(unittest.TestCase):
+    def _make_client(self, response_data=None, status_code=200):
+        mock_response = MagicMock()
+        mock_response.status_code = status_code
+        if response_data is not None:
+            mock_response.json.return_value = response_data
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+        return mock_client
+
+    def test_200_success_returns_dict(self):
+        data = {"key": "team:allspark:playbook:overview", "value": "content", "metadata": {}}
+        client = self._make_client(response_data=data, status_code=200)
+        source = octowiz_cache.LiteLLMMemorySource(client)
+        result = source.fetch("team:allspark:playbook:overview")
+        self.assertEqual(result["key"], "team:allspark:playbook:overview")
+        self.assertEqual(result["value"], "content")
+        self.assertIsInstance(result["metadata"], dict)
+
+    def test_404_raises_key_error(self):
+        client = self._make_client(status_code=404)
+        source = octowiz_cache.LiteLLMMemorySource(client)
+        with self.assertRaises(KeyError) as ctx:
+            source.fetch("team:allspark:missing")
+        self.assertIn("team:allspark:missing", str(ctx.exception))
+
+    def test_non_string_value_emits_warning_and_converts(self):
+        data = {"key": "k", "value": {"nested": "dict"}, "metadata": {}}
+        client = self._make_client(response_data=data, status_code=200)
+        source = octowiz_cache.LiteLLMMemorySource(client)
+        import io
+        with patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
+            result = source.fetch("k")
+        warning = mock_stderr.getvalue()
+        self.assertIn("WARNING", warning)
+        self.assertIn("non-string", warning)
+        # value must be a JSON string now
+        self.assertIsInstance(result["value"], str)
+        parsed = json.loads(result["value"])
+        self.assertEqual(parsed, {"nested": "dict"})
+
+    def test_url_encodes_colons_in_key(self):
+        data = {"key": "team:allspark:playbook", "value": "v", "metadata": {}}
+        client = self._make_client(response_data=data, status_code=200)
+        source = octowiz_cache.LiteLLMMemorySource(client)
+        source.fetch("team:allspark:playbook")
+        called_url = client.get.call_args[0][0]
+        self.assertIn("%3A", called_url)
+
+
+# ---------------------------------------------------------------------------
+# CacheStore
+# ---------------------------------------------------------------------------
+
+
+class TestCacheStoreFresh(unittest.TestCase):
+    def _build_store(self, tmpdir, ttl=3600):
+        from pathlib import Path
+        return octowiz_cache.CacheStore(Path(tmpdir), ttl)
+
+    def _write_fresh_bundle(self, tmpdir, role="routing", namespace="allspark", content="# bundle"):
+        """Write a fresh bundle manually via the private helpers."""
+        from pathlib import Path
+        ns_dir = octowiz_cache._namespace_cache_dir(Path(tmpdir), namespace)
+        bundle_hash = "abc123def456"
+        octowiz_cache._write_bundle(ns_dir, role, bundle_hash, content)
+        manifest = {
+            "namespace": namespace,
+            "updated_at": time.time(),
+            "ttl_seconds": 3600,
+            "roles": {
+                role: {
+                    "bundle_hash": bundle_hash,
+                    "bundle_path": f"bundles/{role}/{bundle_hash}.md",
+                    "updated_at": time.time(),
+                    "memory_hashes": {},
+                }
+            },
+        }
+        octowiz_cache._write_manifest(ns_dir, manifest)
+        return bundle_hash
+
+    def test_get_fresh_returns_content_when_fresh(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            content = "# Fresh Bundle\n"
+            self._write_fresh_bundle(tmpdir, content=content)
+            store = self._build_store(tmpdir)
+            result = store.get_fresh("routing", "allspark")
+            self.assertEqual(result, content)
+
+    def test_get_fresh_returns_none_when_stale(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._write_fresh_bundle(tmpdir)
+            store = self._build_store(tmpdir, ttl=0)  # immediately expired
+            result = store.get_fresh("routing", "allspark")
+            self.assertIsNone(result)
+
+    def test_get_fresh_returns_none_when_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = self._build_store(tmpdir)
+            result = store.get_fresh("routing", "allspark")
+            self.assertIsNone(result)
+
+    def test_get_fresh_returns_none_on_schema_version_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            ns_dir = octowiz_cache._namespace_cache_dir(Path(tmpdir), "allspark")
+            bundle_hash = "schema_test_hash"
+            octowiz_cache._write_bundle(ns_dir, "routing", bundle_hash, "# old")
+            # Write a manifest with wrong schema version directly
+            ns_dir.mkdir(parents=True, exist_ok=True)
+            bad_manifest = {
+                "namespace": "allspark",
+                "updated_at": time.time(),
+                "schema_version": 99999,
+                "ttl_seconds": 3600,
+                "roles": {
+                    "routing": {
+                        "bundle_hash": bundle_hash,
+                        "bundle_path": f"bundles/routing/{bundle_hash}.md",
+                        "updated_at": time.time(),
+                        "memory_hashes": {},
+                    }
+                },
+            }
+            import json as _json
+            (ns_dir / "manifest.json").write_text(_json.dumps(bad_manifest), encoding="utf-8")
+            store = self._build_store(tmpdir)
+            result = store.get_fresh("routing", "allspark")
+            self.assertIsNone(result)
+
+
+class TestCacheStoreStale(unittest.TestCase):
+    def test_get_stale_returns_content_regardless_of_freshness(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            ns_dir = octowiz_cache._namespace_cache_dir(Path(tmpdir), "allspark")
+            bundle_hash = "stale_hash"
+            content = "# Stale Bundle\n"
+            octowiz_cache._write_bundle(ns_dir, "routing", bundle_hash, content)
+            manifest = {
+                "namespace": "allspark",
+                "updated_at": time.time() - 9999,  # definitely expired
+                "ttl_seconds": 1,
+                "roles": {
+                    "routing": {
+                        "bundle_hash": bundle_hash,
+                        "bundle_path": f"bundles/routing/{bundle_hash}.md",
+                        "updated_at": time.time() - 9999,
+                        "memory_hashes": {},
+                    }
+                },
+            }
+            octowiz_cache._write_manifest(ns_dir, manifest)
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=1)
+            result = store.get_stale("routing", "allspark")
+            self.assertEqual(result, content)
+
+    def test_get_stale_returns_none_when_no_cache(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
+            result = store.get_stale("routing", "allspark")
+            self.assertIsNone(result)
+
+
+class TestCacheStorePut(unittest.TestCase):
+    def _make_memories(self, role="routing", namespace="allspark"):
+        from octowiz_cache import ROLE_MEMORY_KEYS
+        keys = [k.replace("{namespace}", namespace) for k in ROLE_MEMORY_KEYS[role]]
+        return [{"key": k, "value": f"content {k}", "metadata": {}} for k in keys]
+
+    def test_put_writes_bundle_to_disk(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
+            memories = self._make_memories()
+            content = octowiz_cache.render_bundle("routing", memories)
+            store.put("routing", "allspark", content, memories)
+            result = store.get_fresh("routing", "allspark")
+            self.assertEqual(result, content)
+
+    def test_put_updates_manifest(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            ns_dir = octowiz_cache._namespace_cache_dir(Path(tmpdir), "allspark")
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
+            memories = self._make_memories()
+            content = octowiz_cache.render_bundle("routing", memories)
+            store.put("routing", "allspark", content, memories)
+            manifest = octowiz_cache._read_manifest(ns_dir)
+            self.assertIsNotNone(manifest)
+            self.assertIn("routing", manifest["roles"])
+            self.assertIn("bundle_hash", manifest["roles"]["routing"])
+
+    def test_put_removes_old_bundle_on_hash_change(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            ns_dir = octowiz_cache._namespace_cache_dir(Path(tmpdir), "allspark")
+            # Write old bundle with a specific hash
+            old_hash = "oldbundlehash111"
+            old_bundle_path = ns_dir / "bundles" / "routing" / f"{old_hash}.md"
+            octowiz_cache._write_bundle(ns_dir, "routing", old_hash, "# old bundle\n")
+            # Write an old manifest
+            old_manifest = {
+                "namespace": "allspark",
+                "updated_at": time.time(),
+                "ttl_seconds": 3600,
+                "roles": {
+                    "routing": {
+                        "bundle_hash": old_hash,
+                        "bundle_path": f"bundles/routing/{old_hash}.md",
+                        "updated_at": time.time(),
+                        "memory_hashes": {},
+                    }
+                },
+            }
+            octowiz_cache._write_manifest(ns_dir, old_manifest)
+
+            # Now put a new bundle (different content → different hash)
+            memories = self._make_memories()
+            content = octowiz_cache.render_bundle("routing", memories)
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
+            store.put("routing", "allspark", content, memories)
+
+            # Old bundle file should be gone
+            self.assertFalse(old_bundle_path.exists(), "Old bundle file should be deleted on hash change")
+
+    def test_put_does_not_fail_if_old_bundle_already_deleted(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            ns_dir = octowiz_cache._namespace_cache_dir(Path(tmpdir), "allspark")
+            old_hash = "alreadygonehash"
+            # Write a manifest pointing to a nonexistent bundle file
+            old_manifest = {
+                "namespace": "allspark",
+                "updated_at": time.time(),
+                "ttl_seconds": 3600,
+                "roles": {
+                    "routing": {
+                        "bundle_hash": old_hash,
+                        "bundle_path": f"bundles/routing/{old_hash}.md",
+                        "updated_at": time.time(),
+                        "memory_hashes": {},
+                    }
+                },
+            }
+            ns_dir.mkdir(parents=True, exist_ok=True)
+            import json as _json
+            (ns_dir / "manifest.json").write_text(_json.dumps(old_manifest), encoding="utf-8")
+            memories = self._make_memories()
+            content = octowiz_cache.render_bundle("routing", memories)
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
+            # Should not raise even though the old bundle file doesn't exist
+            store.put("routing", "allspark", content, memories)
+            result = store.get_fresh("routing", "allspark")
+            self.assertIsNotNone(result)
+
+
+# ---------------------------------------------------------------------------
+# get_bundle end-to-end with DictMemorySource
+# ---------------------------------------------------------------------------
+
+
+class TestGetBundleWithDictMemorySource(unittest.TestCase):
+    def _make_dict_source_for_role(self, role, namespace="allspark"):
+        from octowiz_cache import ROLE_MEMORY_KEYS
+        keys = [k.replace("{namespace}", namespace) for k in ROLE_MEMORY_KEYS[role]]
+        data = {k: {"key": k, "value": f"value for {k}", "metadata": {}} for k in keys}
+        return DictMemorySource(data)
+
+    def _patch_with_dict_source(self, role, namespace="allspark"):
+        """
+        Return a context manager pair: patches get_litellm_client and
+        fetch_role_memories so get_bundle uses DictMemorySource internally.
+        """
+        source = self._make_dict_source_for_role(role, namespace)
+        from octowiz_cache import ROLE_MEMORY_KEYS
+        keys = [k.replace("{namespace}", namespace) for k in ROLE_MEMORY_KEYS[role]]
+        memories = [source.fetch(k) for k in keys]
+        # We patch fetch_role_memories directly (it's already tested separately)
+        return memories
+
+    def test_get_bundle_end_to_end_with_dict_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            role, namespace = "routing", "allspark"
+            memories = self._patch_with_dict_source(role, namespace)
+            with patch("octowiz_cache.get_litellm_client", return_value=MagicMock()):
+                with patch("octowiz_cache.fetch_role_memories", return_value=memories):
+                    result = octowiz_cache.get_bundle(role, namespace, cache_dir=tmpdir)
+            self.assertIsInstance(result, str)
+            self.assertIn("Octowiz Doctrine Bundle", result)
+
+    def test_cache_hit_on_second_call(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            role, namespace = "routing", "allspark"
+            memories = self._patch_with_dict_source(role, namespace)
+            mock_fetch = MagicMock(return_value=memories)
+            with patch("octowiz_cache.get_litellm_client", return_value=MagicMock()):
+                with patch("octowiz_cache.fetch_role_memories", mock_fetch):
+                    octowiz_cache.get_bundle(role, namespace, cache_dir=tmpdir)
+                    # Second call — should hit cache, not call fetch_role_memories again
+                    octowiz_cache.get_bundle(role, namespace, cache_dir=tmpdir)
+            self.assertEqual(mock_fetch.call_count, 1, "fetch_role_memories should only be called once")
+
+    def test_refresh_forces_fetch_with_dict_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            role, namespace = "routing", "allspark"
+            memories = self._patch_with_dict_source(role, namespace)
+            mock_fetch = MagicMock(return_value=memories)
+            with patch("octowiz_cache.get_litellm_client", return_value=MagicMock()):
+                with patch("octowiz_cache.fetch_role_memories", mock_fetch):
+                    octowiz_cache.get_bundle(role, namespace, cache_dir=tmpdir)
+                    octowiz_cache.get_bundle(role, namespace, cache_dir=tmpdir, refresh=True)
+            self.assertEqual(mock_fetch.call_count, 2, "refresh=True must call fetch_role_memories again")
+
+    def test_stale_fallback_with_dict_source(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            role, namespace = "routing", "allspark"
+            memories = self._patch_with_dict_source(role, namespace)
+            # First: populate cache
+            with patch("octowiz_cache.get_litellm_client", return_value=MagicMock()):
+                with patch("octowiz_cache.fetch_role_memories", return_value=memories):
+                    first_result = octowiz_cache.get_bundle(role, namespace, cache_dir=tmpdir)
+
+            # Now: LiteLLM is down, TTL=0 (expired), expect stale fallback
+            import io
+            with patch("octowiz_cache.get_litellm_client", side_effect=RuntimeError("LiteLLM down")):
+                with patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
+                    result = octowiz_cache.get_bundle(
+                        role, namespace, cache_dir=tmpdir, ttl_seconds=0, refresh=True
+                    )
+            self.assertEqual(result, first_result)
+            self.assertIn("WARNING", mock_stderr.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
