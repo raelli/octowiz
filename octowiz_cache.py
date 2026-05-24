@@ -46,6 +46,7 @@ ROLE_MEMORY_KEYS: Dict[str, List[str]] = {
         "team:{namespace}:skills:obra-superpowers:agent-methodology",
         "agent:reviewer:memory:ai-coding-workflow",
     ],
+    # reserved — not yet wired to a coordinator workflow option
     "qa": [
         "team:{namespace}:playbook:ai-coding-workflow:manual-qa-taste",
         "team:{namespace}:playbook:ai-coding-workflow:frontend-prototypes",
@@ -330,7 +331,19 @@ def get_bundle(
     content = render_bundle(role, memories)
     bundle_hash = hash_bundle(role, memories)
 
+    # Capture previous hash before overwriting manifest so we can clean it up
+    old_manifest = _read_manifest(ns_dir)
+    old_bundle_hash = (old_manifest or {}).get("roles", {}).get(role, {}).get("bundle_hash")
+
     bundle_path = _write_bundle(ns_dir, role, bundle_hash, content)
+
+    # Remove the old bundle file if content changed
+    if old_bundle_hash and old_bundle_hash != bundle_hash:
+        old_path = ns_dir / "bundles" / role / f"{old_bundle_hash}.md"
+        try:
+            old_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     # Build per-memory hash map (keyed by expanded key)
     memory_hashes = {m["key"]: hash_memory(m) for m in memories}

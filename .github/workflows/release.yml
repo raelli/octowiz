@@ -50,6 +50,10 @@ with open('.claude-plugin/plugin.json', 'w') as f:
           sed -i "s/^version = \"$OLD\"/version = \"$NEW\"/" pyproject.toml
 
       - name: Commit and tag
+        # NOTE: if main has branch protection requiring pull requests, the
+        # default GITHUB_TOKEN cannot push directly. Create a PAT with repo
+        # write access, store it as RELEASE_TOKEN, and replace the token:
+        # value in the checkout step with ${{ secrets.RELEASE_TOKEN }}.
         run: |
           NEW="${{ steps.bump.outputs.new_version }}"
           git add .claude-plugin/plugin.json pyproject.toml

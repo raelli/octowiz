@@ -503,5 +503,197 @@ class TestRoutingRoleConfigNamespace(unittest.TestCase):
         )
 
 
+# ---------------------------------------------------------------------------
+# CLI layer (octowiz_cache_cli)
+# ---------------------------------------------------------------------------
+
+import io
+import argparse
+import octowiz_cache_cli
+from octowiz_cache_cli import (
+    cmd_get,
+    cmd_build,
+    cmd_refresh,
+    cmd_status,
+    cmd_clear,
+    main,
+)
+
+
+def _args(**kwargs):
+    defaults = {"namespace": "allspark", "ttl_seconds": None, "cache_dir": None, "refresh_memory": False}
+    defaults.update(kwargs)
+    return argparse.Namespace(**defaults)
+
+
+class TestCLICommands(unittest.TestCase):
+    def test_cmd_get_success_writes_content_to_stdout(self):
+        with patch("octowiz_cache_cli.get_bundle", return_value="# Bundle\n"):
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                rc = cmd_get(_args(role="routing"))
+        self.assertEqual(rc, 0)
+        self.assertIn("Bundle", mock_out.getvalue())
+
+    def test_cmd_get_value_error_exits_1(self):
+        with patch("octowiz_cache_cli.get_bundle", side_effect=ValueError("bad namespace")):
+            with patch("sys.stderr", new_callable=io.StringIO) as mock_err:
+                rc = cmd_get(_args(role="routing"))
+        self.assertEqual(rc, 1)
+        self.assertIn("bad namespace", mock_err.getvalue())
+
+    def test_cmd_get_runtime_error_exits_1(self):
+        with patch("octowiz_cache_cli.get_bundle", side_effect=RuntimeError("no key")):
+            with patch("sys.stderr", new_callable=io.StringIO) as mock_err:
+                rc = cmd_get(_args(role="routing"))
+        self.assertEqual(rc, 1)
+        self.assertIn("no key", mock_err.getvalue())
+
+    def test_cmd_get_key_error_exits_1(self):
+        with patch("octowiz_cache_cli.get_bundle", side_effect=KeyError("missing")):
+            with patch("sys.stderr", new_callable=io.StringIO):
+                rc = cmd_get(_args(role="routing"))
+        self.assertEqual(rc, 1)
+
+    def test_cmd_build_single_role_success(self):
+        with patch("octowiz_cache_cli.get_bundle", return_value="# content\n"):
+            with patch("sys.stderr", new_callable=io.StringIO):
+                rc = cmd_build(_args(role="routing", **{"all": False}))
+        self.assertEqual(rc, 0)
+
+    def test_cmd_build_all_roles_success(self):
+        with patch("octowiz_cache_cli.get_bundle", return_value="# content\n") as mock_gb:
+            with patch("sys.stderr", new_callable=io.StringIO):
+                rc = cmd_build(_args(**{"all": True, "role": None}))
+        self.assertEqual(rc, 0)
+        self.assertEqual(mock_gb.call_count, len(octowiz_cache.ROLE_MEMORY_KEYS))
+
+    def test_cmd_build_failure_returns_1(self):
+        with patch("octowiz_cache_cli.get_bundle", side_effect=RuntimeError("down")):
+            with patch("sys.stderr", new_callable=io.StringIO):
+                rc = cmd_build(_args(role="routing", **{"all": False}))
+        self.assertEqual(rc, 1)
+
+    def test_cmd_refresh_calls_get_bundle_with_refresh_true(self):
+        with patch("octowiz_cache_cli.get_bundle", return_value="# content\n") as mock_gb:
+            with patch("sys.stderr", new_callable=io.StringIO):
+                rc = cmd_refresh(_args())
+        self.assertEqual(rc, 0)
+        for c in mock_gb.call_args_list:
+            self.assertTrue(c.kwargs["refresh"], "refresh must be True in all cmd_refresh calls")
+
+    def test_cmd_refresh_partial_failure_returns_1(self):
+        call_count = [0]
+
+        def side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("transient")
+            return "# content\n"
+
+        with patch("octowiz_cache_cli.get_bundle", side_effect=side_effect):
+            with patch("sys.stderr", new_callable=io.StringIO):
+                rc = cmd_refresh(_args())
+        self.assertEqual(rc, 1)
+
+    def test_cmd_status_empty_cache_shows_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                rc = cmd_status(_args(cache_dir=tmpdir))
+        self.assertEqual(rc, 0)
+        self.assertIn("missing", mock_out.getvalue())
+
+    def test_cmd_status_fresh_cache_shows_fresh(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ns_dir = Path(tmpdir) / "namespaces" / "allspark"
+            manifest = {
+                "namespace": "allspark",
+                "updated_at": time.time(),
+                "roles": {
+                    "routing": {
+                        "bundle_hash": "abc",
+                        "bundle_path": "bundles/routing/abc.md",
+                        "updated_at": time.time(),
+                        "memory_hashes": {},
+                    }
+                },
+            }
+            octowiz_cache._write_manifest(ns_dir, manifest)
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+                rc = cmd_status(_args(cache_dir=tmpdir))
+        self.assertEqual(rc, 0)
+        output = mock_out.getvalue()
+        self.assertIn("fresh", output)
+
+    def test_cmd_clear_removes_namespace_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ns_path = Path(tmpdir) / "namespaces" / "allspark"
+            ns_path.mkdir(parents=True)
+            (ns_path / "manifest.json").write_text("{}")
+            with patch("sys.stderr", new_callable=io.StringIO):
+                rc = cmd_clear(_args(cache_dir=tmpdir, all_namespaces=False))
+        self.assertEqual(rc, 0)
+        self.assertFalse(ns_path.exists())
+
+    def test_cmd_clear_all_namespaces(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for ns in ("allspark", "other"):
+                (Path(tmpdir) / "namespaces" / ns).mkdir(parents=True)
+            with patch("sys.stderr", new_callable=io.StringIO):
+                rc = cmd_clear(_args(cache_dir=tmpdir, all_namespaces=True))
+        self.assertEqual(rc, 0)
+        self.assertFalse(Path(tmpdir).exists())
+
+    def test_main_dispatches_get_subcommand(self):
+        with patch("sys.argv", ["octowiz-cache", "get", "--role", "routing"]):
+            with patch("octowiz_cache_cli.get_bundle", return_value="# content\n"):
+                with patch("sys.stdout", new_callable=io.StringIO):
+                    rc = main()
+        self.assertEqual(rc, 0)
+
+
+# ---------------------------------------------------------------------------
+# Bundle cleanup on hash change
+# ---------------------------------------------------------------------------
+
+
+class TestBundleCleanup(unittest.TestCase):
+    def test_old_bundle_deleted_when_content_changes(self):
+        mem_v1 = [{"key": "team:allspark:config:retrieval-contract", "value": "v1", "metadata": {}}]
+        mem_v2 = [{"key": "team:allspark:config:retrieval-contract", "value": "v2", "metadata": {}}]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("octowiz_cache.fetch_role_memories", return_value=mem_v1):
+                with patch("octowiz_cache.get_litellm_client", return_value=MagicMock()):
+                    octowiz_cache.get_bundle("routing", "allspark", cache_dir=tmpdir)
+
+            ns_dir = Path(tmpdir) / "namespaces" / "allspark"
+            first_hash = octowiz_cache.hash_bundle("routing", mem_v1)
+            first_path = ns_dir / "bundles" / "routing" / f"{first_hash}.md"
+            self.assertTrue(first_path.exists(), "first bundle must exist after initial fetch")
+
+            with patch("octowiz_cache.fetch_role_memories", return_value=mem_v2):
+                with patch("octowiz_cache.get_litellm_client", return_value=MagicMock()):
+                    octowiz_cache.get_bundle("routing", "allspark", cache_dir=tmpdir, refresh=True)
+
+            second_hash = octowiz_cache.hash_bundle("routing", mem_v2)
+            second_path = ns_dir / "bundles" / "routing" / f"{second_hash}.md"
+            self.assertFalse(first_path.exists(), "old bundle file must be cleaned up after content change")
+            self.assertTrue(second_path.exists(), "new bundle file must exist")
+
+    def test_no_cleanup_when_content_unchanged(self):
+        mem = [{"key": "team:allspark:config:retrieval-contract", "value": "same", "metadata": {}}]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("octowiz_cache.fetch_role_memories", return_value=mem):
+                with patch("octowiz_cache.get_litellm_client", return_value=MagicMock()):
+                    octowiz_cache.get_bundle("routing", "allspark", cache_dir=tmpdir)
+                    octowiz_cache.get_bundle("routing", "allspark", cache_dir=tmpdir, refresh=True)
+
+            ns_dir = Path(tmpdir) / "namespaces" / "allspark"
+            bundle_hash = octowiz_cache.hash_bundle("routing", mem)
+            bundle_path = ns_dir / "bundles" / "routing" / f"{bundle_hash}.md"
+            self.assertTrue(bundle_path.exists(), "bundle file must still exist when content is unchanged")
+
+
 if __name__ == "__main__":
     unittest.main()
