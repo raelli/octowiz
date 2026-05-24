@@ -16,6 +16,10 @@ import httpx
 import octowiz_cache
 import octowiz_cache as _module
 from octowiz_cache import (
+    BuildResult,
+    RoleStatus,
+    build_bundles,
+    cache_status,
     fetch_memory,
     get_bundle,
     get_litellm_client,
@@ -898,6 +902,8 @@ class TestGetBundleWithDictMemorySource(unittest.TestCase):
             self.assertIn("WARNING", mock_stderr.getvalue())
 
 
+
+
 class TestRoleRegistry(unittest.TestCase):
     def test_has_role_known_role(self):
         self.assertTrue(octowiz_cache.ROLE_REGISTRY.has_role("planner"))
@@ -953,6 +959,132 @@ class TestRoleRegistryDriftDetection(unittest.TestCase):
                 octowiz_cache.ROLE_REGISTRY,
                 f"Role {role!r} mentioned in skill.md but not in ROLE_REGISTRY",
             )
+
+
+
+
+class TestCacheStatus(unittest.TestCase):
+    def test_empty_cache_all_roles_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            statuses = cache_status(namespace="allspark", cache_dir=tmpdir)
+        for s in statuses:
+            self.assertIsInstance(s, RoleStatus)
+            self.assertFalse(s.is_fresh)
+            self.assertIsNone(s.age_seconds)
+
+    def test_returns_one_status_per_role(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            statuses = cache_status(namespace="allspark", cache_dir=tmpdir)
+        role_names = [s.role for s in statuses]
+        self.assertEqual(sorted(role_names), sorted(octowiz_cache.ROLE_MEMORY_KEYS.keys()))
+
+    def test_fresh_cache_entry_is_fresh(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ns_dir = Path(tmpdir) / "namespaces" / "allspark"
+            now = time.time()
+            manifest = {
+                "namespace": "allspark",
+                "updated_at": now,
+                "roles": {
+                    "planner": {
+                        "bundle_hash": "abc",
+                        "bundle_path": "bundles/planner/abc.md",
+                        "updated_at": now - 60,  # 1 minute ago
+                        "memory_hashes": {},
+                    }
+                },
+            }
+            _module._write_manifest(ns_dir, manifest)
+            statuses = cache_status(namespace="allspark", cache_dir=tmpdir, ttl_seconds=3600)
+        planner = next(s for s in statuses if s.role == "planner")
+        self.assertTrue(planner.is_fresh)
+        self.assertIsNotNone(planner.age_seconds)
+        self.assertGreater(planner.age_seconds, 0)
+        self.assertLess(planner.age_seconds, 300)
+
+    def test_stale_cache_entry_is_not_fresh(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ns_dir = Path(tmpdir) / "namespaces" / "allspark"
+            old_time = time.time() - 7200  # 2 hours ago
+            manifest = {
+                "namespace": "allspark",
+                "updated_at": old_time,
+                "roles": {
+                    "reviewer": {
+                        "bundle_hash": "xyz",
+                        "bundle_path": "bundles/reviewer/xyz.md",
+                        "updated_at": old_time,
+                        "memory_hashes": {},
+                    }
+                },
+            }
+            _module._write_manifest(ns_dir, manifest)
+            statuses = cache_status(namespace="allspark", cache_dir=tmpdir, ttl_seconds=3600)
+        reviewer = next(s for s in statuses if s.role == "reviewer")
+        self.assertFalse(reviewer.is_fresh)
+        self.assertIsNotNone(reviewer.age_seconds)
+        self.assertGreater(reviewer.age_seconds, 3600)
+
+
+# ---------------------------------------------------------------------------
+# build_bundles()
+# ---------------------------------------------------------------------------
+
+
+class TestBuildBundles(unittest.TestCase):
+    def _mock_memories(self, role, namespace="allspark"):
+        keys = [k.replace("{namespace}", namespace) for k in octowiz_cache.ROLE_MEMORY_KEYS[role]]
+        return [{"key": k, "value": f"content for {k}", "metadata": {}} for k in keys]
+
+    def _patch_get_bundle_success(self, roles_to_succeed):
+        """Return a mock that succeeds for given roles."""
+        def fake_get_bundle(role, namespace, cache_dir, ttl_seconds, refresh):
+            if role in roles_to_succeed:
+                return f"# Bundle for {role}\n"
+            raise RuntimeError(f"Simulated failure for {role}")
+        return fake_get_bundle
+
+    def test_all_roles_succeed(self):
+        roles = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())
+        with patch("octowiz_cache.get_bundle") as mock_gb:
+            mock_gb.return_value = "# Bundle content\n"
+            result = build_bundles(roles=roles, namespace="allspark",
+                                   cache_dir="/tmp/test", ttl_seconds=3600, refresh=False)
+        self.assertEqual(result.failed, [])
+        self.assertEqual(sorted(result.built), sorted(roles))
+
+    def test_one_role_fails(self):
+        roles = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())
+        failing_role = roles[0]
+
+        def side_effect(role, namespace, cache_dir, ttl_seconds, refresh):
+            if role == failing_role:
+                raise RuntimeError("fetch error")
+            return f"# Bundle for {role}\n"
+
+        with patch("octowiz_cache.get_bundle", side_effect=side_effect):
+            result = build_bundles(roles=roles, namespace="allspark",
+                                   cache_dir="/tmp/test", ttl_seconds=3600, refresh=False)
+
+        self.assertEqual(len(result.failed), 1)
+        failed_role, err_msg = result.failed[0]
+        self.assertEqual(failed_role, failing_role)
+        self.assertIn("fetch error", err_msg)
+        self.assertNotIn(failing_role, result.built)
+        # All other roles should be in built
+        for role in roles:
+            if role != failing_role:
+                self.assertIn(role, result.built)
+
+    def test_refresh_true_passed_to_get_bundle(self):
+        roles = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())
+        with patch("octowiz_cache.get_bundle") as mock_gb:
+            mock_gb.return_value = "# Bundle content\n"
+            build_bundles(roles=roles, namespace="allspark",
+                          cache_dir="/tmp/test", ttl_seconds=3600, refresh=True)
+        for call in mock_gb.call_args_list:
+            self.assertEqual(call.kwargs["refresh"], True)
+
 
 
 if __name__ == "__main__":
