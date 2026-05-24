@@ -262,9 +262,7 @@ class TestFetchMemory(unittest.TestCase):
 class TestGetBundle(unittest.TestCase):
     def _mock_memories(self, role="planner", namespace="allspark"):
         """Return minimal fake memories matching the role's keys."""
-        from octowiz_cache import ROLE_MEMORY_KEYS
-
-        keys = [k.replace("{namespace}", namespace) for k in ROLE_MEMORY_KEYS[role]]
+        keys = octowiz_cache.ROLE_REGISTRY.get_keys(role, namespace)
         return [{"key": k, "value": f"content for {k}", "metadata": {}} for k in keys]
 
     def _make_mock_client(self, role="planner", namespace="allspark"):
@@ -499,7 +497,7 @@ class TestCacheSchemaVersion(unittest.TestCase):
 
 class TestRoutingRoleConfigNamespace(unittest.TestCase):
     def test_routing_config_key_uses_team_namespace(self):
-        routing_keys = octowiz_cache.ROLE_MEMORY_KEYS["routing"]
+        routing_keys = octowiz_cache.ROLE_REGISTRY._entries["routing"]
         config_keys = [k for k in routing_keys if "config:retrieval-contract" in k]
         self.assertEqual(len(config_keys), 1, "routing role must have exactly one config:retrieval-contract key")
         self.assertTrue(
@@ -530,8 +528,7 @@ class TestMemorySourceProtocol(unittest.TestCase):
     """DictMemorySource satisfies the MemorySource Protocol and works in fetch_role_memories."""
 
     def _make_source_for_role(self, role="routing", namespace="allspark"):
-        from octowiz_cache import ROLE_MEMORY_KEYS
-        keys = [k.replace("{namespace}", namespace) for k in ROLE_MEMORY_KEYS[role]]
+        keys = octowiz_cache.ROLE_REGISTRY.get_keys(role, namespace)
         data = {k: {"key": k, "value": f"value for {k}", "metadata": {}} for k in keys}
         return DictMemorySource(data)
 
@@ -824,8 +821,7 @@ class TestCacheStoreGetBestAvailable(unittest.TestCase):
 
 class TestCacheStorePut(unittest.TestCase):
     def _make_memories(self, role="routing", namespace="allspark"):
-        from octowiz_cache import ROLE_MEMORY_KEYS
-        keys = [k.replace("{namespace}", namespace) for k in ROLE_MEMORY_KEYS[role]]
+        keys = octowiz_cache.ROLE_REGISTRY.get_keys(role, namespace)
         return [{"key": k, "value": f"content {k}", "metadata": {}} for k in keys]
 
     def test_put_writes_bundle_to_disk(self):
@@ -918,8 +914,7 @@ class TestCacheStorePut(unittest.TestCase):
 
 class TestGetBundleWithDictMemorySource(unittest.TestCase):
     def _make_dict_source_for_role(self, role, namespace="allspark"):
-        from octowiz_cache import ROLE_MEMORY_KEYS
-        keys = [k.replace("{namespace}", namespace) for k in ROLE_MEMORY_KEYS[role]]
+        keys = octowiz_cache.ROLE_REGISTRY.get_keys(role, namespace)
         data = {k: {"key": k, "value": f"value for {k}", "metadata": {}} for k in keys}
         return DictMemorySource(data)
 
@@ -929,8 +924,7 @@ class TestGetBundleWithDictMemorySource(unittest.TestCase):
         fetch_role_memories so get_bundle uses DictMemorySource internally.
         """
         source = self._make_dict_source_for_role(role, namespace)
-        from octowiz_cache import ROLE_MEMORY_KEYS
-        keys = [k.replace("{namespace}", namespace) for k in ROLE_MEMORY_KEYS[role]]
+        keys = octowiz_cache.ROLE_REGISTRY.get_keys(role, namespace)
         memories = [source.fetch(k) for k in keys]
         # We patch fetch_role_memories directly (it's already tested separately)
         return memories
@@ -1028,9 +1022,12 @@ class TestRoleRegistry(unittest.TestCase):
         self.assertIn("planner", roles_via_iter)
         self.assertIn("routing", roles_via_iter)
 
-    def test_role_memory_keys_alias_matches_registry(self):
-        """ROLE_MEMORY_KEYS alias must be the same object as ROLE_REGISTRY._entries."""
-        self.assertIs(octowiz_cache.ROLE_MEMORY_KEYS, octowiz_cache.ROLE_REGISTRY._entries)
+    def test_role_names_returns_all_roles(self):
+        """role_names() must return a list containing all registered roles."""
+        names = octowiz_cache.ROLE_REGISTRY.role_names()
+        self.assertIsInstance(names, list)
+        self.assertIn("planner", names)
+        self.assertIn("routing", names)
 
 
 class TestRoleRegistryDriftDetection(unittest.TestCase):
@@ -1062,7 +1059,7 @@ class TestCacheStatus(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             statuses = cache_status(namespace="allspark", cache_dir=tmpdir)
         role_names = [s.role for s in statuses]
-        self.assertEqual(sorted(role_names), sorted(octowiz_cache.ROLE_MEMORY_KEYS.keys()))
+        self.assertEqual(sorted(role_names), sorted(octowiz_cache.ROLE_REGISTRY.role_names()))
 
     def test_fresh_cache_entry_is_fresh(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1119,7 +1116,7 @@ class TestCacheStatus(unittest.TestCase):
 
 class TestBuildBundles(unittest.TestCase):
     def _mock_memories(self, role, namespace="allspark"):
-        keys = [k.replace("{namespace}", namespace) for k in octowiz_cache.ROLE_MEMORY_KEYS[role]]
+        keys = octowiz_cache.ROLE_REGISTRY.get_keys(role, namespace)
         return [{"key": k, "value": f"content for {k}", "metadata": {}} for k in keys]
 
     def _patch_get_bundle_success(self, roles_to_succeed):
@@ -1131,7 +1128,7 @@ class TestBuildBundles(unittest.TestCase):
         return fake_get_bundle
 
     def test_all_roles_succeed(self):
-        roles = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())
+        roles = list(octowiz_cache.ROLE_REGISTRY.role_names())
         with patch("octowiz_cache.get_bundle") as mock_gb:
             mock_gb.return_value = "# Bundle content\n"
             result = build_bundles(roles=roles, namespace="allspark",
@@ -1140,7 +1137,7 @@ class TestBuildBundles(unittest.TestCase):
         self.assertEqual(sorted(result.built), sorted(roles))
 
     def test_one_role_fails(self):
-        roles = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())
+        roles = list(octowiz_cache.ROLE_REGISTRY.role_names())
         failing_role = roles[0]
 
         def side_effect(role, namespace, cache_dir, ttl_seconds, refresh):
@@ -1163,7 +1160,7 @@ class TestBuildBundles(unittest.TestCase):
                 self.assertIn(role, result.built)
 
     def test_refresh_true_passed_to_get_bundle(self):
-        roles = list(octowiz_cache.ROLE_MEMORY_KEYS.keys())
+        roles = list(octowiz_cache.ROLE_REGISTRY.role_names())
         with patch("octowiz_cache.get_bundle") as mock_gb:
             mock_gb.return_value = "# Bundle content\n"
             build_bundles(roles=roles, namespace="allspark",
