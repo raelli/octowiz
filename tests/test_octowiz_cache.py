@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -501,6 +502,63 @@ class TestRoutingRoleConfigNamespace(unittest.TestCase):
             config_keys[0].startswith("team:"),
             f"routing config key must use team:{{namespace}}: prefix, got {config_keys[0]!r}",
         )
+
+
+class TestRoleRegistry(unittest.TestCase):
+    def test_has_role_known_role(self):
+        self.assertTrue(octowiz_cache.ROLE_REGISTRY.has_role("planner"))
+
+    def test_has_role_unknown_role(self):
+        self.assertFalse(octowiz_cache.ROLE_REGISTRY.has_role("nonexistent"))
+
+    def test_contains_operator(self):
+        self.assertIn("implementer", octowiz_cache.ROLE_REGISTRY)
+        self.assertNotIn("ghost", octowiz_cache.ROLE_REGISTRY)
+
+    def test_role_names_returns_all_roles(self):
+        names = octowiz_cache.ROLE_REGISTRY.role_names()
+        self.assertIsInstance(names, list)
+        for role in ("planner", "implementer", "reviewer", "qa", "routing"):
+            self.assertIn(role, names)
+
+    def test_get_keys_expands_namespace(self):
+        keys = octowiz_cache.ROLE_REGISTRY.get_keys("planner", "myteam")
+        # No key should contain the un-expanded placeholder
+        for key in keys:
+            self.assertNotIn("{namespace}", key)
+        # At least one key must contain the actual namespace value
+        self.assertTrue(
+            any("myteam" in key for key in keys),
+            "Expected at least one key to contain the expanded namespace 'myteam'",
+        )
+
+    def test_get_keys_unknown_role_raises_value_error(self):
+        with self.assertRaises(ValueError) as ctx:
+            octowiz_cache.ROLE_REGISTRY.get_keys("ghost", "allspark")
+        self.assertIn("ghost", str(ctx.exception))
+
+    def test_iter_yields_role_names(self):
+        roles_via_iter = list(octowiz_cache.ROLE_REGISTRY)
+        self.assertIn("planner", roles_via_iter)
+        self.assertIn("routing", roles_via_iter)
+
+    def test_role_memory_keys_alias_matches_registry(self):
+        """ROLE_MEMORY_KEYS alias must be the same object as ROLE_REGISTRY._entries."""
+        self.assertIs(octowiz_cache.ROLE_MEMORY_KEYS, octowiz_cache.ROLE_REGISTRY._entries)
+
+
+class TestRoleRegistryDriftDetection(unittest.TestCase):
+    def test_all_skill_roles_exist_in_registry(self):
+        skill_path = Path(__file__).parent.parent / "skills" / "octowiz-workflow" / "skill.md"
+        text = skill_path.read_text(encoding="utf-8")
+        # Find --role <name> patterns in the skill
+        mentioned = set(re.findall(r"--role\s+(\w+)", text))
+        for role in mentioned:
+            self.assertIn(
+                role,
+                octowiz_cache.ROLE_REGISTRY,
+                f"Role {role!r} mentioned in skill.md but not in ROLE_REGISTRY",
+            )
 
 
 if __name__ == "__main__":
