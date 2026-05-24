@@ -136,9 +136,6 @@ ROLE_REGISTRY = RoleRegistry({
     ],
 })
 
-# Backward-compatibility alias so existing code using ROLE_MEMORY_KEYS still works
-ROLE_MEMORY_KEYS = ROLE_REGISTRY._entries
-
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "octowiz"
 DEFAULT_TTL_SECONDS = 3600
 CACHE_SCHEMA_VERSION = 1
@@ -481,7 +478,7 @@ def cache_status(
     ns_dir = _namespace_cache_dir(resolved_dir, namespace)
     manifest = _read_manifest(ns_dir)
     results = []
-    for role in ROLE_MEMORY_KEYS:
+    for role in ROLE_REGISTRY.role_names():
         if manifest is None or role not in manifest.get("roles", {}):
             results.append(RoleStatus(role=role, is_fresh=False, age_seconds=None, updated_at=None))
         else:

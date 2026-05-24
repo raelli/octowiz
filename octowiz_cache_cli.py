@@ -16,7 +16,6 @@ import octowiz_cache
 from octowiz_cache import (
     DEFAULT_CACHE_DIR,
     DEFAULT_TTL_SECONDS,
-    ROLE_MEMORY_KEYS,
     ROLE_REGISTRY,
     BuildResult,
     RoleStatus,
