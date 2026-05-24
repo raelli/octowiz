@@ -18,6 +18,7 @@ from octowiz_cache import (
     DEFAULT_CACHE_DIR,
     DEFAULT_TTL_SECONDS,
     ROLE_MEMORY_KEYS,
+    ROLE_REGISTRY,
     _read_manifest,
     get_bundle,
     manifest_is_fresh,
@@ -73,7 +74,7 @@ def cmd_get(args) -> int:
 
 def cmd_build(args) -> int:
     if getattr(args, "all", False):
-        roles = list(ROLE_MEMORY_KEYS)
+        roles = ROLE_REGISTRY.role_names()
     else:
         roles = [args.role]
 
@@ -109,7 +110,7 @@ def cmd_status(args) -> int:
     ns_dir = octowiz_cache._namespace_cache_dir(cache_dir, namespace)
     manifest = _read_manifest(ns_dir)
 
-    for role in ROLE_MEMORY_KEYS:
+    for role in ROLE_REGISTRY:
         if manifest is None or role not in manifest.get("roles", {}):
             print(f"{role:15s} ✗ missing")
         else:
@@ -130,7 +131,7 @@ def cmd_status(args) -> int:
 def cmd_refresh(args) -> int:
     # Force-rebuild all roles (same as build --all)
     failures: list[tuple[str, str]] = []
-    for role in ROLE_MEMORY_KEYS:
+    for role in ROLE_REGISTRY:
         try:
             get_bundle(
                 role=role,
@@ -210,7 +211,7 @@ def _make_parser() -> argparse.ArgumentParser:
     p_get.add_argument(
         "--role",
         required=True,
-        choices=list(ROLE_MEMORY_KEYS),
+        choices=ROLE_REGISTRY.role_names(),
         help="Role to fetch",
     )
     p_get.add_argument(
@@ -226,7 +227,7 @@ def _make_parser() -> argparse.ArgumentParser:
     build_group = p_build.add_mutually_exclusive_group(required=True)
     build_group.add_argument(
         "--role",
-        choices=list(ROLE_MEMORY_KEYS),
+        choices=ROLE_REGISTRY.role_names(),
         help="Build a specific role",
     )
     build_group.add_argument(

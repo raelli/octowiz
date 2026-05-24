@@ -74,7 +74,32 @@ class LiteLLMMemorySource:
 # Constants
 # ---------------------------------------------------------------------------
 
-ROLE_MEMORY_KEYS: Dict[str, List[str]] = {
+class RoleRegistry:
+    """Single source of truth for roles and their LiteLLM memory keys."""
+
+    def __init__(self, entries: Dict[str, List[str]]):
+        self._entries = entries
+
+    def has_role(self, role: str) -> bool:
+        return role in self._entries
+
+    def get_keys(self, role: str, namespace: str) -> List[str]:
+        """Return memory keys for role with {namespace} expanded."""
+        if role not in self._entries:
+            raise ValueError(f"Unknown role {role!r}. Valid roles: {sorted(self._entries)}")
+        return [k.replace("{namespace}", namespace) for k in self._entries[role]]
+
+    def role_names(self) -> List[str]:
+        return list(self._entries)
+
+    def __contains__(self, role: str) -> bool:
+        return self.has_role(role)
+
+    def __iter__(self):
+        return iter(self._entries)
+
+
+ROLE_REGISTRY = RoleRegistry({
     "planner": [
         "team:{namespace}:playbook:ai-coding-workflow:overview",
         "team:{namespace}:playbook:ai-coding-workflow:grill-me-alignment",
@@ -97,6 +122,7 @@ ROLE_MEMORY_KEYS: Dict[str, List[str]] = {
         "team:{namespace}:skills:obra-superpowers:agent-methodology",
         "agent:reviewer:memory:ai-coding-workflow",
     ],
+    # reserved — not yet wired to a coordinator workflow option
     "qa": [
         "team:{namespace}:playbook:ai-coding-workflow:manual-qa-taste",
         "team:{namespace}:playbook:ai-coding-workflow:frontend-prototypes",
@@ -107,7 +133,10 @@ ROLE_MEMORY_KEYS: Dict[str, List[str]] = {
         "team:{namespace}:skills:matt-pocock:ai-engineering",
         "team:{namespace}:skills:obra-superpowers:agent-methodology",
     ],
-}
+})
+
+# Backward-compatibility alias so existing code using ROLE_MEMORY_KEYS still works
+ROLE_MEMORY_KEYS = ROLE_REGISTRY._entries
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "octowiz"
 DEFAULT_TTL_SECONDS = 3600
@@ -217,12 +246,11 @@ def fetch_role_memories(source: MemorySource, role: str, namespace: str) -> List
     Expand {namespace} in keys and fetch each memory in order via *source*.
     Any KeyError propagates immediately (fails the whole bundle).
     """
-    if role not in ROLE_MEMORY_KEYS:
+    if not ROLE_REGISTRY.has_role(role):
         raise ValueError(
-            f"Unknown role {role!r}. Valid roles: {sorted(ROLE_MEMORY_KEYS)}"
+            f"Unknown role {role!r}. Valid roles: {sorted(ROLE_REGISTRY)}"
         )
-    raw_keys = ROLE_MEMORY_KEYS.get(role, [])
-    expanded_keys = [k.replace("{namespace}", namespace) for k in raw_keys]
+    expanded_keys = ROLE_REGISTRY.get_keys(role, namespace)
     return [source.fetch(key) for key in expanded_keys]
 
 
@@ -380,9 +408,9 @@ def get_bundle(
       2. Fetch from LiteLLM; if LiteLLM fails and stale cache exists: warn stderr + serve stale.
       3. Build bundle, write atomically, update manifest, return content.
     """
-    if role not in ROLE_MEMORY_KEYS:
+    if not ROLE_REGISTRY.has_role(role):
         raise ValueError(
-            f"Unknown role {role!r}. Valid roles: {sorted(ROLE_MEMORY_KEYS)}"
+            f"Unknown role {role!r}. Valid roles: {sorted(ROLE_REGISTRY)}"
         )
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", namespace):
         raise ValueError(
