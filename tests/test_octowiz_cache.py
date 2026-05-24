@@ -653,20 +653,20 @@ class TestCacheStoreFresh(unittest.TestCase):
             content = "# Fresh Bundle\n"
             self._write_fresh_bundle(tmpdir, content=content)
             store = self._build_store(tmpdir)
-            result = store.get_fresh("routing", "allspark")
+            result = store._get_fresh("routing", "allspark")
             self.assertEqual(result, content)
 
     def test_get_fresh_returns_none_when_stale(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             self._write_fresh_bundle(tmpdir)
             store = self._build_store(tmpdir, ttl=0)  # immediately expired
-            result = store.get_fresh("routing", "allspark")
+            result = store._get_fresh("routing", "allspark")
             self.assertIsNone(result)
 
     def test_get_fresh_returns_none_when_missing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             store = self._build_store(tmpdir)
-            result = store.get_fresh("routing", "allspark")
+            result = store._get_fresh("routing", "allspark")
             self.assertIsNone(result)
 
     def test_get_fresh_returns_none_on_schema_version_mismatch(self):
@@ -694,7 +694,7 @@ class TestCacheStoreFresh(unittest.TestCase):
             import json as _json
             (ns_dir / "manifest.json").write_text(_json.dumps(bad_manifest), encoding="utf-8")
             store = self._build_store(tmpdir)
-            result = store.get_fresh("routing", "allspark")
+            result = store._get_fresh("routing", "allspark")
             self.assertIsNone(result)
 
 
@@ -721,15 +721,105 @@ class TestCacheStoreStale(unittest.TestCase):
             }
             octowiz_cache._write_manifest(ns_dir, manifest)
             store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=1)
-            result = store.get_stale("routing", "allspark")
+            result = store._get_stale("routing", "allspark")
             self.assertEqual(result, content)
 
     def test_get_stale_returns_none_when_no_cache(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             from pathlib import Path
             store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
-            result = store.get_stale("routing", "allspark")
+            result = store._get_stale("routing", "allspark")
             self.assertIsNone(result)
+
+
+class TestCacheStoreGetBestAvailable(unittest.TestCase):
+    """Tests for CacheStore.get_best_available()."""
+
+    def _write_bundle_with_manifest(self, tmpdir, role="routing", namespace="allspark",
+                                    content="# bundle", expired=False):
+        """Write a bundle and manifest. expired=True sets updated_at in the past."""
+        from pathlib import Path
+        ns_dir = octowiz_cache._namespace_cache_dir(Path(tmpdir), namespace)
+        bundle_hash = "testbesthash"
+        octowiz_cache._write_bundle(ns_dir, role, bundle_hash, content)
+        updated_at = time.time() - 9999 if expired else time.time()
+        manifest = {
+            "namespace": namespace,
+            "updated_at": updated_at,
+            "ttl_seconds": 3600,
+            "roles": {
+                role: {
+                    "bundle_hash": bundle_hash,
+                    "bundle_path": f"bundles/{role}/{bundle_hash}.md",
+                    "updated_at": updated_at,
+                    "memory_hashes": {},
+                }
+            },
+        }
+        octowiz_cache._write_manifest(ns_dir, manifest)
+
+    def test_returns_fresh_when_fresh_exists(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            content = "# Fresh Bundle\n"
+            self._write_bundle_with_manifest(tmpdir, content=content, expired=False)
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
+            result = store.get_best_available("routing", "allspark")
+            self.assertEqual(result, content)
+
+    def test_returns_stale_when_no_fresh_but_stale_exists(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            content = "# Stale Bundle\n"
+            self._write_bundle_with_manifest(tmpdir, content=content, expired=True)
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
+            result = store.get_best_available("routing", "allspark")
+            self.assertEqual(result, content)
+
+    def test_prints_to_stderr_when_on_stale_fallback_set_and_stale_returned(self):
+        import io
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            self._write_bundle_with_manifest(tmpdir, content="# stale\n", expired=True)
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
+            with patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
+                result = store.get_best_available(
+                    "routing", "allspark",
+                    on_stale_fallback="WARNING: using stale cache",
+                )
+            self.assertIsNotNone(result)
+            self.assertIn("WARNING: using stale cache", mock_stderr.getvalue())
+
+    def test_no_stderr_output_when_on_stale_fallback_empty(self):
+        import io
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            self._write_bundle_with_manifest(tmpdir, content="# stale\n", expired=True)
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
+            with patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
+                result = store.get_best_available("routing", "allspark")
+            self.assertIsNotNone(result)
+            self.assertEqual(mock_stderr.getvalue(), "")
+
+    def test_returns_none_when_nothing_cached(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
+            result = store.get_best_available("routing", "allspark")
+            self.assertIsNone(result)
+
+    def test_no_stderr_output_when_nothing_cached(self):
+        import io
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from pathlib import Path
+            store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
+            with patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
+                result = store.get_best_available(
+                    "routing", "allspark",
+                    on_stale_fallback="WARNING: should not appear",
+                )
+            self.assertIsNone(result)
+            self.assertEqual(mock_stderr.getvalue(), "")
 
 
 class TestCacheStorePut(unittest.TestCase):
@@ -745,7 +835,7 @@ class TestCacheStorePut(unittest.TestCase):
             memories = self._make_memories()
             content = octowiz_cache.render_bundle("routing", memories)
             store.put("routing", "allspark", content, memories)
-            result = store.get_fresh("routing", "allspark")
+            result = store._get_fresh("routing", "allspark")
             self.assertEqual(result, content)
 
     def test_put_updates_manifest(self):
@@ -821,7 +911,7 @@ class TestCacheStorePut(unittest.TestCase):
             store = octowiz_cache.CacheStore(Path(tmpdir), ttl_seconds=3600)
             # Should not raise even though the old bundle file doesn't exist
             store.put("routing", "allspark", content, memories)
-            result = store.get_fresh("routing", "allspark")
+            result = store._get_fresh("routing", "allspark")
             self.assertIsNotNone(result)
 
 

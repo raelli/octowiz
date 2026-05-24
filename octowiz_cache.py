@@ -321,7 +321,7 @@ class CacheStore:
     def _ns_dir(self, namespace: str) -> Path:
         return _namespace_cache_dir(self._cache_dir, namespace)
 
-    def get_fresh(self, role: str, namespace: str) -> Optional[str]:
+    def _get_fresh(self, role: str, namespace: str) -> Optional[str]:
         """Return cached bundle content if fresh and schema-valid, else None."""
         ns_dir = self._ns_dir(namespace)
         manifest = _read_manifest(ns_dir)
@@ -337,7 +337,7 @@ class CacheStore:
         bundle_hash = role_entry.get("bundle_hash", "")
         return _read_bundle(ns_dir, role, bundle_hash)
 
-    def get_stale(self, role: str, namespace: str) -> Optional[str]:
+    def _get_stale(self, role: str, namespace: str) -> Optional[str]:
         """Return any cached bundle regardless of freshness, else None."""
         ns_dir = self._ns_dir(namespace)
         manifest = _read_manifest(ns_dir)
@@ -348,6 +348,25 @@ class CacheStore:
             return None
         bundle_hash = role_entry.get("bundle_hash", "")
         return _read_bundle(ns_dir, role, bundle_hash)
+
+    def get_best_available(
+        self,
+        role: str,
+        namespace: str,
+        on_stale_fallback: str = "",
+    ) -> Optional[str]:
+        """Return fresh bundle if available; fall back to stale.
+
+        If a stale bundle is returned and *on_stale_fallback* is non-empty,
+        print it to stderr (for caller warning messages).
+        """
+        fresh = self._get_fresh(role, namespace)
+        if fresh is not None:
+            return fresh
+        stale = self._get_stale(role, namespace)
+        if stale is not None and on_stale_fallback:
+            print(on_stale_fallback, file=sys.stderr)
+        return stale
 
     def put(
         self,
@@ -425,7 +444,7 @@ def get_bundle(
 
     # Step 1: serve from cache if fresh and not forced refresh
     if not refresh:
-        cached = store.get_fresh(role, namespace)
+        cached = store._get_fresh(role, namespace)
         if cached is not None:
             return cached
 
@@ -436,13 +455,15 @@ def get_bundle(
         source = LiteLLMMemorySource(client)
         memories = fetch_role_memories(source, role, namespace)
     except Exception as exc:
-        stale = store.get_stale(role, namespace)
-        if stale is not None:
-            print(
+        stale = store.get_best_available(
+            role,
+            namespace,
+            on_stale_fallback=(
                 f"WARNING: LiteLLM unavailable ({exc}); serving stale cache for "
-                f"role={role!r} namespace={namespace!r}.",
-                file=sys.stderr,
-            )
+                f"role={role!r} namespace={namespace!r}."
+            ),
+        )
+        if stale is not None:
             return stale
         raise
     finally:
