@@ -18,6 +18,11 @@
     "workflow"
   ],
   "skills": [
-    "./skills/octowiz-workflow"
+    "./skills/octowiz-workflow",
+    "./skills/octowiz-setup",
+    "./skills/octowiz-setup-plugins",
+    "./skills/octowiz-setup-cache",
+    "./skills/octowiz-setup-repo",
+    "./skills/octowiz-setup-verify"
   ]
 }
