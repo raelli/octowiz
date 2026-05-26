@@ -161,8 +161,11 @@ def _detect_agent_file(cwd: Path) -> Optional[str]:
 
 
 def _has_skills_section(cwd: Path, agent_file: str) -> bool:
-    content = (cwd / agent_file).read_text(errors="replace")
-    return "## Agent skills" in content
+    try:
+        content = (cwd / agent_file).read_text(errors="replace")
+        return "## Agent skills" in content
+    except OSError:
+        return False
 
 
 def _detect_stack(cwd: Path) -> str:
@@ -178,9 +181,9 @@ def _detect_stack(cwd: Path) -> str:
             pkg = json.loads((cwd / "package.json").read_text())
         except Exception:
             return "generic_js"
-        deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+        deps = {**(pkg.get("dependencies") or {}), **(pkg.get("devDependencies") or {})}
         keys = set(deps.keys())
-        if keys & {"vue", "vite", "typescript", "@vue/core"}:
+        if keys & {"vue", "vite"}:
             return "ts_vue"
         if "react" in keys:
             return "react"

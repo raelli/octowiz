@@ -223,3 +223,30 @@ class TestRepoScan(unittest.TestCase):
         result = scan_repo(self.cwd)
         self.assertFalse(result.has_context_md)
         self.assertFalse(result.has_adr)
+
+    def test_typescript_only_is_generic_js_not_ts_vue(self):
+        self._write("package.json", '{"devDependencies": {"typescript": "^5"}}')
+        result = scan_repo(self.cwd)
+        self.assertEqual(result.stack, "generic_js")
+
+    def test_has_github_remote_when_github_in_output(self):
+        from unittest.mock import patch, MagicMock
+        mock_result = MagicMock()
+        mock_result.stdout = "origin\tgit@github.com:user/repo.git (fetch)\n"
+        with patch("subprocess.run", return_value=mock_result):
+            result = scan_repo(self.cwd)
+        self.assertTrue(result.has_github_remote)
+
+    def test_no_github_remote_when_not_in_output(self):
+        from unittest.mock import patch, MagicMock
+        mock_result = MagicMock()
+        mock_result.stdout = "origin\tgit@gitlab.com:user/repo.git (fetch)\n"
+        with patch("subprocess.run", return_value=mock_result):
+            result = scan_repo(self.cwd)
+        self.assertFalse(result.has_github_remote)
+
+    def test_no_github_remote_when_subprocess_fails(self):
+        from unittest.mock import patch
+        with patch("subprocess.run", side_effect=FileNotFoundError("git not found")):
+            result = scan_repo(self.cwd)
+        self.assertFalse(result.has_github_remote)
