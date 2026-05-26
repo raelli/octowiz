@@ -127,8 +127,8 @@ If either check fails → invoke `octowiz:setup` instead of the A/B/C/D menu.
 - Scans the repo using the signal table below
 - Writes the tailored checklist into ONBOARDING.md before running any steps
 - Invokes `mattpocock:setup-matt-pocock-skills` if CLAUDE.md missing `## Agent skills`
-- Scaffolds CONTEXT.md if absent
-- Scaffolds `docs/adr/` if absent
+- Scaffolds CONTEXT.md if absent — minimal template: project name, one-line description, primary language, placeholder sections for domain model and key constraints
+- Scaffolds `docs/adr/` if absent — creates the directory and a `README.md` stub explaining the ADR convention
 - Applies the antfu decision tree
 - Updates setup-state.json on completion
 
@@ -170,7 +170,7 @@ Antfu setup means: detect relevant sub-skills (vue, vite, vitest, pnpm, unocss) 
 | Both state files complete, ONBOARDING.md absent | Normal workflow, no intercept |
 | Either state file has incomplete items | Auto-intercept, resume from first incomplete item |
 | ONBOARDING.md present but state files complete | Stale file — delete it, proceed normally |
-| Plugin missing from machine-state (e.g. uninstalled) | Re-run setup-plugins for that plugin only |
+| Plugin missing from machine-state (e.g. uninstalled) | Re-run setup-plugins for that plugin only — requires user to set `false` in machine-state.json manually; octowiz does not auto-detect post-install removal |
 | `mattpocock_setup: false` | Re-run mattpocock setup even if rest of project setup is done |
 | `antfu_deferred: true` and TS/Vue now detected | Prompt once for antfu setup, mark done afterwards |
 | New machine, cloned repo with setup-state.json committed | Per-machine state absent → run plugins + cache only |
