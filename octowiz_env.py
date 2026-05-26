@@ -60,16 +60,19 @@ def _now_iso() -> str:
 def load_machine_state(path: Path = MACHINE_STATE_PATH) -> Optional[MachineState]:
     if not path.exists():
         return None
-    data = json.loads(path.read_text())
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
     return MachineState(
         first_seen=data.get("first_seen", ""),
         plugins=data.get("plugins", {}),
-        litellm=data.get("litellm", {
+        litellm=data.get("litellm") or {
             "routing_verified_at": None,
             "planner_verified_at": None,
             "implementer_verified_at": None,
             "reviewer_verified_at": None,
-        }),
+        },
         dismissed_checks=data.get("dismissed_checks", {}),
     )
 
@@ -93,7 +96,10 @@ def load_repo_state(cwd: Path) -> Optional[RepoState]:
     state_path = cwd / OCTOWIZ_DIR / SETUP_STATE_FILENAME
     if not state_path.exists():
         return None
-    data = json.loads(state_path.read_text())
+    try:
+        data = json.loads(state_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
     return RepoState(
         created_at=data.get("created_at", ""),
         mattpocock_setup=data.get("mattpocock_setup", False),
@@ -244,8 +250,11 @@ def _litellm_cache_ok(machine_state: Optional[MachineState]) -> bool:
     """Return True if routing_verified_at exists and is within CACHE_TTL_HOURS."""
     if machine_state is None:
         return False
-    routing_ts = machine_state.litellm.get("routing_verified_at")
-    if not routing_ts:
+    litellm = machine_state.litellm
+    if not isinstance(litellm, dict):
+        return False
+    routing_ts = litellm.get("routing_verified_at")
+    if not routing_ts or not isinstance(routing_ts, str):
         return False
     try:
         verified_at = datetime.fromisoformat(routing_ts.replace("Z", "+00:00"))
@@ -267,19 +276,25 @@ def _antfu_gap(scan: RepoScan, repo_state: Optional[RepoState]) -> bool:
     return not repo_state.antfu_setup and not repo_state.antfu_deferred
 
 
-def _get_dismissed_checks(cwd: Path, machine_state: Optional[MachineState]) -> List[str]:
-    """Return the list of dismissed check IDs for the current repo root."""
-    if machine_state is None:
-        return []
+def _repo_key(cwd: Path) -> str:
+    """Return the canonical key for dismissed_checks — the git repo root, or cwd.resolve() as fallback."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
             cwd=cwd, capture_output=True, text=True, timeout=5,
         )
-        repo_root = result.stdout.strip()
-        return list(machine_state.dismissed_checks.get(repo_root, []))
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
     except Exception:
+        pass
+    return str(cwd.resolve())
+
+
+def _get_dismissed_checks(cwd: Path, machine_state: Optional[MachineState]) -> List[str]:
+    """Return the list of dismissed check IDs for the current repo root."""
+    if machine_state is None:
         return []
+    return list(machine_state.dismissed_checks.get(_repo_key(cwd), []))
 
 
 def run_live_check(
@@ -349,14 +364,7 @@ def dismiss_check(
     state = load_machine_state(machine_state_path)
     if state is None:
         state = MachineState(first_seen=_now_iso())
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=cwd, capture_output=True, text=True, timeout=5,
-        )
-        repo_root = result.stdout.strip()
-    except Exception:
-        repo_root = str(cwd)
+    repo_root = _repo_key(cwd)
     existing = list(state.dismissed_checks.get(repo_root, []))
     if check_id not in existing:
         existing.append(check_id)

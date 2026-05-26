@@ -30,6 +30,7 @@ from octowiz_env import (
     _litellm_cache_ok,
     _antfu_gap,
     CACHE_TTL_HOURS,
+    _repo_key,
 )
 
 
@@ -403,6 +404,7 @@ class TestLiveCheck(unittest.TestCase):
         # Dismiss litellm_env for this cwd
         from unittest.mock import patch as mpatch, MagicMock
         mock_result = MagicMock()
+        mock_result.returncode = 0
         mock_result.stdout = str(self.cwd) + "\n"
         machine_state = MachineState(first_seen=_now_iso())
         machine_state.dismissed_checks[str(self.cwd)] = ["litellm_env"]
@@ -439,6 +441,7 @@ class TestLiveCheck(unittest.TestCase):
     def test_dismiss_check_records_in_machine_state(self):
         from unittest.mock import patch as mpatch, MagicMock
         mock_result = MagicMock()
+        mock_result.returncode = 0
         mock_result.stdout = "/some/repo\n"
         with mpatch("subprocess.run", return_value=mock_result):
             dismiss_check("litellm_env", self.cwd, self.machine_state_path)
@@ -448,9 +451,43 @@ class TestLiveCheck(unittest.TestCase):
     def test_dismiss_check_idempotent(self):
         from unittest.mock import patch as mpatch, MagicMock
         mock_result = MagicMock()
+        mock_result.returncode = 0
         mock_result.stdout = "/some/repo\n"
         with mpatch("subprocess.run", return_value=mock_result):
             dismiss_check("litellm_env", self.cwd, self.machine_state_path)
             dismiss_check("litellm_env", self.cwd, self.machine_state_path)
         state = load_machine_state(self.machine_state_path)
         self.assertEqual(state.dismissed_checks["/some/repo"].count("litellm_env"), 1)
+
+    def test_dismiss_and_check_round_trip_without_git(self):
+        # In a non-git tmpdir, dismiss_check and run_live_check should use the same key
+        # Patch subprocess.run to return non-zero for git rev-parse
+        from unittest.mock import MagicMock
+        mock_result = MagicMock()
+        mock_result.returncode = 128  # git error
+        mock_result.stdout = ""
+        with patch("subprocess.run", return_value=mock_result):
+            dismiss_check("litellm_env", self.cwd, self.machine_state_path)
+            with patch.dict(os.environ, {}, clear=True):
+                result = run_live_check(self.cwd, self.machine_state_path, self.plugins_base)
+        # dismissal should have taken effect
+        self.assertNotIn("litellm_env", result.hard_gaps)
+
+    def test_run_live_check_handles_corrupt_machine_state(self):
+        # Write invalid JSON to machine-state.json
+        self.machine_state_path.parent.mkdir(parents=True, exist_ok=True)
+        self.machine_state_path.write_text("{invalid json")
+        with patch.dict(os.environ, {}, clear=True):
+            # Should not crash — treat as absent
+            result = run_live_check(self.cwd, self.machine_state_path, self.plugins_base)
+        self.assertTrue(result.machine_state_absent)
+
+    def test_litellm_cache_ok_non_string_timestamp_returns_false(self):
+        state = MachineState()
+        state.litellm["routing_verified_at"] = 12345  # number, not string
+        self.assertFalse(_litellm_cache_ok(state))
+
+    def test_litellm_cache_ok_malformed_string_returns_false(self):
+        state = MachineState()
+        state.litellm["routing_verified_at"] = "not-a-date"
+        self.assertFalse(_litellm_cache_ok(state))
