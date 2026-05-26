@@ -19,6 +19,7 @@ from octowiz_env import (
     init_repo_state,
 )
 from octowiz_env import detect_plugin, detect_all_plugins, REQUIRED_PLUGINS
+from octowiz_env import RepoScan, scan_repo
 
 
 class TestMachineStateIO(unittest.TestCase):
@@ -135,3 +136,90 @@ class TestPluginDetection(unittest.TestCase):
         plugin_dir = self.plugins_base / "integrahub" / "mattpo-skills"
         plugin_dir.mkdir(parents=True)
         self.assertTrue(detect_plugin("mattpo-skills", self.plugins_base))
+
+
+class TestRepoScan(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cwd = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write(self, relpath: str, content: str = "") -> None:
+        p = self.cwd / relpath
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+
+    def test_empty_repo_has_no_agent_file(self):
+        result = scan_repo(self.cwd)
+        self.assertIsNone(result.agent_file)
+        self.assertFalse(result.agent_has_skills_section)
+        self.assertEqual(result.stack, "empty")
+
+    def test_agents_md_takes_priority_over_claude_md(self):
+        self._write("AGENTS.md", "## Agent skills\n- something")
+        self._write("CLAUDE.md", "## Agent skills\n- other")
+        result = scan_repo(self.cwd)
+        self.assertEqual(result.agent_file, "AGENTS.md")
+
+    def test_claude_md_used_when_no_agents_md(self):
+        self._write("CLAUDE.md", "## Agent skills\n- skill")
+        result = scan_repo(self.cwd)
+        self.assertEqual(result.agent_file, "CLAUDE.md")
+
+    def test_gemini_md_used_when_neither(self):
+        self._write("GEMINI.md", "## Agent skills\n- skill")
+        result = scan_repo(self.cwd)
+        self.assertEqual(result.agent_file, "GEMINI.md")
+
+    def test_agent_skills_section_detected(self):
+        self._write("AGENTS.md", "# Project\n\n## Agent skills\n- /octowiz")
+        result = scan_repo(self.cwd)
+        self.assertTrue(result.agent_has_skills_section)
+
+    def test_agent_skills_section_absent(self):
+        self._write("AGENTS.md", "# Just a project doc")
+        result = scan_repo(self.cwd)
+        self.assertFalse(result.agent_has_skills_section)
+
+    def test_typescript_vue_stack_detected(self):
+        self._write("package.json", '{"dependencies": {"vue": "^3", "typescript": "^5"}}')
+        result = scan_repo(self.cwd)
+        self.assertEqual(result.stack, "ts_vue")
+
+    def test_react_stack_detected(self):
+        self._write("package.json", '{"dependencies": {"react": "^18"}}')
+        result = scan_repo(self.cwd)
+        self.assertEqual(result.stack, "react")
+
+    def test_generic_js_when_no_ts_vue_react(self):
+        self._write("package.json", '{"dependencies": {"lodash": "^4"}}')
+        result = scan_repo(self.cwd)
+        self.assertEqual(result.stack, "generic_js")
+
+    def test_python_stack_detected(self):
+        self._write("pyproject.toml", "[project]\nname = 'myapp'")
+        result = scan_repo(self.cwd)
+        self.assertEqual(result.stack, "python")
+
+    def test_polyglot_when_both_package_json_and_pyproject(self):
+        self._write("package.json", '{"dependencies": {"typescript": "^5"}}')
+        self._write("pyproject.toml", "[project]\nname = 'myapp'")
+        result = scan_repo(self.cwd)
+        self.assertEqual(result.stack, "polyglot")
+
+    def test_context_md_detected(self):
+        self._write("CONTEXT.md", "# Context")
+        result = scan_repo(self.cwd)
+        self.assertTrue(result.has_context_md)
+
+    def test_adr_dir_detected(self):
+        self._write("docs/adr/0001-example.md", "# ADR")
+        result = scan_repo(self.cwd)
+        self.assertTrue(result.has_adr)
+
+    def test_no_context_or_adr(self):
+        result = scan_repo(self.cwd)
+        self.assertFalse(result.has_context_md)
+        self.assertFalse(result.has_adr)

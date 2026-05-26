@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -135,3 +136,80 @@ def detect_all_plugins(
     plugins_base: Path = PLUGINS_CACHE_BASE,
 ) -> Dict[str, bool]:
     return {pid: detect_plugin(pid, plugins_base) for pid in plugin_ids}
+
+
+# ---------------------------------------------------------------------------
+# Repo scan
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class RepoScan:
+    agent_file: Optional[str]   # "AGENTS.md" | "CLAUDE.md" | "GEMINI.md" | None
+    agent_has_skills_section: bool
+    stack: str  # "ts_vue" | "react" | "generic_js" | "python" | "polyglot" | "empty"
+    has_context_md: bool
+    has_adr: bool
+    has_github_remote: bool
+
+
+def _detect_agent_file(cwd: Path) -> Optional[str]:
+    for name in ("AGENTS.md", "CLAUDE.md", "GEMINI.md"):
+        if (cwd / name).exists():
+            return name
+    return None
+
+
+def _has_skills_section(cwd: Path, agent_file: str) -> bool:
+    content = (cwd / agent_file).read_text(errors="replace")
+    return "## Agent skills" in content
+
+
+def _detect_stack(cwd: Path) -> str:
+    has_package_json = (cwd / "package.json").exists()
+    has_pyproject = (cwd / "pyproject.toml").exists() or (cwd / "setup.py").exists()
+
+    if has_package_json and has_pyproject:
+        return "polyglot"
+    if has_pyproject:
+        return "python"
+    if has_package_json:
+        try:
+            pkg = json.loads((cwd / "package.json").read_text())
+        except Exception:
+            return "generic_js"
+        deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+        keys = set(deps.keys())
+        if keys & {"vue", "vite", "typescript", "@vue/core"}:
+            return "ts_vue"
+        if "react" in keys:
+            return "react"
+        return "generic_js"
+    return "empty"
+
+
+def _has_github_remote(cwd: Path) -> bool:
+    try:
+        result = subprocess.run(
+            ["git", "remote", "-v"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return "github.com" in result.stdout
+    except Exception:
+        return False
+
+
+def scan_repo(cwd: Path) -> RepoScan:
+    agent_file = _detect_agent_file(cwd)
+    agent_has_skills = _has_skills_section(cwd, agent_file) if agent_file else False
+    return RepoScan(
+        agent_file=agent_file,
+        agent_has_skills_section=agent_has_skills,
+        stack=_detect_stack(cwd),
+        has_context_md=(cwd / "CONTEXT.md").exists(),
+        has_adr=(cwd / "docs" / "adr").is_dir(),
+        has_github_remote=_has_github_remote(cwd),
+    )
