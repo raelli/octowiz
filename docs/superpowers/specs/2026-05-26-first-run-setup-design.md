@@ -1,13 +1,13 @@
 # First-Run Setup & Onboarding
 
 **Date:** 2026-05-26
-**Status:** Draft (rev 3 — adds escape hatch, 24h cache TTL, GEMINI.md precedence, cleanup)
+**Status:** Draft (rev 4 — soft agent-file check, repo-scoped dismissals, per-role cache TTL, canonical plugin IDs)
 
 ---
 
 ## Problem statement
 
-When a developer installs octowiz and invokes `/octowiz` for the first time, none of the dependent plugins (superpowers, mattpocock, antfu) are guaranteed to be installed, LiteLLM is unlikely to be configured, and the repo may be missing project-level setup (agent instructions file, domain docs). The workflow skill silently proceeds as if everything is in place, producing confusing failures downstream.
+When a developer installs octowiz and invokes `/octowiz` for the first time, none of the dependent plugins (`superpowers`, `mattpo-skills`, `antfu-skills`) are guaranteed to be installed, LiteLLM is unlikely to be configured, and the repo may be missing project-level setup (agent instructions file, domain docs). The workflow skill silently proceeds as if everything is in place, producing confusing failures downstream.
 
 There is also no mechanism to avoid re-running setup on subsequent invocations once complete, or to resume gracefully if setup is interrupted mid-session.
 
@@ -43,11 +43,11 @@ On every `/octowiz` entry, the workflow runs a **live environment check** before
 1. Are required plugins present on disk? (check `~/.claude/plugins/` directly)
 2. Are `LITELLM_BASE_URL` and API key env vars set?
 3. Has `octowiz-cache get --role routing` been verified to work? (cache the result in `machine-state.json`; re-verify if `cache_verified_at` is absent or older than 24h — the call is a live network request to LiteLLM)
-4. Does an agent instructions file exist (`AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`) with an `## Agent skills` section?
-5. Has mattpocock setup been run? (observed: does the agent instructions file have octowiz-related skill entries?)
+4. (Advisory) Does an agent instructions file exist (`AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`) with an `## Agent skills` section? Absence is noted in ONBOARDING.md but does **not** block `setup-verify` from passing — creating the file is a user action.
+5. (Advisory) Has `mattpo-skills` setup been run? (observed: does the detected agent instructions file have octowiz-related skill entries?) Only checked if an agent file exists; absent file makes this check pass vacuously.
 6. Is antfu setup done or deferred? (use `setup-state.json` as a resume bookmark)
 
-If any check fails → intercept and run setup for that gap. If all pass → normal workflow.
+Checks 1–3 and 6 are **hard gates**: if any fails, setup intercepts. Checks 4–5 are **advisory**: reported in ONBOARDING.md, but `setup-verify` can complete without them. This prevents a permanent intercept loop in repos that do not yet have an agent instructions file.
 
 State files record progress for resumption. They are **not** the source of truth for readiness. Committed booleans in `setup-state.json` that contradict observed reality are ignored for the readiness check.
 
@@ -61,17 +61,24 @@ Two resume-bookmark files, one per scope:
   "first_seen": "2026-05-26T10:00:00Z",
   "plugins": {
     "superpowers": "verified",
-    "mattpocock": "verified",
-    "antfu": "pending"
+    "mattpo-skills": "verified",
+    "antfu-skills": "pending"
   },
   "litellm": {
-    "cache_verified_at": "2026-05-26T10:05:00Z"
+    "routing_verified_at": "2026-05-26T10:05:00Z",
+    "planner_verified_at": null,
+    "implementer_verified_at": null,
+    "reviewer_verified_at": null
   },
-  "dismissed_checks": []
+  "dismissed_checks": {}
 }
 ```
 
-`dismissed_checks` is populated when the developer chooses to skip a failing check (see Escape hatch section). An empty array is the default; absent is treated as empty.
+Plugin IDs match the marketplace package IDs exactly — `superpowers`, `mattpo-skills`, `antfu-skills`. Presence is detected by globbing `~/.claude/plugins/cache/*/<plugin-id>/` (matches any marketplace source). These same IDs are used in `dismissed_checks` keys and `claude plugins install` commands.
+
+`dismissed_checks` is a map keyed by repo root path (see Escape hatch section). An empty object is the default; absent is treated as empty.
+
+`litellm` per-role timestamps are populated lazily: `routing_verified_at` is set during `setup-cache`. `planner_verified_at`, `implementer_verified_at`, and `reviewer_verified_at` are set the first time their corresponding workflow option (B/C/D) is selected. All use the same 24h TTL before re-verification.
 
 **`.octowiz/setup-state.json`** — per-repo, committed. Used only for antfu deferral bookkeeping and resume progress.
 ```json
@@ -99,7 +106,7 @@ Repos may use `AGENTS.md` (Codex/Claude/Gemini-compatible), `CLAUDE.md` (Claude-
 
 Setup is only allowed to **read and append** to whichever file is detected. It never creates a new agent instructions file from scratch or migrates content between files. If neither exists, octowiz notes it in ONBOARDING.md and proceeds — missing agent instructions does not block setup.
 
-Antfu setup and mattpocock setup both append to the detected file. If no file exists, their additions are deferred and noted in ONBOARDING.md.
+Antfu setup (`antfu-skills`) and mattpo-skills setup both append to the detected file. If no file exists, their additions are deferred and noted in ONBOARDING.md.
 
 ### ONBOARDING.md lifecycle
 
@@ -110,11 +117,11 @@ Example structure:
 # Octowiz Setup
 
 ## Environment (per-machine)
-- [x] Plugins installed — superpowers, mattpocock, antfu
+- [x] Plugins installed — superpowers, mattpo-skills, antfu-skills
 - [ ] LiteLLM cache configured
 
 ## Project (per-repo)
-- [ ] mattpocock skills setup (agent instructions file: AGENTS.md)
+- [ ] mattpo-skills setup (agent instructions file: AGENTS.md)
 - [!] CONTEXT.md — not present; will be created lazily by /grill-with-docs
 - [!] docs/adr/ — not present; will be created lazily by /grill-with-docs
 - [~] antfu skills — Vue + TypeScript detected, setup pending
@@ -131,7 +138,7 @@ Stale file rule: if ONBOARDING.md is present but the live check passes, delete O
 
 At the top of the skill, before Step 1 (Read project setup):
 
-1. Run live environment check (plugin dirs, env vars, agent instructions file, mattpocock setup)
+1. Run live environment check (plugin dirs, env vars, agent instructions file, mattpo-skills setup)
 2. If `machine-state.json` absent → create skeleton, set all plugin/litellm fields to `pending`
 3. If `setup-state.json` absent → run Phase 1 init (create file + ONBOARDING.md)
 4. If any live check fails → invoke `octowiz:setup`
@@ -146,24 +153,24 @@ At the top of the skill, before Step 1 (Read project setup):
 - Passes the gap list to each phase; phases skip steps where no gap exists
 
 **`octowiz:setup-plugins`** (per-machine)
-- Checks `~/.claude/plugins/` directly for each plugin
-- For each missing plugin: explains what it does and why octowiz needs it, gives the exact `claude plugins install <url>` command, waits for user confirmation, verifies presence after install
-- Plugins: superpowers, mattpocock, antfu (all installed upfront — avoids a second pass after repo scan)
-- Updates `machine-state.json` with `"verified"` once confirmed present on disk
+- Detects each plugin by globbing `~/.claude/plugins/cache/*/<plugin-id>/` (matches any marketplace source)
+- Required plugins: `superpowers`, `mattpo-skills`, `antfu-skills` — all installed upfront to avoid a second pass after repo scan
+- For each absent plugin: explains what it does and why octowiz needs it, gives the exact `claude plugins install <plugin-id>` command, waits for user confirmation, re-checks the glob after install
+- Updates `machine-state.json` plugins map using the exact plugin ID as key with value `"verified"` once the glob confirms presence
 
 **`octowiz:setup-cache`** (per-machine)
 - Checks `LITELLM_BASE_URL` and `LITELLM_ADMIN_API_KEY` env vars directly
 - If missing, guides the user to add them to `~/.claude/settings.json`
 - Seeds all four role bundles: routing, planner, implementer, reviewer
-- Verifies end-to-end with `octowiz-cache get --role routing`
-- Records `cache_verified_at` timestamp in `machine-state.json`
-- On subsequent invocations: only re-verifies if `cache_verified_at` is absent or older than 24h
+- Verifies end-to-end with `octowiz-cache get --role routing` (routing is the only bundle verified at setup time)
+- Records `routing_verified_at` timestamp in `machine-state.json`; planner/implementer/reviewer timestamps are set lazily when each option is first selected
+- On subsequent invocations: only re-verifies routing if `routing_verified_at` is absent or older than 24h
 
 **`octowiz:setup-repo`** (per-repo)
 - Scans the repo using the signal table below
 - Detects agent instructions file (AGENTS.md > CLAUDE.md > GEMINI.md > none)
 - Writes the tailored checklist into ONBOARDING.md before running any steps
-- Invokes mattpocock setup if agent instructions file is missing the octowiz skill entries (appends to detected file; defers if no file)
+- Invokes mattpo-skills setup if an agent instructions file is present but missing the octowiz skill entries (appends to detected file; defers if no file exists — advisory only)
 - Flags missing CONTEXT.md and docs/adr/ in ONBOARDING.md as lazy-creation items — does NOT scaffold them
 - Applies the antfu decision tree
 - Updates `setup-state.json`
@@ -215,7 +222,7 @@ Readiness is always re-derived from observed environment. State file values are 
 | `mattpocock_setup: true` in state but entries missing from agent file | Live check detects gap → setup-repo re-runs mattpocock setup |
 | `antfu_deferred: true` and TS/Vue now detected | Live check flags antfu gap → setup-repo runs antfu setup |
 | New machine, cloned repo with setup-state.json committed | machine-state.json absent → live check fails for plugins/cache → runs per-machine phases only |
-| Developer dismisses a check (e.g., offline, LiteLLM not available yet) | `dismissed_checks` field written to `machine-state.json`; that check is skipped on next invocation |
+| Developer dismisses a check (e.g., offline, LiteLLM not available yet) | Check recorded in `dismissed_checks[<repo-root>]` in `machine-state.json`; skipped in that repo on next invocation only |
 
 ### Escape hatch from the intercept loop
 
@@ -223,17 +230,22 @@ If every `/octowiz` invocation re-intercepts because a gap cannot be satisfied (
 
 > "Setup incomplete. Skip this check and proceed to the workflow? (y/N)"
 
-If the developer responds `y`, the specific failing check is recorded in `dismissed_checks` in `machine-state.json`:
+If the developer responds `y`, the specific failing check is recorded under the current repo root in `dismissed_checks` in `machine-state.json`. The repo root is resolved via `git rev-parse --show-toplevel`:
 
 ```json
 {
-  "dismissed_checks": ["litellm_cache", "plugin_antfu"]
+  "dismissed_checks": {
+    "/Users/razu/Documents/python-only-repo": ["litellm_cache"],
+    "/Users/razu/Documents/typescript-app": ["plugin_antfu-skills"]
+  }
 }
 ```
 
-On subsequent invocations, dismissed checks are skipped by the live environment check. To re-enable a dismissed check, the developer removes the entry from `dismissed_checks` (or deletes `machine-state.json`) and re-invokes `/octowiz`.
+Dismissals are **repo-scoped**: a check dismissed in one repo has no effect in another. Each invocation resolves the repo root and reads only the entry for that root. This prevents a dismissal in a Python repo from suppressing `antfu-skills` prompts in a later TypeScript repo where the plugin is required.
 
-Dismissed checks are per-machine and never committed. This prevents a developer on a constrained machine (no LiteLLM, missing plugin) from being permanently blocked.
+To re-enable a dismissed check, remove its key from the repo root's array (or delete `machine-state.json`) and re-invoke `/octowiz`.
+
+Dismissed checks are per-machine and never committed.
 
 ---
 
