@@ -216,3 +216,149 @@ def scan_repo(cwd: Path) -> RepoScan:
         has_adr=(cwd / "docs" / "adr").is_dir(),
         has_github_remote=_has_github_remote(cwd),
     )
+
+
+# ---------------------------------------------------------------------------
+# Live environment check
+# ---------------------------------------------------------------------------
+
+CACHE_TTL_HOURS = 24
+
+
+@dataclass
+class CheckResult:
+    hard_gaps: List[str]      # failing hard-gate check IDs (after dismissals filtered out)
+    advisory_gaps: List[str]  # failing advisory check IDs (after dismissals filtered out)
+    machine_state_absent: bool   # True if machine-state.json did not exist before this call
+    repo_state_absent: bool      # True if setup-state.json did not exist before this call
+
+
+def _litellm_env_ok() -> bool:
+    """Return True if LITELLM_BASE_URL and at least one API key env var are set."""
+    has_base_url = bool(os.environ.get("LITELLM_BASE_URL"))
+    has_key = bool(os.environ.get("LITELLM_ADMIN_API_KEY") or os.environ.get("LITELLM_API_KEY"))
+    return has_base_url and has_key
+
+
+def _litellm_cache_ok(machine_state: Optional[MachineState]) -> bool:
+    """Return True if routing_verified_at exists and is within CACHE_TTL_HOURS."""
+    if machine_state is None:
+        return False
+    routing_ts = machine_state.litellm.get("routing_verified_at")
+    if not routing_ts:
+        return False
+    try:
+        verified_at = datetime.fromisoformat(routing_ts.replace("Z", "+00:00"))
+        age = datetime.now(timezone.utc) - verified_at
+        return age.total_seconds() < CACHE_TTL_HOURS * 3600
+    except (ValueError, TypeError):
+        return False
+
+
+def _antfu_gap(scan: RepoScan, repo_state: Optional[RepoState]) -> bool:
+    """Return True if antfu setup is needed but not done/deferred.
+
+    antfu is only a hard gate for ts_vue and polyglot stacks.
+    """
+    if scan.stack not in {"ts_vue", "polyglot"}:
+        return False
+    if repo_state is None:
+        return True  # no state file yet → antfu not set up
+    return not repo_state.antfu_setup and not repo_state.antfu_deferred
+
+
+def _get_dismissed_checks(cwd: Path, machine_state: Optional[MachineState]) -> List[str]:
+    """Return the list of dismissed check IDs for the current repo root."""
+    if machine_state is None:
+        return []
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=cwd, capture_output=True, text=True, timeout=5,
+        )
+        repo_root = result.stdout.strip()
+        return list(machine_state.dismissed_checks.get(repo_root, []))
+    except Exception:
+        return []
+
+
+def run_live_check(
+    cwd: Path,
+    machine_state_path: Path = MACHINE_STATE_PATH,
+    plugins_base: Path = PLUGINS_CACHE_BASE,
+) -> CheckResult:
+    machine_state = load_machine_state(machine_state_path)
+    repo_state = load_repo_state(cwd)
+    machine_state_absent = machine_state is None
+    repo_state_absent = repo_state is None
+
+    dismissed = _get_dismissed_checks(cwd, machine_state)
+    hard_gaps: List[str] = []
+    advisory_gaps: List[str] = []
+
+    # Check 1: plugins (hard gate)
+    plugin_results = detect_all_plugins(REQUIRED_PLUGINS, plugins_base)
+    for plugin_id, present in plugin_results.items():
+        if not present:
+            check_id = f"plugin_{plugin_id}"
+            if check_id not in dismissed:
+                hard_gaps.append(check_id)
+
+    # Check 2: litellm env vars (hard gate)
+    if not _litellm_env_ok():
+        if "litellm_env" not in dismissed:
+            hard_gaps.append("litellm_env")
+
+    # Check 3: litellm cache TTL (hard gate)
+    if not _litellm_cache_ok(machine_state):
+        if "litellm_cache" not in dismissed:
+            hard_gaps.append("litellm_cache")
+
+    # Checks 4–6 need repo scan
+    scan = scan_repo(cwd)
+
+    # Check 4: agent file (advisory)
+    if scan.agent_file is None:
+        if "agent_file" not in dismissed:
+            advisory_gaps.append("agent_file")
+
+    # Check 5: mattpo skills setup (advisory) — only if agent file exists
+    if scan.agent_file is not None and not scan.agent_has_skills_section:
+        if "mattpo_skills_setup" not in dismissed:
+            advisory_gaps.append("mattpo_skills_setup")
+
+    # Check 6: antfu (hard gate) — state file as truth
+    if _antfu_gap(scan, repo_state):
+        if "antfu" not in dismissed:
+            hard_gaps.append("antfu")
+
+    return CheckResult(
+        hard_gaps=hard_gaps,
+        advisory_gaps=advisory_gaps,
+        machine_state_absent=machine_state_absent,
+        repo_state_absent=repo_state_absent,
+    )
+
+
+def dismiss_check(
+    check_id: str,
+    cwd: Path,
+    machine_state_path: Path = MACHINE_STATE_PATH,
+) -> None:
+    """Record a dismissed check for the current repo root in machine-state.json."""
+    state = load_machine_state(machine_state_path)
+    if state is None:
+        state = MachineState(first_seen=_now_iso())
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=cwd, capture_output=True, text=True, timeout=5,
+        )
+        repo_root = result.stdout.strip()
+    except Exception:
+        repo_root = str(cwd)
+    existing = list(state.dismissed_checks.get(repo_root, []))
+    if check_id not in existing:
+        existing.append(check_id)
+    state.dismissed_checks[repo_root] = existing
+    save_machine_state(state, machine_state_path)
