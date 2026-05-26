@@ -129,3 +129,9 @@ class TestPluginDetection(unittest.TestCase):
         self.assertTrue(result["superpowers"])
         self.assertFalse(result["mattpo-skills"])
         self.assertFalse(result["antfu-skills"])
+
+    def test_plugin_detected_without_version_subdir(self):
+        # glob matches plugin_id at depth 1 under marketplace; no version dir needed
+        plugin_dir = self.plugins_base / "integrahub" / "mattpo-skills"
+        plugin_dir.mkdir(parents=True)
+        self.assertTrue(detect_plugin("mattpo-skills", self.plugins_base))

@@ -127,7 +127,7 @@ def detect_plugin(plugin_id: str, plugins_base: Path = PLUGINS_CACHE_BASE) -> bo
     """Return True if any marketplace subdirectory contains <plugin_id>/."""
     if not plugins_base.exists():
         return False
-    return any(plugins_base.glob(f"*/{plugin_id}"))
+    return any(m.exists() for m in plugins_base.glob(f"*/{plugin_id}"))
 
 
 def detect_all_plugins(
