@@ -116,3 +116,22 @@ def init_repo_state(cwd: Path) -> RepoState:
     state = RepoState(created_at=_now_iso())
     save_repo_state(state, cwd)
     return state
+
+
+# ---------------------------------------------------------------------------
+# Plugin detection
+# ---------------------------------------------------------------------------
+
+
+def detect_plugin(plugin_id: str, plugins_base: Path = PLUGINS_CACHE_BASE) -> bool:
+    """Return True if any marketplace subdirectory contains <plugin_id>/."""
+    if not plugins_base.exists():
+        return False
+    return any(plugins_base.glob(f"*/{plugin_id}"))
+
+
+def detect_all_plugins(
+    plugin_ids: List[str] = REQUIRED_PLUGINS,
+    plugins_base: Path = PLUGINS_CACHE_BASE,
+) -> Dict[str, bool]:
+    return {pid: detect_plugin(pid, plugins_base) for pid in plugin_ids}

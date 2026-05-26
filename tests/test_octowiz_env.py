@@ -18,6 +18,7 @@ from octowiz_env import (
     init_machine_state,
     init_repo_state,
 )
+from octowiz_env import detect_plugin, detect_all_plugins, REQUIRED_PLUGINS
 
 
 class TestMachineStateIO(unittest.TestCase):
@@ -93,3 +94,38 @@ class TestRepoStateIO(unittest.TestCase):
         save_repo_state(state, self.cwd)
         state2 = init_repo_state(self.cwd)
         self.assertTrue(state2.mattpocock_setup)
+
+
+class TestPluginDetection(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.plugins_base = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_absent_plugin_returns_false(self):
+        self.assertFalse(detect_plugin("superpowers", self.plugins_base))
+
+    def test_present_plugin_under_marketplace_returns_true(self):
+        # simulate ~/.claude/plugins/cache/claude-plugins-official/superpowers/
+        plugin_dir = self.plugins_base / "claude-plugins-official" / "superpowers" / "5.1.0"
+        plugin_dir.mkdir(parents=True)
+        self.assertTrue(detect_plugin("superpowers", self.plugins_base))
+
+    def test_present_under_different_marketplace(self):
+        plugin_dir = self.plugins_base / "integrahub" / "mattpo-skills" / "1.0.0"
+        plugin_dir.mkdir(parents=True)
+        self.assertTrue(detect_plugin("mattpo-skills", self.plugins_base))
+
+    def test_detect_all_returns_dict_for_each_required(self):
+        result = detect_all_plugins(REQUIRED_PLUGINS, self.plugins_base)
+        self.assertEqual(set(result.keys()), set(REQUIRED_PLUGINS))
+        self.assertTrue(all(v is False for v in result.values()))
+
+    def test_detect_all_reflects_partial_install(self):
+        (self.plugins_base / "integrahub" / "superpowers" / "1.0.0").mkdir(parents=True)
+        result = detect_all_plugins(REQUIRED_PLUGINS, self.plugins_base)
+        self.assertTrue(result["superpowers"])
+        self.assertFalse(result["mattpo-skills"])
+        self.assertFalse(result["antfu-skills"])
