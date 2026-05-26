@@ -16,6 +16,78 @@ description: >
 You are the entry point for the AI-assisted coding workflow. Read the project, fetch
 operating doctrine from LiteLLM memory, and route to the right installed skills.
 
+## Pre-flight: Auto-intercept check
+
+**Run this before anything else — before reading the project, before loading doctrine.**
+
+### 1. Run the live environment check
+
+```bash
+octowiz-cache check
+```
+
+Parse the JSON output (`{"status": "...", "hard_gaps": [...], "advisory_gaps": [...]}`).
+
+### 2. Bootstrap machine state if absent
+
+If `~/.octowiz/machine-state.json` does not exist, create it now:
+
+```bash
+python3 -c "
+from octowiz_env import init_machine_state
+init_machine_state()
+print('machine-state.json created')
+"
+```
+
+### 3. Bootstrap repo state if absent (Phase 1 init)
+
+If `.octowiz/setup-state.json` does not exist in the current directory, this is the first time octowiz has run in this repo. Create it and write `ONBOARDING.md`:
+
+```bash
+python3 -c "
+from octowiz_env import init_repo_state
+import pathlib
+init_repo_state(pathlib.Path('.'))
+print('setup-state.json created')
+"
+```
+
+Then create `ONBOARDING.md` in the current directory with a skeleton checklist (actual statuses will be filled in by `octowiz:setup`):
+
+```markdown
+# Octowiz Setup
+
+## Environment (per-machine)
+- [ ] superpowers plugin
+- [ ] mattpo-skills plugin
+- [ ] antfu-skills plugin
+- [ ] LiteLLM env vars (LITELLM_BASE_URL + API key)
+- [ ] LiteLLM routing cache
+
+## Project (per-repo)
+- [ ] antfu skills setup (if TypeScript/Vue stack)
+- [ ] Agent instructions file
+- [ ] mattpo-skills section (## Agent skills)
+
+## Next step
+Running octowiz:setup...
+```
+
+### 4. Intercept decision
+
+**If `hard_gaps` is non-empty:** Invoke `octowiz:setup`. Do NOT proceed to the steps below. `octowiz:setup` will run the required phases and, when complete, return to this skill to show the A/B/C/D menu.
+
+**If `hard_gaps` is empty and `ONBOARDING.md` exists (stale):** The environment is now clean. Delete ONBOARDING.md:
+```bash
+rm -f ONBOARDING.md
+```
+Then proceed to Step 1 below.
+
+**If `hard_gaps` is empty and `ONBOARDING.md` is absent:** Proceed to Step 1 below.
+
+---
+
 ## Step 1 — Read project setup
 
 Run each of the following and note what you find:
