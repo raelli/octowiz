@@ -69,10 +69,7 @@ def cmd_get(args) -> int:
             ttl_seconds=_ttl(args),
             refresh=bypass,
         )
-    except KeyError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-    except RuntimeError as exc:
+    except (KeyError, ValueError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
     sys.stdout.write(content)
