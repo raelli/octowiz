@@ -1,3 +1,11 @@
+---
+name: setup-verify
+description: >
+  Final verification gate for octowiz setup. Re-runs the live check and confirms all
+  hard gates pass. On success deletes ONBOARDING.md and returns to the octowiz workflow
+  menu. Provides per-check fix instructions and dismiss escape hatch if gaps remain.
+---
+
 # octowiz:setup-verify
 
 Final verification gate. Re-runs the live check and confirms all hard gates pass.
@@ -26,7 +34,7 @@ All hard gates pass. Proceed:
 2. Report to the developer:
    > "Setup complete. All required plugins are installed, LiteLLM is configured, and repo setup is done. Proceeding to the workflow menu."
 
-3. Return control to `octowiz:octowiz-workflow` to show the A/B/C/D menu.
+3. Return control to `octowiz:octowiz` to show the A/B/C/D menu.
 
 ## Step 3: If hard_gaps is non-empty — gaps remain
 

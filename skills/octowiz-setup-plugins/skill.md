@@ -1,3 +1,11 @@
+---
+name: setup-plugins
+description: >
+  Guides the developer through installing missing octowiz dependency plugins
+  (superpowers, mattpo-skills, antfu-skills). Verifies installation via plugin
+  cache glob and records results in machine-state.json.
+---
+
 # octowiz:setup-plugins
 
 Guides the developer through installing missing octowiz dependency plugins.

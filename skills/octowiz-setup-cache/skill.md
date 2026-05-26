@@ -1,3 +1,11 @@
+---
+name: setup-cache
+description: >
+  Guides the developer through LiteLLM env var configuration and routing bundle
+  verification. Sets LITELLM_BASE_URL and API key in ~/.claude/settings.json,
+  runs octowiz-cache build --all, and records routing_verified_at timestamp.
+---
+
 # octowiz:setup-cache
 
 Guides the developer through LiteLLM env var configuration and routing bundle verification.

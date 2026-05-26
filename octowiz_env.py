@@ -265,15 +265,17 @@ def _litellm_cache_ok(machine_state: Optional[MachineState]) -> bool:
 
 
 def _antfu_gap(scan: RepoScan, repo_state: Optional[RepoState]) -> bool:
-    """Return True if antfu setup is needed but not done/deferred.
+    """Return True if antfu setup is needed but not done.
 
     antfu is only a hard gate for ts_vue and polyglot stacks.
+    antfu_deferred means "no agent file existed at setup time" — re-flag on every
+    invocation so setup-repo can retry once an agent file is present.
     """
     if scan.stack not in {"ts_vue", "polyglot"}:
         return False
     if repo_state is None:
         return True  # no state file yet → antfu not set up
-    return not repo_state.antfu_setup and not repo_state.antfu_deferred
+    return not repo_state.antfu_setup
 
 
 def _repo_key(cwd: Path) -> str:

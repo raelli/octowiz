@@ -344,11 +344,13 @@ class TestLiveCheck(unittest.TestCase):
         repo_state = RepoState(antfu_setup=True)
         self.assertFalse(_antfu_gap(scan, repo_state))
 
-    def test_antfu_gap_ts_vue_deferred_returns_false(self):
+    def test_antfu_gap_ts_vue_deferred_returns_true(self):
+        # antfu_deferred means "no agent file existed at setup time" — gap re-fires so
+        # setup-repo can retry on next invocation when an agent file may now exist
         scan = RepoScan(agent_file=None, agent_has_skills_section=False,
                         stack="ts_vue", has_context_md=False, has_adr=False, has_github_remote=False)
         repo_state = RepoState(antfu_deferred=True)
-        self.assertFalse(_antfu_gap(scan, repo_state))
+        self.assertTrue(_antfu_gap(scan, repo_state))
 
     def test_antfu_gap_polyglot_not_done_returns_true(self):
         scan = RepoScan(agent_file=None, agent_has_skills_section=False,

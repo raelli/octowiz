@@ -1,10 +1,18 @@
+---
+name: setup
+description: >
+  Setup orchestrator for octowiz. Re-runs the live environment check, builds a gap list,
+  and runs only the phases needed (plugins, cache, repo). Invoked automatically by
+  octowiz:octowiz when hard gaps are detected.
+---
+
 # octowiz:setup
 
 Setup orchestrator. Re-runs the live environment check, builds a gap list, and runs only the phases needed.
 
 ## When invoked
 
-This skill is invoked by `octowiz:octowiz-workflow` when the live check reports gaps. Do not invoke this skill directly for any other purpose.
+This skill is invoked by `octowiz:octowiz` when the live check reports gaps. Do not invoke this skill directly for any other purpose.
 
 ## Step 1: Run the live check
 
@@ -15,7 +23,7 @@ octowiz-cache check
 
 Parse the JSON output. Store the `hard_gaps` and `advisory_gaps` arrays.
 
-If exit code is 0 (status "clean"): delete ONBOARDING.md from the current directory if it exists, then proceed directly to the A/B/C/D workflow menu in `octowiz:octowiz-workflow`. Do not run any phase skills.
+If exit code is 0 (status "clean"): delete ONBOARDING.md from the current directory if it exists, then proceed directly to the A/B/C/D workflow menu in `octowiz:octowiz`. Do not run any phase skills.
 
 ## Step 2: Create ONBOARDING.md if absent
 

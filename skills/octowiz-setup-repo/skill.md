@@ -1,3 +1,11 @@
+---
+name: setup-repo
+description: >
+  Scans the repository and runs per-repo setup steps: creates agent instructions file
+  if absent, runs mattpo-skills setup, handles antfu decision tree for ts_vue/polyglot
+  stacks, and flags optional CONTEXT.md and docs/adr/ creation.
+---
+
 # octowiz:setup-repo
 
 Scans the repository and runs per-repo setup steps.
