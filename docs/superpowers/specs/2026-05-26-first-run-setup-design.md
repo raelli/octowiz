@@ -45,7 +45,7 @@ On every `/octowiz` entry, the workflow runs a **live environment check** before
 3. Has `octowiz-cache get --role routing` been verified to work? (cache the result in `machine-state.json`; re-verify if `cache_verified_at` is absent or older than 24h — the call is a live network request to LiteLLM)
 4. (Advisory) Does an agent instructions file exist (`AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`) with an `## Agent skills` section? Absence is noted in ONBOARDING.md but does **not** block `setup-verify` from passing — creating the file is a user action.
 5. (Advisory) Has `mattpo-skills` setup been run? (observed: does the detected agent instructions file have octowiz-related skill entries?) Only checked if an agent file exists; absent file makes this check pass vacuously.
-6. Is antfu setup done or deferred? (use `setup-state.json` as a resume bookmark)
+6. Is antfu setup done or deferred? (use `setup-state.json` as a resume bookmark — antfu is the sole exception to observed-state-first: it has no observable marker in the repo, so the state file value is treated as truth here)
 
 Checks 1–3 and 6 are **hard gates**: if any fails, setup intercepts. Checks 4–5 are **advisory**: reported in ONBOARDING.md, but `setup-verify` can complete without them. This prevents a permanent intercept loop in repos that do not yet have an agent instructions file.
 
@@ -75,6 +75,8 @@ Two resume-bookmark files, one per scope:
 ```
 
 Plugin IDs match the marketplace package IDs exactly — `superpowers`, `mattpo-skills`, `antfu-skills`. Presence is detected by globbing `~/.claude/plugins/cache/*/<plugin-id>/` (matches any marketplace source). These same IDs are used in `dismissed_checks` keys and `claude plugins install` commands.
+
+Note: the install ID `mattpo-skills` differs from its slash-command namespace `mattpocock-skills` (e.g. `/mattpocock-skills:setup-matt-pocock-skills`). All plugin presence checks and state keys use the install ID.
 
 `dismissed_checks` is a map keyed by repo root path (see Escape hatch section). An empty object is the default; absent is treated as empty.
 
@@ -219,7 +221,7 @@ Readiness is always re-derived from observed environment. State file values are 
 | Live check passes, ONBOARDING.md present (stale) | Delete ONBOARDING.md, normal workflow |
 | Live check fails for any reason | Auto-intercept, run setup for failing checks only |
 | Plugin was installed but later removed | Live check detects absence → setup-plugins re-runs for that plugin |
-| `mattpocock_setup: true` in state but entries missing from agent file | Live check detects gap → setup-repo re-runs mattpocock setup |
+| `mattpocock_setup: true` in state but entries missing from agent file | Advisory gap noted in ONBOARDING.md; setup-repo re-runs mattpo-skills setup next time a hard gate triggers intercept |
 | `antfu_deferred: true` and TS/Vue now detected | Live check flags antfu gap → setup-repo runs antfu setup |
 | New machine, cloned repo with setup-state.json committed | machine-state.json absent → live check fails for plugins/cache → runs per-machine phases only |
 | Developer dismisses a check (e.g., offline, LiteLLM not available yet) | Check recorded in `dismissed_checks[<repo-root>]` in `machine-state.json`; skipped in that repo on next invocation only |
