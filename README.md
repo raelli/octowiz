@@ -149,7 +149,7 @@ Add to `~/.claude/settings.json`:
 ```json
 {
   "extraKnownMarketplaces": {
-    "litellm": {
+    "integrahub": {
       "source": "url",
       "url": "https://llm.integrahub.de/claude-code/marketplace.json"
     }

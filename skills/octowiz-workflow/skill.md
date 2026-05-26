@@ -1,7 +1,7 @@
 ---
 name: octowiz
 description: >
-  Octowiz AI coding workflow coordinator. Reads LiteLLM memory doctrine at runtime,
+  Octowiz AI coding workflow coordinator. Reads IntegraHub memory doctrine at runtime,
   detects where you are in the development lifecycle, and routes to the right skill
   combination from superpowers + mattpocock-skills.
   Use this skill at the START of any development work — whether you have a fresh idea,
@@ -14,7 +14,7 @@ description: >
 # Octowiz Workflow Coordinator
 
 You are the entry point for the AI-assisted coding workflow. Read the project, fetch
-operating doctrine from LiteLLM memory, and route to the right installed skills.
+operating doctrine from IntegraHub memory, and route to the right installed skills.
 
 ## Step 1 — Read project setup
 
