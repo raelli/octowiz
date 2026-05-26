@@ -7,6 +7,7 @@ Subcommands: get, build, status, refresh, clear
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -143,6 +144,25 @@ def cmd_clear(args) -> int:
     return 0
 
 
+def cmd_check(args) -> int:
+    """Run the live environment check and print JSON result."""
+    cwd = Path(args.cwd) if args.cwd else Path.cwd()
+    try:
+        import octowiz_env as _env
+    except ImportError as exc:
+        print(json.dumps({"error": str(exc)}), file=sys.stderr)
+        return 2
+    result = _env.run_live_check(cwd, _env.MACHINE_STATE_PATH, _env.PLUGINS_CACHE_BASE)
+    status = "clean" if not result.hard_gaps else "has_gaps"
+    output = {
+        "status": status,
+        "hard_gaps": result.hard_gaps,
+        "advisory_gaps": result.advisory_gaps,
+    }
+    print(json.dumps(output))
+    return 0 if status == "clean" else 1
+
+
 # ---------------------------------------------------------------------------
 # Parser construction
 # ---------------------------------------------------------------------------
@@ -225,6 +245,15 @@ def _make_parser() -> argparse.ArgumentParser:
         help="Clear entire cache dir (not just the current namespace)",
     )
     p_clear.set_defaults(func=cmd_clear)
+
+    # -- check --
+    p_check = sub.add_parser("check", parents=[common], help="Run live environment check")
+    p_check.add_argument(
+        "--cwd",
+        default=None,
+        help="Directory to check (default: current working directory)",
+    )
+    p_check.set_defaults(func=cmd_check)
 
     return parser
 
