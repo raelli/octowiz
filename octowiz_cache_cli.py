@@ -141,6 +141,25 @@ def cmd_clear(args) -> int:
     return 0
 
 
+def cmd_init(args) -> int:
+    """Bootstrap machine-state.json and/or setup-state.json if absent."""
+    cwd = Path(args.cwd) if args.cwd else Path.cwd()
+    try:
+        import octowiz_env as _env
+    except ImportError as exc:
+        print(json.dumps({"error": str(exc)}), file=sys.stderr)
+        return 2
+    machine_created = not _env.MACHINE_STATE_PATH.exists()
+    _env.init_machine_state()
+    repo_created = not (cwd / _env.OCTOWIZ_DIR / _env.SETUP_STATE_FILENAME).exists()
+    _env.init_repo_state(cwd)
+    print(json.dumps({
+        "machine_state": "created" if machine_created else "exists",
+        "repo_state": "created" if repo_created else "exists",
+    }))
+    return 0
+
+
 def cmd_check(args) -> int:
     """Run the live environment check and print JSON result."""
     cwd = Path(args.cwd) if args.cwd else Path.cwd()
@@ -242,6 +261,15 @@ def _make_parser() -> argparse.ArgumentParser:
         help="Clear entire cache dir (not just the current namespace)",
     )
     p_clear.set_defaults(func=cmd_clear)
+
+    # -- init --
+    p_init = sub.add_parser("init", parents=[common], help="Bootstrap machine-state.json and setup-state.json if absent")
+    p_init.add_argument(
+        "--cwd",
+        default=None,
+        help="Repo directory to init (default: current working directory)",
+    )
+    p_init.set_defaults(func=cmd_init)
 
     # -- check --
     p_check = sub.add_parser("check", parents=[common], help="Run live environment check")

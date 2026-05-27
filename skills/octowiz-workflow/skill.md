@@ -28,32 +28,20 @@ octowiz-cache check
 
 Parse the JSON output (`{"status": "...", "hard_gaps": [...], "advisory_gaps": [...]}`).
 
-### 2. Bootstrap machine state if absent
+### 2. Bootstrap missing state files
 
-If `~/.octowiz/machine-state.json` does not exist, create it now:
-
-```bash
-python3 -c "
-from octowiz_env import init_machine_state
-init_machine_state()
-print('machine-state.json created')
-"
-```
-
-### 3. Bootstrap repo state if absent (Phase 1 init)
-
-If `.octowiz/setup-state.json` does not exist in the current directory, this is the first time octowiz has run in this repo. Create it and write `ONBOARDING.md`:
+Run this unconditionally — it is idempotent and only creates files that are absent:
 
 ```bash
-python3 -c "
-from octowiz_env import init_repo_state
-import pathlib
-init_repo_state(pathlib.Path('.'))
-print('setup-state.json created')
-"
+octowiz-cache init
 ```
 
-Then create `ONBOARDING.md` in the current directory with a skeleton checklist (actual statuses will be filled in by `octowiz:setup`):
+Parse the JSON output (`{"machine_state": "created"|"exists", "repo_state": "created"|"exists"}`).
+If `repo_state` is `"created"`, this is the first time octowiz has run in this repo — write `ONBOARDING.md` next (step 3).
+
+### 3. Write ONBOARDING.md on first repo run
+
+Only if `repo_state` was `"created"` in step 2. Create `ONBOARDING.md` in the current directory with a skeleton checklist (actual statuses will be filled in by `octowiz:setup`):
 
 ```markdown
 # Octowiz Setup
