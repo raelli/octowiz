@@ -1,0 +1,17 @@
+{
+  "description": "Auto-upgrade the octowiz CLI when the plugin has been updated",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PLUGIN_ROOT/hooks/upgrade-check.sh\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
