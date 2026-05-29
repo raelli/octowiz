@@ -262,48 +262,6 @@ def _namespace_cache_dir(cache_dir: Path, namespace: str) -> Path:
     return cache_dir / "namespaces" / namespace
 
 
-def _read_manifest(ns_dir: Path) -> Optional[Dict[str, Any]]:
-    manifest_path = ns_dir / "manifest.json"
-    if not manifest_path.exists():
-        return None
-    try:
-        return json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def _write_manifest(ns_dir: Path, manifest: Dict[str, Any]) -> None:
-    """Write manifest atomically using os.replace()."""
-    manifest = {**manifest, "schema_version": CACHE_SCHEMA_VERSION}
-    ns_dir.mkdir(parents=True, exist_ok=True)
-    target = ns_dir / "manifest.json"
-    tmp = target.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2)
-    os.replace(tmp, target)
-
-
-def _read_bundle(ns_dir: Path, role: str, bundle_hash: str) -> Optional[str]:
-    bundle_path = ns_dir / "bundles" / role / f"{bundle_hash}.md"
-    if not bundle_path.exists():
-        return None
-    try:
-        return bundle_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-
-
-def _write_bundle(ns_dir: Path, role: str, bundle_hash: str, content: str) -> Path:
-    """Write bundle atomically using os.replace(). Returns the bundle path."""
-    bundle_dir = ns_dir / "bundles" / role
-    bundle_dir.mkdir(parents=True, exist_ok=True)
-    bundle_path = bundle_dir / f"{bundle_hash}.md"
-    tmp_path = bundle_path.with_suffix(".md.tmp")
-    tmp_path.write_text(content, encoding="utf-8")
-    os.replace(str(tmp_path), str(bundle_path))
-    return bundle_path
-
-
 # ---------------------------------------------------------------------------
 # CacheStore
 # ---------------------------------------------------------------------------
@@ -316,13 +274,53 @@ class CacheStore:
         self._cache_dir = cache_dir
         self._ttl = ttl_seconds
 
+    # -- private I/O helpers -------------------------------------------------
+
     def _ns_dir(self, namespace: str) -> Path:
         return _namespace_cache_dir(self._cache_dir, namespace)
+
+    def _read_manifest(self, ns_dir: Path) -> Optional[Dict[str, Any]]:
+        manifest_path = ns_dir / "manifest.json"
+        if not manifest_path.exists():
+            return None
+        try:
+            return json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    def _write_manifest(self, ns_dir: Path, manifest: Dict[str, Any]) -> None:
+        manifest = {**manifest, "schema_version": CACHE_SCHEMA_VERSION}
+        ns_dir.mkdir(parents=True, exist_ok=True)
+        target = ns_dir / "manifest.json"
+        tmp = target.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+        os.replace(tmp, target)
+
+    def _read_bundle(self, ns_dir: Path, role: str, bundle_hash: str) -> Optional[str]:
+        bundle_path = ns_dir / "bundles" / role / f"{bundle_hash}.md"
+        if not bundle_path.exists():
+            return None
+        try:
+            return bundle_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    def _write_bundle(self, ns_dir: Path, role: str, bundle_hash: str, content: str) -> Path:
+        bundle_dir = ns_dir / "bundles" / role
+        bundle_dir.mkdir(parents=True, exist_ok=True)
+        bundle_path = bundle_dir / f"{bundle_hash}.md"
+        tmp_path = bundle_path.with_suffix(".md.tmp")
+        tmp_path.write_text(content, encoding="utf-8")
+        os.replace(str(tmp_path), str(bundle_path))
+        return bundle_path
+
+    # -- freshness helpers ---------------------------------------------------
 
     def _get_fresh(self, role: str, namespace: str) -> Optional[str]:
         """Return cached bundle content if fresh and schema-valid, else None."""
         ns_dir = self._ns_dir(namespace)
-        manifest = _read_manifest(ns_dir)
+        manifest = self._read_manifest(ns_dir)
         if manifest is None:
             return None
         if manifest.get("schema_version") != CACHE_SCHEMA_VERSION:
@@ -333,19 +331,21 @@ class CacheStore:
         if not manifest_is_fresh(role_entry, self._ttl):
             return None
         bundle_hash = role_entry.get("bundle_hash", "")
-        return _read_bundle(ns_dir, role, bundle_hash)
+        return self._read_bundle(ns_dir, role, bundle_hash)
 
     def _get_stale(self, role: str, namespace: str) -> Optional[str]:
         """Return any cached bundle regardless of freshness, else None."""
         ns_dir = self._ns_dir(namespace)
-        manifest = _read_manifest(ns_dir)
+        manifest = self._read_manifest(ns_dir)
         if manifest is None:
             return None
         role_entry = manifest.get("roles", {}).get(role)
         if not role_entry:
             return None
         bundle_hash = role_entry.get("bundle_hash", "")
-        return _read_bundle(ns_dir, role, bundle_hash)
+        return self._read_bundle(ns_dir, role, bundle_hash)
+
+    # -- public interface ----------------------------------------------------
 
     def get_best_available(
         self,
@@ -378,7 +378,7 @@ class CacheStore:
         new_hash = hash_bundle(role, memories)
 
         # Remove old bundle file if the hash changed
-        old_manifest = _read_manifest(ns_dir)
+        old_manifest = self._read_manifest(ns_dir)
         if old_manifest is not None:
             old_entry = old_manifest.get("roles", {}).get(role)
             if old_entry:
@@ -390,10 +390,10 @@ class CacheStore:
                     except OSError:
                         pass
 
-        bundle_path = _write_bundle(ns_dir, role, new_hash, content)
+        bundle_path = self._write_bundle(ns_dir, role, new_hash, content)
         memory_hashes = {m["key"]: hash_memory(m) for m in memories}
 
-        manifest = _read_manifest(ns_dir) or {"namespace": namespace, "roles": {}}
+        manifest = self._read_manifest(ns_dir) or {"namespace": namespace, "roles": {}}
         manifest["namespace"] = namespace
         manifest["updated_at"] = time.time()
         manifest["ttl_seconds"] = self._ttl
@@ -403,8 +403,36 @@ class CacheStore:
             "memory_hashes": memory_hashes,
             "updated_at": time.time(),
         }
-        _write_manifest(ns_dir, manifest)
+        self._write_manifest(ns_dir, manifest)
         return content
+
+    def seed(
+        self,
+        role: str,
+        namespace: str,
+        content: str,
+        *,
+        expired: bool = False,
+    ) -> "CacheStore":
+        """Write a bundle directly to disk for test setup.
+
+        Use instead of private I/O helpers in tests. expired=True sets updated_at
+        far in the past so the entry reads as stale. Returns self for chaining.
+        """
+        ns_dir = self._ns_dir(namespace)
+        bundle_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+        self._write_bundle(ns_dir, role, bundle_hash, content)
+        updated_at = time.time() - 9999 if expired else time.time()
+        manifest = self._read_manifest(ns_dir) or {"namespace": namespace, "roles": {}}
+        manifest["namespace"] = namespace
+        manifest.setdefault("roles", {})[role] = {
+            "bundle_hash": bundle_hash,
+            "bundle_path": f"bundles/{role}/{bundle_hash}.md",
+            "updated_at": updated_at,
+            "memory_hashes": {},
+        }
+        self._write_manifest(ns_dir, manifest)
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -497,8 +525,9 @@ def cache_status(
 ) -> List[RoleStatus]:
     """Return freshness status for all roles in the given namespace."""
     resolved_dir = Path(cache_dir or os.environ.get("OCTOWIZ_CACHE_DIR", str(DEFAULT_CACHE_DIR)))
-    ns_dir = _namespace_cache_dir(resolved_dir, namespace)
-    manifest = _read_manifest(ns_dir)
+    store = CacheStore(resolved_dir, ttl_seconds)
+    ns_dir = store._ns_dir(namespace)
+    manifest = store._read_manifest(ns_dir)
     results = []
     for role in ROLE_REGISTRY.role_names():
         if manifest is None or role not in manifest.get("roles", {}):
