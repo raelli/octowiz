@@ -1,0 +1,37 @@
+from fastapi import FastAPI, Request
+from fastapi.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from a2a import make_response, parse_event
+from auth import auth_middleware
+from card import AGENT_CARD
+from dispatch import dispatch
+
+app = FastAPI(title="Octowiz A2A Agent")
+app.add_middleware(BaseHTTPMiddleware, dispatch=auth_middleware)
+
+
+@app.get("/a2a/octowiz/.well-known/agent.json")
+@app.get("/a2a/octowiz/.well-known/agent-card.json")
+async def agent_card():
+    return AGENT_CARD
+
+
+async def _handle(request: Request):
+    body = await request.json()
+    req_id = body.get("id")
+    event = parse_event(body)
+    if event is None:
+        return make_response(req_id, {})
+    artifact = await dispatch(event)
+    return make_response(req_id, artifact, session_id=event.get("sessionId"))
+
+
+@app.post("/a2a/octowiz")
+async def octowiz_handler(request: Request):
+    return await _handle(request)
+
+
+@app.post("/a2a/dev-advisor")
+async def dev_advisor_alias(request: Request):
+    return await _handle(request)
