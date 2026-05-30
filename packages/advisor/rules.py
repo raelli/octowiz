@@ -1,5 +1,5 @@
 """Advisor rules — ported from ÆLLI dev-advisor."""
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 BRANCH_DRIFT_THRESHOLD = 20
 
@@ -73,7 +73,7 @@ class RulesAdvisor:
                 return result
         return None
 
-    async def advise_all(self, event: Dict, session: Any, ctx: Dict) -> list:
+    async def advise_all(self, event: Dict, session: Any, ctx: Dict) -> List[Dict]:
         """Run all rules and return every non-None result (not just the first)."""
         results = []
         for rule in self.rules:
