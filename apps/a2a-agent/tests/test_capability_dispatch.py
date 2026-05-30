@@ -4,7 +4,9 @@ import json
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
+os.environ["OCTOWIZ_INBOUND_SECRET"] = "test-secret"
+
+_SECRET = "test-secret"
 
 import unittest
 
@@ -145,8 +147,140 @@ class TestDispatchUnknownOp(unittest.TestCase):
         self.assertIn("unknown operation", result["message"])
 
 
+class FakeSession:
+    """Minimal AgentSession stand-in for provider mock."""
+    def __init__(self, status="running", needs_input=False):
+        self.id = "bg-test"
+        self.status = status
+        self.needs_input = needs_input
+        self.ready_for_review = (status == "stopped" and not needs_input)
+
+
+class FakeProvider:
+    """Configurable mock for ClaudeAgentViewProvider used in run tests."""
+
+    def __init__(self, states, logs="session output"):
+        self._states = iter(states)
+        self._logs = logs
+        self.log_calls: list = []
+
+    def get_status(self, run_id):
+        try:
+            return next(self._states)
+        except StopIteration:
+            return None
+
+    def get_logs(self, run_id):
+        self.log_calls.append(run_id)
+        return self._logs
+
+
+async def _sleep_noop(_delay):
+    """Instant sleep for tests."""
+
+
+class TestDispatchRun(unittest.TestCase):
+    """Tests for operation='run' (fire-and-observe)."""
+
+    def test_run_resolves_completed_when_session_stops(self):
+        from capabilities.dispatch import handle_dispatch
+        runner = FakeRunner(stdout=PLAIN_OUTPUT)
+        provider = FakeProvider(
+            states=[FakeSession("running"), FakeSession("stopped")],
+            logs="done",
+        )
+        result = _run(handle_dispatch(
+            {"operation": "run", "task": "fix bug", "cwd": "/repo"},
+            runner=runner,
+            provider=provider,
+            _sleep_fn=_sleep_noop,
+        ))
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["sessionId"], "b188cbb0")
+        self.assertEqual(result["output"], "done")
+
+    def test_run_resolves_needs_input_when_session_waits(self):
+        from capabilities.dispatch import handle_dispatch
+        runner = FakeRunner(stdout=PLAIN_OUTPUT)
+        provider = FakeProvider(
+            states=[FakeSession("running"), FakeSession("waiting", needs_input=True)],
+        )
+        result = _run(handle_dispatch(
+            {"operation": "run", "task": "fix bug", "cwd": "/repo"},
+            runner=runner,
+            provider=provider,
+            _sleep_fn=_sleep_noop,
+        ))
+        self.assertEqual(result["status"], "needs-input")
+
+    def test_run_resolves_failed_when_session_errors(self):
+        from capabilities.dispatch import handle_dispatch
+        runner = FakeRunner(stdout=PLAIN_OUTPUT)
+        provider = FakeProvider(states=[FakeSession("error")])
+        result = _run(handle_dispatch(
+            {"operation": "run", "task": "fix bug", "cwd": "/repo"},
+            runner=runner,
+            provider=provider,
+            _sleep_fn=_sleep_noop,
+        ))
+        self.assertEqual(result["status"], "failed")
+
+    def test_run_returns_error_when_start_fails(self):
+        from capabilities.dispatch import handle_dispatch
+        runner = FakeRunner(returncode=1, stderr="permission denied")
+        provider = FakeProvider(states=[])
+        result = _run(handle_dispatch(
+            {"operation": "run", "task": "fix bug", "cwd": "/repo"},
+            runner=runner,
+            provider=provider,
+        ))
+        self.assertEqual(result["status"], "error")
+        self.assertIn("permission denied", result["message"])
+
+    def test_run_times_out_and_returns_error(self):
+        from capabilities.dispatch import handle_dispatch
+
+        class NeverDone:
+            def get_status(self, _): return FakeSession("running")
+            def get_logs(self, _): return ""
+
+        result = _run(handle_dispatch(
+            {
+                "operation": "run",
+                "task": "fix bug",
+                "cwd": "/repo",
+                "_poll_interval": 1.0,
+                "_timeout": 0.0,
+            },
+            runner=FakeRunner(stdout=PLAIN_OUTPUT),
+            provider=NeverDone(),
+            _sleep_fn=_sleep_noop,
+        ))
+        self.assertEqual(result["status"], "error")
+        self.assertIn("timed out", result["message"])
+
+    def test_run_missing_task_returns_error_immediately(self):
+        from capabilities.dispatch import handle_dispatch
+        runner = FakeRunner()
+        provider = FakeProvider(states=[])
+        result = _run(handle_dispatch(
+            {"operation": "run", "cwd": "/repo"},
+            runner=runner,
+            provider=provider,
+        ))
+        self.assertEqual(result["status"], "error")
+        self.assertIn("task", result["message"])
+        self.assertEqual(runner.calls, [])
+
+
 class TestDispatchIntegration(unittest.TestCase):
     """Smoke test: verify dispatch routes octowiz.dispatch to the handler."""
+
+    def setUp(self):
+        os.environ["OCTOWIZ_INBOUND_SECRET"] = _SECRET
+
+    def tearDown(self):
+        os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
 
     def test_dispatch_is_routed_not_not_implemented(self):
         import importlib
@@ -166,7 +300,7 @@ class TestDispatchIntegration(unittest.TestCase):
                 "cwd": "/tmp",
             })}]}},
         }
-        resp = client.post("/a2a/octowiz", json=body)
+        resp = client.post("/a2a/octowiz", json=body, headers={"x-octowiz-secret": _SECRET})
         self.assertEqual(resp.status_code, 200)
         artifact = json.loads(resp.json()["result"]["artifacts"][0]["parts"][0]["text"])
         self.assertNotEqual(artifact.get("status"), "not_implemented")

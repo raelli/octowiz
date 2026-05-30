@@ -53,6 +53,10 @@ class TestAuthWithSecretSet(unittest.TestCase):
         resp = self.client.post("/a2a/octowiz", json=MINIMAL_BODY)
         self.assertEqual(resp.status_code, 401)
 
+    def test_card_endpoint_accessible_without_secret_header(self):
+        resp = self.client.get("/a2a/octowiz/.well-known/agent.json")
+        self.assertEqual(resp.status_code, 200)
+
 
 class TestAuthWithNoSecretEnvVar(unittest.TestCase):
     def setUp(self):
@@ -61,6 +65,12 @@ class TestAuthWithNoSecretEnvVar(unittest.TestCase):
     def tearDown(self):
         os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
 
-    def test_request_passes_when_secret_not_configured(self):
+    def test_request_blocked_when_secret_not_configured(self):
+        """Fail-closed: every POST request is rejected when the secret is unset."""
         resp = self.client.post("/a2a/octowiz", json=MINIMAL_BODY)
+        self.assertEqual(resp.status_code, 401)
+        self.assertIn("OCTOWIZ_INBOUND_SECRET", resp.json()["error"])
+
+    def test_card_endpoint_accessible_when_secret_not_configured(self):
+        resp = self.client.get("/a2a/octowiz/.well-known/agent.json")
         self.assertEqual(resp.status_code, 200)

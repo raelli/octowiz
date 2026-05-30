@@ -4,7 +4,9 @@ import json
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
+os.environ["OCTOWIZ_INBOUND_SECRET"] = "test-secret"
+
+_SECRET = "test-secret"
 
 import unittest
 
@@ -170,8 +172,84 @@ class TestManageAgentsTimeout(unittest.TestCase):
         self.assertEqual(result.get("warning"), "supervisor_unavailable")
 
 
+class TestManageAgentsCwdValidation(unittest.TestCase):
+    """Tests for cwd path validation in the list operation (issue #35)."""
+
+    def setUp(self):
+        import os
+        os.environ.pop("OCTOWIZ_ALLOWED_ROOTS", None)
+
+    def tearDown(self):
+        import os
+        os.environ.pop("OCTOWIZ_ALLOWED_ROOTS", None)
+
+    def test_list_without_cwd_always_allowed(self):
+        from capabilities.manage_agents import handle_manage_agents
+        runner = FakeRunner(stdout="[]")
+        result = _run(handle_manage_agents({"operation": "list"}, runner=runner))
+        self.assertEqual(result["status"], "ok")
+
+    def test_list_with_cwd_allowed_when_no_allowlist_configured(self):
+        from capabilities.manage_agents import handle_manage_agents
+        runner = FakeRunner(stdout="[]")
+        result = _run(handle_manage_agents({"operation": "list", "cwd": "/any/path"}, runner=runner))
+        self.assertEqual(result["status"], "ok")
+
+    def test_list_with_cwd_passes_canonical_path_to_runner(self):
+        import os
+        from capabilities.manage_agents import handle_manage_agents
+        runner = FakeRunner(stdout="[]")
+        _run(handle_manage_agents({"operation": "list", "cwd": "/repo"}, runner=runner))
+        self.assertEqual(len(runner.calls), 1)
+        args = runner.calls[0]
+        cwd_idx = args.index("--cwd") + 1
+        self.assertEqual(args[cwd_idx], os.path.realpath("/repo"))
+
+    def test_list_with_cwd_inside_allowed_root_passes(self):
+        import os
+        os.environ["OCTOWIZ_ALLOWED_ROOTS"] = "/projects"
+        from capabilities.manage_agents import handle_manage_agents
+        import importlib
+        import capabilities.manage_agents as _mod
+        importlib.reload(_mod)
+        runner = FakeRunner(stdout="[]")
+        result = _run(_mod.handle_manage_agents({"operation": "list", "cwd": "/projects/foo"}, runner=runner))
+        self.assertEqual(result["status"], "ok")
+
+    def test_list_with_cwd_outside_allowed_root_returns_error(self):
+        import os
+        os.environ["OCTOWIZ_ALLOWED_ROOTS"] = "/projects"
+        import importlib
+        import capabilities.manage_agents as _mod
+        importlib.reload(_mod)
+        runner = FakeRunner(stdout="[]")
+        result = _run(_mod.handle_manage_agents({"operation": "list", "cwd": "/etc/passwd"}, runner=runner))
+        self.assertEqual(result["status"], "error")
+        self.assertIn("allowed roots", result["message"])
+        self.assertEqual(runner.calls, [])
+
+    def test_list_symlink_traversal_blocked_by_allowlist(self):
+        import os
+        import tempfile
+        # /tmp is outside /projects — a symlink pointing there must still be blocked
+        os.environ["OCTOWIZ_ALLOWED_ROOTS"] = "/projects"
+        import importlib
+        import capabilities.manage_agents as _mod
+        importlib.reload(_mod)
+        runner = FakeRunner(stdout="[]")
+        result = _run(_mod.handle_manage_agents({"operation": "list", "cwd": "/tmp"}, runner=runner))
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(runner.calls, [])
+
+
 class TestManageAgentsDispatchIntegration(unittest.TestCase):
     """Smoke test: verify dispatch routes octowiz.manage_agents to the handler."""
+
+    def setUp(self):
+        os.environ["OCTOWIZ_INBOUND_SECRET"] = _SECRET
+
+    def tearDown(self):
+        os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
 
     def test_manage_agents_is_routed_not_not_implemented(self):
         import importlib
@@ -189,7 +267,7 @@ class TestManageAgentsDispatchIntegration(unittest.TestCase):
                 "operation": "list",
             })}]}},
         }
-        resp = client.post("/a2a/octowiz", json=body)
+        resp = client.post("/a2a/octowiz", json=body, headers={"x-octowiz-secret": _SECRET})
         self.assertEqual(resp.status_code, 200)
         artifact = json.loads(resp.json()["result"]["artifacts"][0]["parts"][0]["text"])
         self.assertNotEqual(artifact.get("status"), "not_implemented")

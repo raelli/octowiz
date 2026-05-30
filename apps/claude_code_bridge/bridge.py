@@ -86,8 +86,12 @@ def _post_event(url: str, event: Dict) -> Optional[Dict]:
         "id": str(uuid.uuid4()),
         "params": {"message": {"parts": [{"text": json.dumps(event)}]}},
     }
+    headers = {}
+    secret = os.environ.get("OCTOWIZ_INBOUND_SECRET", "")
+    if secret:
+        headers["x-octowiz-secret"] = secret
     try:
-        resp = httpx.post(f"{url}/a2a/octowiz", json=body, timeout=5)
+        resp = httpx.post(f"{url}/a2a/octowiz", json=body, headers=headers, timeout=5)
         resp.raise_for_status()
         artifacts = resp.json().get("result", {}).get("artifacts", [])
         if not artifacts:

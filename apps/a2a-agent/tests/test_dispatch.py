@@ -3,11 +3,13 @@ import json
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
+os.environ["OCTOWIZ_INBOUND_SECRET"] = "test-secret"
 
 import unittest
 from fastapi.testclient import TestClient
 from main import app
+
+_SECRET = "test-secret"
 
 
 def _post_event(client, event, path="/a2a/octowiz"):
@@ -16,12 +18,16 @@ def _post_event(client, event, path="/a2a/octowiz"):
         "id": 1,
         "params": {"message": {"parts": [{"text": json.dumps(event)}]}},
     }
-    return client.post(path, json=body)
+    return client.post(path, json=body, headers={"x-octowiz-secret": _SECRET})
 
 
 class TestDispatch(unittest.TestCase):
     def setUp(self):
+        os.environ["OCTOWIZ_INBOUND_SECRET"] = _SECRET
         self.client = TestClient(app)
+
+    def tearDown(self):
+        os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
 
     def test_unknown_capability_returns_not_implemented(self):
         resp = _post_event(self.client, {"capability": "octowiz.plan", "type": "ping"})
