@@ -12,9 +12,13 @@ class Session:
 class ConflictIndex:
     def __init__(self):
         self._idx: Dict[str, Dict[str, set]] = {}  # repoRoot -> file -> {sessionIds}
+        self._branches: Dict[str, str] = {}  # sessionId -> branch
 
-    def track(self, session_id: str, repo_root: str, files: List[str]):
+    def track(self, session_id: str, branch: str, repo_root: str, files: List[str]):
+        self._branches[session_id] = branch
         self.untrack(session_id, repo_root)
+        if not files:
+            return
         if repo_root not in self._idx:
             self._idx[repo_root] = {}
         for f in files:
@@ -34,7 +38,11 @@ class ConflictIndex:
         for f in files:
             for sid in repo_idx.get(f, set()):
                 if sid != own_session_id:
-                    result.append({"file": f, "otherSessionId": sid, "otherBranch": sid})
+                    result.append({
+                        "file": f,
+                        "otherSessionId": sid,
+                        "otherBranch": self._branches.get(sid, ""),
+                    })
         return result
 
 
@@ -61,8 +69,9 @@ class SessionStore:
 
         files = event.get("live_modified_files", [])
         repo = event.get("repoRoot", "")
-        if files and repo:
-            self._conflicts.track(sid, repo, files)
+        branch = session.branch
+        if repo:
+            self._conflicts.track(sid, branch, repo, files)
 
     def find_conflicts(self, repo_root: str, files: List[str], session_id: str) -> List[Dict]:
         return self._conflicts.find_conflicts(repo_root, files, session_id)

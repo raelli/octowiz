@@ -35,6 +35,41 @@ class TestFileConflictRule(unittest.TestCase):
     def setUp(self):
         self.client = _fresh_client()
 
+    def test_same_branch_sessions_do_not_trigger_conflict(self):
+        # Two sessions on the SAME branch touching the same file should not conflict
+        _post_advise(self.client, {
+            "type": "prompt", "sessionId": "sess-x", "branch": "main",
+            "repoRoot": "/repo", "live_modified_files": ["utils.py"],
+            "prompt_summary": "utils.py",
+        })
+        result = _post_advise(self.client, {
+            "type": "prompt", "sessionId": "sess-y", "branch": "main",
+            "repoRoot": "/repo", "live_modified_files": ["utils.py"],
+            "prompt_summary": "utils.py",
+        })
+        self.assertIsNone(result.get("type"))
+
+    def test_cleared_files_do_not_remain_in_conflict_index(self):
+        # Session registers files, then sends event with empty files — conflict should clear
+        _post_advise(self.client, {
+            "type": "prompt", "sessionId": "sess-old", "branch": "feat/a",
+            "repoRoot": "/repo", "live_modified_files": ["foo.py"],
+            "prompt_summary": "foo.py",
+        })
+        # Same session clears its files
+        _post_advise(self.client, {
+            "type": "prompt", "sessionId": "sess-old", "branch": "feat/a",
+            "repoRoot": "/repo", "live_modified_files": [],
+            "prompt_summary": "",
+        })
+        # New session on different branch — should see no conflict
+        result = _post_advise(self.client, {
+            "type": "prompt", "sessionId": "sess-new", "branch": "feat/b",
+            "repoRoot": "/repo", "live_modified_files": ["foo.py"],
+            "prompt_summary": "foo.py",
+        })
+        self.assertIsNone(result.get("type"))
+
     def test_two_sessions_touching_same_file_different_branches_triggers_conflict(self):
         # Session A registers file on branch-a
         _post_advise(self.client, {
