@@ -13,8 +13,8 @@ import shutil
 import sys
 from pathlib import Path
 
-import octowiz_cache
-from octowiz_cache import (
+from . import cache as octowiz_cache
+from .cache import (
     DEFAULT_CACHE_DIR,
     DEFAULT_TTL_SECONDS,
     ROLE_REGISTRY,
@@ -146,7 +146,7 @@ def cmd_seed(args) -> int:
     import httpx
     cwd = Path(args.cwd) if getattr(args, "cwd", None) else Path.cwd()
     try:
-        import octowiz_env as _env
+        from . import env as _env
     except ImportError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -178,7 +178,7 @@ def cmd_init(args) -> int:
     """Bootstrap machine-state.json and/or setup-state.json if absent."""
     cwd = Path(args.cwd) if args.cwd else Path.cwd()
     try:
-        import octowiz_env as _env
+        from . import env as _env
     except ImportError as exc:
         print(json.dumps({"error": str(exc)}), file=sys.stderr)
         return 2
@@ -197,7 +197,7 @@ def cmd_check(args) -> int:
     """Run the live environment check and print JSON result."""
     cwd = Path(args.cwd) if args.cwd else Path.cwd()
     try:
-        import octowiz_env as _env
+        from . import env as _env
     except ImportError as exc:
         print(json.dumps({"error": str(exc)}), file=sys.stderr)
         return 2
@@ -244,6 +244,7 @@ def _make_parser() -> argparse.ArgumentParser:
         description="Manage Octowiz doctrine bundle cache.",
         parents=[common],
     )
+    parser.add_argument("--version", action="version", version="octowiz-cache 0.1.0")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     # -- get --
