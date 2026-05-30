@@ -47,7 +47,7 @@ class TestGetLogs(unittest.TestCase):
             provider = ClaudeAgentViewProvider()
             logs = provider.get_logs("bg-abc")
             self.assertEqual(logs, "log output here")
-            mock_run.assert_called_once_with(["logs", "bg-abc"])
+            mock_run.assert_called_once_with(["logs", "--", "bg-abc"])
 
 
 class TestStop(unittest.TestCase):
@@ -58,7 +58,30 @@ class TestStop(unittest.TestCase):
             from providers.claude_agent_view.provider import ClaudeAgentViewProvider
             provider = ClaudeAgentViewProvider()
             provider.stop("bg-abc")
-            mock_run.assert_called_once_with(["stop", "bg-abc"])
+            mock_run.assert_called_once_with(["stop", "--", "bg-abc"])
+
+
+class TestValidation(unittest.TestCase):
+
+    def test_dispatch_rejects_repo_starting_with_dash(self):
+        from providers.claude_agent_view.provider import ClaudeAgentViewProvider
+        with self.assertRaises(ValueError):
+            ClaudeAgentViewProvider().dispatch("do something", "-malicious")
+
+    def test_dispatch_rejects_task_starting_with_dash(self):
+        from providers.claude_agent_view.provider import ClaudeAgentViewProvider
+        with self.assertRaises(ValueError):
+            ClaudeAgentViewProvider().dispatch("--inject", "/valid/repo")
+
+    def test_get_logs_rejects_invalid_run_id(self):
+        from providers.claude_agent_view.provider import ClaudeAgentViewProvider
+        with self.assertRaises(ValueError):
+            ClaudeAgentViewProvider().get_logs("--json")
+
+    def test_stop_rejects_invalid_run_id(self):
+        from providers.claude_agent_view.provider import ClaudeAgentViewProvider
+        with self.assertRaises(ValueError):
+            ClaudeAgentViewProvider().stop("../../etc/passwd")
 
 
 if __name__ == "__main__":
