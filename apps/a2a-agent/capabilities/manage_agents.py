@@ -54,7 +54,9 @@ def _handle_list(event: Dict, runner: Runner) -> Dict:
 
 def _handle_control(op: str, event: Dict, runner: Runner) -> Dict:
     session_id = event.get("sessionId", "")
-    rc, stdout, stderr = runner(["claude", op, session_id])
+    if not session_id or not _SESSION_ID_RE.match(session_id):
+        return {"status": "error", "message": f"invalid sessionId: {session_id!r}"}
+    rc, stdout, stderr = runner(["claude", op, "--", session_id])
     if rc != 0:
         return {"status": "error", "message": stderr or f"claude {op} exited with code {rc}"}
     return {"status": "ok", "output": stdout}
