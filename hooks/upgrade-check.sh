@@ -7,9 +7,9 @@ if ! command -v octowiz-cache &>/dev/null; then
     exit 0
 fi
 
-# 'init' subcommand was added in v0.0.4 — use its presence as the version gate
-if octowiz-cache init --help &>/dev/null; then
-    exit 0  # Already current
+# v0.1.0+ supports --version flag — use it as the version gate
+if octowiz-cache --version &>/dev/null; then
+    exit 0  # v0.1.0+ already installed
 fi
 
 # Find the Python that owns this octowiz-cache installation so we upgrade

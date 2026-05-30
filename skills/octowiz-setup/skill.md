@@ -95,7 +95,7 @@ After all plugins are installed, update `machine-state.json`:
 ```bash
 python3 -c "
 import sys; sys.path.insert(0, '$(which octowiz-cache | xargs dirname 2>/dev/null || echo .)')
-from octowiz_env import init_machine_state, save_machine_state, MACHINE_STATE_PATH
+from packages.memory_client.env import init_machine_state, save_machine_state, MACHINE_STATE_PATH
 state = init_machine_state()
 for pid in ['superpowers', 'mattpo-skills', 'antfu-skills']:
     state.plugins[pid] = 'verified'
@@ -113,7 +113,7 @@ print('machine-state.json updated')
 
 ```bash
 python3 -c "
-from octowiz_env import load_repo_state
+from packages.memory_client.env import load_repo_state
 import pathlib
 s = load_repo_state(pathlib.Path('.'))
 print('seeded' if s and s.project_id else 'not-seeded')
@@ -165,7 +165,7 @@ If exit code is 0, record `routing_verified_at`:
 
 ```bash
 python3 -c "
-from octowiz_env import init_machine_state, save_machine_state, MACHINE_STATE_PATH, _now_iso
+from packages.memory_client.env import init_machine_state, save_machine_state, MACHINE_STATE_PATH, _now_iso
 state = init_machine_state()
 state.litellm['routing_verified_at'] = _now_iso()
 save_machine_state(state)
@@ -216,7 +216,7 @@ Update `setup-state.json`:
 
 ```bash
 python3 -c "
-from octowiz_env import init_repo_state, save_repo_state
+from packages.memory_client.env import init_repo_state, save_repo_state
 import pathlib
 state = init_repo_state(pathlib.Path('.'))
 state.mattpocock_setup = True
@@ -242,7 +242,7 @@ Update `setup-state.json`:
 
 ```bash
 python3 -c "
-from octowiz_env import init_repo_state, save_repo_state
+from packages.memory_client.env import init_repo_state, save_repo_state
 import pathlib
 state = init_repo_state(pathlib.Path('.'))
 state.antfu_setup = True
@@ -308,7 +308,7 @@ To dismiss a check:
 
 ```bash
 python3 -c "
-from octowiz_env import dismiss_check, MACHINE_STATE_PATH
+from packages.memory_client.env import dismiss_check, MACHINE_STATE_PATH
 import pathlib
 dismiss_check('<check_id>', pathlib.Path('.'), MACHINE_STATE_PATH)
 print('check dismissed')
