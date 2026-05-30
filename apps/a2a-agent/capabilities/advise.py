@@ -1,8 +1,8 @@
 """octowiz.advise capability — real advisor logic."""
 from typing import Any, Dict, Optional
 
-from advisor.state import store
-from advisor.rules import RulesAdvisor
+from packages.advisor.state import store
+from packages.advisor.rules import RulesAdvisor
 
 _advisor = RulesAdvisor()
 

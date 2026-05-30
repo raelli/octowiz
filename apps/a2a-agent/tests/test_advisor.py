@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 def _fresh_client():
     import importlib
-    import advisor.state as _state_mod
+    import packages.advisor.state as _state_mod
     importlib.reload(_state_mod)
     import capabilities.advise as _adv_mod
     importlib.reload(_adv_mod)
