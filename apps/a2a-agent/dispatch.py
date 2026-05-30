@@ -7,4 +7,7 @@ async def dispatch(event: Dict) -> Optional[Dict]:
     if capability == "octowiz.advise":
         from capabilities.advise import handle_advise
         return await handle_advise(event)
+    if capability == "octowiz.manage_agents":
+        from capabilities.manage_agents import handle_manage_agents
+        return await handle_manage_agents(event)
     return {"status": "not_implemented", "capability": capability}

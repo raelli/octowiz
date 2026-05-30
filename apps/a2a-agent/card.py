@@ -6,7 +6,7 @@ CAPABILITIES = [
     {"id": "octowiz.plan",              "name": "Plan",              "description": "Plan a coding task.", "tags": ["planning"]},
     {"id": "octowiz.review",            "name": "Review",            "description": "Review code changes.", "tags": ["review"]},
     {"id": "octowiz.dispatch",          "name": "Dispatch",          "description": "Dispatch a task to an execution provider.", "tags": ["execution"]},
-    {"id": "octowiz.manage_agents",     "name": "Manage Agents",     "description": "List, start, stop and monitor Claude Agent View sessions.", "tags": ["agents"]},
+    {"id": "octowiz.manage_agents",     "name": "Manage Agents",     "description": "List, read logs, stop, remove, and respawn Claude Code background sessions via the claude agents CLI. Operations: list, logs, stop, rm, respawn.", "tags": ["agents"]},
     {"id": "octowiz.run_sandboxed",     "name": "Run Sandboxed",     "description": "Run a task in an isolated Sandcastle environment.", "tags": ["sandbox"]},
     {"id": "octowiz.load_memory",       "name": "Load Memory",       "description": "Fetch doctrine bundles from LiteLLM Memory.", "tags": ["memory"]},
     {"id": "octowiz.write_diary",       "name": "Write Diary",       "description": "Persist a Working or Long-Term Agent Diary entry.", "tags": ["diary", "experience"]},
