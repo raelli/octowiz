@@ -2,15 +2,12 @@
 import json
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 import unittest.mock
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from octowiz_env import derive_project_id, seed_project_namespace
+from packages.memory_client.env import derive_project_id, seed_project_namespace
 
 
 def _mock_client(get_status=404, rules_value=None):
@@ -131,12 +128,12 @@ class TestCmdSeedLiteLLMUnreachable(unittest.TestCase):
     def test_exits_1_when_litellm_unreachable(self):
         import httpx
         import unittest.mock
-        from octowiz_cache_cli import cmd_seed
-        import octowiz_cache
+        from packages.memory_client.cli import cmd_seed
+        from packages.memory_client import cache as octowiz_cache
 
         with unittest.mock.patch.object(octowiz_cache, "get_litellm_client",
                                         return_value=unittest.mock.MagicMock()), \
-             unittest.mock.patch("octowiz_env.seed_project_namespace",
+             unittest.mock.patch("packages.memory_client.env.seed_project_namespace",
                                  side_effect=httpx.ConnectError("refused")):
             result = cmd_seed(self._fake_args())
 
@@ -145,15 +142,15 @@ class TestCmdSeedLiteLLMUnreachable(unittest.TestCase):
     def test_setup_state_not_written_when_litellm_unreachable(self):
         import httpx
         import unittest.mock
-        from octowiz_cache_cli import cmd_seed
-        import octowiz_cache
+        from packages.memory_client.cli import cmd_seed
+        from packages.memory_client import cache as octowiz_cache
 
         setup_state_path = self.cwd / ".octowiz" / "setup-state.json"
         self.assertFalse(setup_state_path.exists())
 
         with unittest.mock.patch.object(octowiz_cache, "get_litellm_client",
                                         return_value=unittest.mock.MagicMock()), \
-             unittest.mock.patch("octowiz_env.seed_project_namespace",
+             unittest.mock.patch("packages.memory_client.env.seed_project_namespace",
                                  side_effect=httpx.ConnectError("refused")):
             cmd_seed(self._fake_args())
 
@@ -184,19 +181,19 @@ class TestCmdSeedReusesStoredProjectId(unittest.TestCase):
         return a
 
     def test_second_seed_reuses_project_id_from_state_file(self):
-        import octowiz_cache
-        from octowiz_cache_cli import cmd_seed
-        from octowiz_env import load_repo_state
+        from packages.memory_client import cache as octowiz_cache
+        from packages.memory_client.cli import cmd_seed
+        from packages.memory_client.env import load_repo_state
 
         with unittest.mock.patch.object(octowiz_cache, "get_litellm_client",
                                         return_value=_mock_client(get_status=404)), \
-             unittest.mock.patch("octowiz_env.seed_project_namespace"):
+             unittest.mock.patch("packages.memory_client.env.seed_project_namespace"):
             cmd_seed(self._fake_args())
             state_after_first = load_repo_state(self.cwd)
 
         with unittest.mock.patch.object(octowiz_cache, "get_litellm_client",
                                         return_value=_mock_client(get_status=404)), \
-             unittest.mock.patch("octowiz_env.seed_project_namespace"):
+             unittest.mock.patch("packages.memory_client.env.seed_project_namespace"):
             cmd_seed(self._fake_args())
             state_after_second = load_repo_state(self.cwd)
 

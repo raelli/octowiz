@@ -8,9 +8,8 @@ import unittest
 import urllib.parse
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import import_litellm_memories as _importer_module
-from import_litellm_memories import load_memories, main, validate_memories, rewrite_namespace
+from packages.memory_client import importer as _importer_module
+from packages.memory_client.importer import load_memories, main, validate_memories, rewrite_namespace
 
 
 class TestValidateMemories(unittest.TestCase):

@@ -1,15 +1,12 @@
 import json
 import os
-import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from octowiz_env import (
+from packages.memory_client.env import (
     MachineState,
     RepoState,
     load_machine_state,
@@ -20,9 +17,9 @@ from octowiz_env import (
     init_repo_state,
     _now_iso,
 )
-from octowiz_env import detect_plugin, detect_all_plugins, REQUIRED_PLUGINS
-from octowiz_env import RepoScan, scan_repo
-from octowiz_env import (
+from packages.memory_client.env import detect_plugin, detect_all_plugins, REQUIRED_PLUGINS
+from packages.memory_client.env import RepoScan, scan_repo
+from packages.memory_client.env import (
     CheckResult,
     run_live_check,
     dismiss_check,

@@ -9,12 +9,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import httpx
 
-import octowiz_cache
-from octowiz_cache import (
+from packages.memory_client import cache as octowiz_cache
+from packages.memory_client.cache import (
     BuildFailure,
     BuildResult,
     FailureKind,
@@ -292,7 +290,7 @@ class TestGetBundle(unittest.TestCase):
     def test_get_bundle_returns_string(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             mock_client = self._make_mock_client()
-            with patch("octowiz_cache.get_litellm_client", return_value=mock_client):
+            with patch("packages.memory_client.cache.get_litellm_client", return_value=mock_client):
                 result = get_bundle("planner", "allspark", cache_dir=tmpdir)
             self.assertIsInstance(result, str)
             self.assertIn("Octowiz Doctrine Bundle", result)
@@ -302,7 +300,7 @@ class TestGetBundle(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             mock_client = self._make_mock_client()
 
-            with patch("octowiz_cache.get_litellm_client", return_value=mock_client):
+            with patch("packages.memory_client.cache.get_litellm_client", return_value=mock_client):
                 # Populate cache
                 get_bundle("planner", "allspark", cache_dir=tmpdir)
                 fetch_count_after_first = mock_client.get.call_count
@@ -322,7 +320,7 @@ class TestGetBundle(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             mock_client = self._make_mock_client()
 
-            with patch("octowiz_cache.get_litellm_client", return_value=mock_client):
+            with patch("packages.memory_client.cache.get_litellm_client", return_value=mock_client):
                 # Populate cache
                 first_result = get_bundle("planner", "allspark", cache_dir=tmpdir)
 
@@ -332,7 +330,7 @@ class TestGetBundle(unittest.TestCase):
 
             import io
 
-            with patch("octowiz_cache.get_litellm_client", return_value=failing_client):
+            with patch("packages.memory_client.cache.get_litellm_client", return_value=failing_client):
                 with patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
                     result = get_bundle(
                         "planner",
@@ -350,7 +348,7 @@ class TestGetBundle(unittest.TestCase):
         """OCTOWIZ_CACHE_DIR env var is used when cache_dir param is None."""
         with tempfile.TemporaryDirectory() as tmpdir:
             mock_client = self._make_mock_client()
-            with patch("octowiz_cache.get_litellm_client", return_value=mock_client):
+            with patch("packages.memory_client.cache.get_litellm_client", return_value=mock_client):
                 with patch.dict(os.environ, {"OCTOWIZ_CACHE_DIR": tmpdir}):
                     result = get_bundle("planner", "allspark", cache_dir=None)
             self.assertIn("Octowiz Doctrine Bundle", result)
@@ -444,8 +442,8 @@ class TestCacheSchemaVersion(unittest.TestCase):
             manifest["schema_version"] = 99999
             (ns_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-            with patch("octowiz_cache.fetch_role_memories", return_value=[memory]) as mock_fetch:
-                with patch("octowiz_cache.get_litellm_client", return_value=MagicMock()):
+            with patch("packages.memory_client.cache.fetch_role_memories", return_value=[memory]) as mock_fetch:
+                with patch("packages.memory_client.cache.get_litellm_client", return_value=MagicMock()):
                     octowiz_cache.get_bundle(
                         role="routing",
                         namespace="allspark",
@@ -514,7 +512,7 @@ class TestMemorySourceProtocol(unittest.TestCase):
             self.assertIn("value", mem)
 
     def test_dict_memory_source_satisfies_protocol(self):
-        from octowiz_cache import MemorySource
+        from packages.memory_client.cache import MemorySource
         source = DictMemorySource({})
         self.assertIsInstance(source, MemorySource)
 
@@ -604,8 +602,8 @@ class TestCacheStoreFresh(unittest.TestCase):
             manifest = json.loads((ns_dir / "manifest.json").read_text(encoding="utf-8"))
             manifest["schema_version"] = 99999
             (ns_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-            with patch("octowiz_cache.fetch_role_memories", return_value=[memory]) as mock_fetch:
-                with patch("octowiz_cache.get_litellm_client", return_value=MagicMock()):
+            with patch("packages.memory_client.cache.fetch_role_memories", return_value=[memory]) as mock_fetch:
+                with patch("packages.memory_client.cache.get_litellm_client", return_value=MagicMock()):
                     octowiz_cache.get_bundle("routing", "allspark", cache_dir=tmpdir,
                                              ttl_seconds=3600, refresh=False)
             mock_fetch.assert_called_once()
@@ -850,7 +848,7 @@ class TestRoleRegistry(unittest.TestCase):
 
 class TestRoleRegistryDriftDetection(unittest.TestCase):
     def test_all_skill_roles_exist_in_registry(self):
-        skill_path = Path(__file__).parent.parent / "skills" / "octowiz-workflow" / "skill.md"
+        skill_path = Path(__file__).parent.parent.parent.parent / "skills" / "octowiz-workflow" / "skill.md"
         text = skill_path.read_text(encoding="utf-8")
         # Find --role <name> patterns in the skill
         mentioned = set(re.findall(r"--role\s+(\w+)", text))
@@ -921,7 +919,7 @@ class TestBuildBundles(unittest.TestCase):
 
     def test_all_roles_succeed(self):
         roles = list(octowiz_cache.ROLE_REGISTRY.role_names())
-        with patch("octowiz_cache.get_bundle") as mock_gb:
+        with patch("packages.memory_client.cache.get_bundle") as mock_gb:
             mock_gb.return_value = "# Bundle content\n"
             result = build_bundles(roles=roles, namespace="allspark",
                                    cache_dir="/tmp/test", ttl_seconds=3600, refresh=False)
@@ -937,7 +935,7 @@ class TestBuildBundles(unittest.TestCase):
                 raise RuntimeError("fetch error")
             return f"# Bundle for {role}\n"
 
-        with patch("octowiz_cache.get_bundle", side_effect=side_effect):
+        with patch("packages.memory_client.cache.get_bundle", side_effect=side_effect):
             result = build_bundles(roles=roles, namespace="allspark",
                                    cache_dir="/tmp/test", ttl_seconds=3600, refresh=False)
 
@@ -955,7 +953,7 @@ class TestBuildBundles(unittest.TestCase):
 
     def test_refresh_true_passed_to_get_bundle(self):
         roles = list(octowiz_cache.ROLE_REGISTRY.role_names())
-        with patch("octowiz_cache.get_bundle") as mock_gb:
+        with patch("packages.memory_client.cache.get_bundle") as mock_gb:
             mock_gb.return_value = "# Bundle content\n"
             build_bundles(roles=roles, namespace="allspark",
                           cache_dir="/tmp/test", ttl_seconds=3600, refresh=True)
@@ -968,7 +966,7 @@ class TestBuildBundles(unittest.TestCase):
         def side_effect(role, namespace, cache_dir, ttl_seconds, refresh):
             raise KeyError("some-memory-key")
 
-        with patch("octowiz_cache.get_bundle", side_effect=side_effect):
+        with patch("packages.memory_client.cache.get_bundle", side_effect=side_effect):
             result = build_bundles(roles=[role], namespace="allspark",
                                    cache_dir="/tmp/test", ttl_seconds=3600, refresh=False)
 
@@ -982,7 +980,7 @@ class TestBuildBundles(unittest.TestCase):
         def side_effect(role, namespace, cache_dir, ttl_seconds, refresh):
             raise RuntimeError("No LiteLLM API key configured")
 
-        with patch("octowiz_cache.get_bundle", side_effect=side_effect):
+        with patch("packages.memory_client.cache.get_bundle", side_effect=side_effect):
             result = build_bundles(roles=[role], namespace="allspark",
                                    cache_dir="/tmp/test", ttl_seconds=3600, refresh=False)
 
@@ -996,7 +994,7 @@ class TestBuildBundles(unittest.TestCase):
         def side_effect(role, namespace, cache_dir, ttl_seconds, refresh):
             raise ValueError("something unexpected")
 
-        with patch("octowiz_cache.get_bundle", side_effect=side_effect):
+        with patch("packages.memory_client.cache.get_bundle", side_effect=side_effect):
             result = build_bundles(roles=[role], namespace="allspark",
                                    cache_dir="/tmp/test", ttl_seconds=3600, refresh=False)
 
@@ -1074,7 +1072,7 @@ class TestGetBundleSourceInjection(unittest.TestCase):
         """When source is provided, get_bundle must use it and never call get_litellm_client."""
         with tempfile.TemporaryDirectory() as tmpdir:
             source = self._make_source()
-            with patch("octowiz_cache.get_litellm_client") as mock_client_factory:
+            with patch("packages.memory_client.cache.get_litellm_client") as mock_client_factory:
                 result = octowiz_cache.get_bundle(
                     "routing", "allspark", cache_dir=tmpdir, source=source
                 )
@@ -1120,8 +1118,8 @@ class TestGetBundleSourceInjection(unittest.TestCase):
             mock_client = MagicMock()
             keys = octowiz_cache.ROLE_REGISTRY.get_keys("routing", "allspark")
             memories = [{"key": k, "value": "v", "metadata": {}} for k in keys]
-            with patch("octowiz_cache.get_litellm_client", return_value=mock_client):
-                with patch("octowiz_cache.fetch_role_memories", return_value=memories):
+            with patch("packages.memory_client.cache.get_litellm_client", return_value=mock_client):
+                with patch("packages.memory_client.cache.fetch_role_memories", return_value=memories):
                     octowiz_cache.get_bundle("routing", "allspark", cache_dir=tmpdir)
             mock_client.close.assert_called()
 

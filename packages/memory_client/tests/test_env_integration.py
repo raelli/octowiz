@@ -11,16 +11,13 @@ Simulates a developer's machine from scratch:
 import json
 import os
 import shutil
-import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from octowiz_env import (
+from packages.memory_client.env import (
     MachineState, RepoState,
     load_machine_state, save_machine_state,
     load_repo_state, save_repo_state,

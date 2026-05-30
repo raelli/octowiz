@@ -2,17 +2,14 @@
 import io
 import json
 import os
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from octowiz_cache_cli import cmd_check
-from octowiz_env import CheckResult
+from packages.memory_client.cli import cmd_check
+from packages.memory_client.env import CheckResult
 
 
 def _make_result(hard_gaps=None, advisory_gaps=None):
@@ -44,7 +41,7 @@ class TestCmdCheck(unittest.TestCase):
         if mock_result is None:
             mock_result = _make_result()
         out = io.StringIO()
-        with patch("octowiz_env.run_live_check", return_value=mock_result):
+        with patch("packages.memory_client.env.run_live_check", return_value=mock_result):
             with redirect_stdout(out):
                 code = cmd_check(args)
         return code, json.loads(out.getvalue())
@@ -83,7 +80,7 @@ class TestCmdCheck(unittest.TestCase):
             return _make_result()
 
         out = io.StringIO()
-        with patch("octowiz_env.run_live_check", side_effect=fake_check):
+        with patch("packages.memory_client.env.run_live_check", side_effect=fake_check):
             with redirect_stdout(out):
                 cmd_check(FakeArgs(cwd=None))
         self.assertEqual(captured[0], Path.cwd())
@@ -96,7 +93,7 @@ class TestCmdCheck(unittest.TestCase):
             return _make_result()
 
         out = io.StringIO()
-        with patch("octowiz_env.run_live_check", side_effect=fake_check):
+        with patch("packages.memory_client.env.run_live_check", side_effect=fake_check):
             with redirect_stdout(out):
                 cmd_check(FakeArgs(cwd=self.cwd_str))
         self.assertEqual(captured[0], Path(self.cwd_str))
