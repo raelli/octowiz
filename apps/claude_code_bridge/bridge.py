@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 from typing import Dict, Optional
 
 TOOL_EVENT_MAP = {
@@ -25,7 +26,7 @@ def _git_context(cwd: str) -> Dict[str, str]:
     try:
         r = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
-            cwd=cwd, capture_output=True, text=True, timeout=3,
+            cwd=cwd, capture_output=True, text=True, timeout=1,
         )
         if r.returncode == 0:
             ctx["repoRoot"] = r.stdout.strip()
@@ -34,7 +35,7 @@ def _git_context(cwd: str) -> Dict[str, str]:
     try:
         r = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=cwd, capture_output=True, text=True, timeout=3,
+            cwd=cwd, capture_output=True, text=True, timeout=1,
         )
         if r.returncode == 0:
             ctx["branch"] = r.stdout.strip()
@@ -59,8 +60,9 @@ def _build_event(data: Dict) -> Optional[Dict]:
             "sessionId": session_id,
             **git_ctx,
         }
-        if "file_path" in tool_input:
-            event["live_modified_files"] = [tool_input["file_path"]]
+        path = tool_input.get("file_path") or tool_input.get("notebook_path")
+        if path:
+            event["live_modified_files"] = [path]
         return event
 
     if hook == "UserPromptSubmit":
@@ -80,7 +82,8 @@ def _post_event(url: str, event: Dict) -> Optional[Dict]:
 
     body = {
         "jsonrpc": "2.0",
-        "id": 1,
+        "method": "octowiz/event",
+        "id": str(uuid.uuid4()),
         "params": {"message": {"parts": [{"text": json.dumps(event)}]}},
     }
     try:

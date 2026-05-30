@@ -22,12 +22,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
-          pip install -r apps/a2a-agent/requirements.txt
+        run: pip install -e ".[dev]"
 
-      - name: Run root tests
-        run: python -m pytest tests/ -v
+      - name: Run package and provider tests
+        run: python -m pytest packages/ providers/ -v
 
       - name: Run A2A agent tests
         run: python -m pytest apps/a2a-agent/tests/ -v
+
+      - name: Run bridge tests
+        run: python -m pytest apps/claude_code_bridge/tests/ -v
