@@ -13,8 +13,10 @@ _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 def _default_runner(args: List[str]) -> Tuple[int, str, str]:
     try:
-        result = subprocess.run(args, capture_output=True, text=True)
+        result = subprocess.run(args, capture_output=True, text=True, timeout=30)
         return result.returncode, result.stdout, result.stderr
+    except subprocess.TimeoutExpired:
+        return 1, "", "operation timed out"
     except OSError as exc:
         return 1, "", str(exc)
 
@@ -63,7 +65,10 @@ def _handle_control(op: str, event: Dict, runner: Runner) -> Dict:
     session_id = event.get("sessionId", "")
     if not session_id or not _SESSION_ID_RE.match(session_id):
         return {"status": "error", "message": f"invalid sessionId: {session_id!r}"}
-    rc, stdout, stderr = runner(["claude", op, "--", session_id])
+    try:
+        rc, stdout, stderr = runner(["claude", op, "--", session_id])
+    except Exception as exc:
+        return {"status": "error", "message": str(exc) or "runner error"}
     if rc != 0:
         return {"status": "error", "message": stderr or f"claude {op} exited with code {rc}"}
     return {"status": "ok", "output": stdout}

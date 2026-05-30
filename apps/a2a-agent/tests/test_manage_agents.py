@@ -151,6 +151,25 @@ class TestManageAgentsUnknownOp(unittest.TestCase):
         self.assertIn("unknown operation", result["message"])
 
 
+class TestManageAgentsTimeout(unittest.TestCase):
+
+    def test_control_op_runner_exception_returns_error_not_500(self):
+        import subprocess
+        from capabilities.manage_agents import handle_manage_agents
+        runner = FakeRunner(raises=subprocess.TimeoutExpired(cmd=["claude", "stop", "--", "s1"], timeout=30))
+        result = _run(handle_manage_agents({"operation": "stop", "sessionId": "s1"}, runner=runner))
+        self.assertEqual(result["status"], "error")
+        self.assertTrue(len(result["message"]) > 0)
+
+    def test_list_runner_exception_already_returns_warning(self):
+        import subprocess
+        from capabilities.manage_agents import handle_manage_agents
+        runner = FakeRunner(raises=subprocess.TimeoutExpired(cmd=["claude", "agents", "--json"], timeout=30))
+        result = _run(handle_manage_agents({"operation": "list"}, runner=runner))
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result.get("warning"), "supervisor_unavailable")
+
+
 class TestManageAgentsDispatchIntegration(unittest.TestCase):
     """Smoke test: verify dispatch routes octowiz.manage_agents to the handler."""
 
