@@ -160,6 +160,65 @@ class TestCmdSeedLiteLLMUnreachable(unittest.TestCase):
         self.assertFalse(setup_state_path.exists())
 
 
+class TestCmdSeedReusesStoredProjectId(unittest.TestCase):
+    """Regression: cmd_seed must not generate a new UUID on every call for repos without a remote."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cwd = Path(self.tmp.name)
+        subprocess.run(["git", "init"], cwd=self.cwd, capture_output=True, check=True)
+        # No remote — derive_project_id would return a new UUID each time
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _fake_args(self):
+        class FakeArgs:
+            pass
+        a = FakeArgs()
+        a.cwd = str(self.cwd)
+        a.project = None
+        a.namespace = "allspark"
+        a.cache_dir = None
+        a.ttl_seconds = None
+        return a
+
+    def test_second_seed_reuses_project_id_from_state_file(self):
+        import octowiz_cache
+        from octowiz_cache_cli import cmd_seed
+        from octowiz_env import load_repo_state
+
+        with unittest.mock.patch.object(octowiz_cache, "get_litellm_client",
+                                        return_value=_mock_client(get_status=404)), \
+             unittest.mock.patch("octowiz_env.seed_project_namespace"):
+            cmd_seed(self._fake_args())
+            state_after_first = load_repo_state(self.cwd)
+
+        with unittest.mock.patch.object(octowiz_cache, "get_litellm_client",
+                                        return_value=_mock_client(get_status=404)), \
+             unittest.mock.patch("octowiz_env.seed_project_namespace"):
+            cmd_seed(self._fake_args())
+            state_after_second = load_repo_state(self.cwd)
+
+        self.assertEqual(state_after_first.project_id, state_after_second.project_id)
+
+
+class TestSeedExistsOnlyTreats404AsAbsent(unittest.TestCase):
+    """Regression: _exists() must raise on non-200/non-404 instead of silently treating as absent."""
+
+    def test_server_error_on_config_read_raises_not_writes(self):
+        client = unittest.mock.MagicMock()
+        resp_500 = unittest.mock.MagicMock()
+        resp_500.status_code = 500
+        resp_500.raise_for_status.side_effect = Exception("server error")
+        client.get.return_value = resp_500
+
+        with self.assertRaises(Exception):
+            seed_project_namespace("raelli-octowiz", client)
+
+        self.assertEqual(client.put.call_count, 0)
+
+
 class TestDeriveProjectIdFallback(unittest.TestCase):
     def test_no_git_remote_returns_nonempty_string(self):
         with tempfile.TemporaryDirectory() as tmp:

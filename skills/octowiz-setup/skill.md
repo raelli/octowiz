@@ -109,6 +109,18 @@ print('machine-state.json updated')
 ## Phase 2: Memory
 
 **Run if any of these are in `hard_gaps`:** `litellm_env`, `litellm_cache`
+**Also run Step 2.4 alone** if hard_gaps has no Memory entries but `setup-state.json` has no `project_id` (i.e. this is the first `/octowiz` run in this repo on a machine already fully configured). Check with:
+
+```bash
+python3 -c "
+from octowiz_env import load_repo_state
+import pathlib
+s = load_repo_state(pathlib.Path('.'))
+print('seeded' if s and s.project_id else 'not-seeded')
+"
+```
+
+If the output is `not-seeded`, skip Steps 2.1–2.3 and run only Step 2.4.
 
 This phase covers all LiteLLM operations in sequence: env vars → role cache → project namespace seed.
 

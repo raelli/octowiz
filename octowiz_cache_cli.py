@@ -151,7 +151,13 @@ def cmd_seed(args) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    project_id = getattr(args, "project", None) or _env.derive_project_id(cwd)
+    explicit = getattr(args, "project", None)
+    if explicit:
+        project_id = explicit
+    else:
+        existing = _env.load_repo_state(cwd)
+        project_id = (existing.project_id if existing and existing.project_id else None) \
+            or _env.derive_project_id(cwd)
 
     try:
         client = octowiz_cache.get_litellm_client()

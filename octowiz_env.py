@@ -374,7 +374,10 @@ def seed_project_namespace(project_id: str, client: "httpx.Client") -> None:
 
     def _exists(key: str) -> bool:
         resp = client.get(f"/v1/memory/{urllib.parse.quote(key, safe='')}")
-        return resp.status_code == 200
+        if resp.status_code == 404:
+            return False
+        resp.raise_for_status()
+        return True
 
     def _read_value(key: str) -> Optional[str]:
         resp = client.get(f"/v1/memory/{urllib.parse.quote(key, safe='')}")
