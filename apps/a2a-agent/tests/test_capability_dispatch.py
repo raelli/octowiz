@@ -17,8 +17,8 @@ class FakeRunner:
         self.raises = raises
         self.calls: list = []
 
-    def __call__(self, args: list) -> tuple:
-        self.calls.append(list(args))
+    def __call__(self, args: list, cwd: str = "") -> tuple:
+        self.calls.append((list(args), cwd))
         if self.raises is not None:
             raise self.raises
         return self.returncode, self.stdout, self.stderr
@@ -34,6 +34,16 @@ def _run(coro):
 
 
 class TestDispatchStart(unittest.TestCase):
+
+    def test_start_uses_cwd_as_subprocess_cwd_not_flag(self):
+        """cwd must NOT appear as --cwd in argv; it must be passed to the runner as the second argument."""
+        from capabilities.dispatch import handle_dispatch
+        runner = FakeRunner(stdout=PLAIN_OUTPUT)
+        _run(handle_dispatch({"operation": "start", "task": "fix the bug", "cwd": "/repo"}, runner=runner))
+        self.assertEqual(len(runner.calls), 1)
+        args, passed_cwd = runner.calls[0]
+        self.assertNotIn("--cwd", args)
+        self.assertEqual(passed_cwd, "/repo")
 
     def test_start_returns_session_id_from_plain_output(self):
         from capabilities.dispatch import handle_dispatch

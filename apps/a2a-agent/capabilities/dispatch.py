@@ -3,15 +3,15 @@ import re
 import subprocess
 from typing import Callable, Dict, List, Optional, Tuple
 
-Runner = Callable[[List[str]], Tuple[int, str, str]]
+Runner = Callable[[List[str], str], Tuple[int, str, str]]
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _SESSION_RE = re.compile(r"backgrounded\s*[·•]\s*(\S+)")
 
 
-def _default_runner(args: List[str]) -> Tuple[int, str, str]:
+def _default_runner(args: List[str], cwd: str = "") -> Tuple[int, str, str]:
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(args, capture_output=True, text=True, timeout=10, cwd=cwd or None)
         return result.returncode, result.stdout.strip(), result.stderr.strip()
     except subprocess.TimeoutExpired:
         return 1, "", "operation timed out"
@@ -43,13 +43,13 @@ async def handle_dispatch(event: Dict, runner: Optional[Runner] = None) -> Dict:
     if not cwd:
         return {"status": "error", "message": "cwd is required"}
 
-    args = ["claude", "--bg", "--cwd", cwd]
+    args = ["claude", "--bg"]
     if name:
         args += ["--name", str(name)]
     args += ["--", task]
 
     try:
-        returncode, stdout, stderr = runner(args)
+        returncode, stdout, stderr = runner(args, cwd)
     except Exception as exc:
         return {"status": "error", "message": str(exc) or "runner error"}
 
