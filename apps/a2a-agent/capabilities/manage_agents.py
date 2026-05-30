@@ -8,7 +8,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 Runner = Callable[[List[str]], Tuple[int, str, str]]
 
 _CONTROL_OPS = {"logs", "stop", "rm", "respawn"}
-_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
 def _default_runner(args: List[str]) -> Tuple[int, str, str]:
