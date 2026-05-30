@@ -61,6 +61,17 @@ class TestStop(unittest.TestCase):
             mock_run.assert_called_once_with(["stop", "--", "bg-abc"])
 
 
+class TestDispatch(unittest.TestCase):
+
+    def test_dispatch_passes_cwd_to_subprocess_not_argv(self):
+        with patch("providers.claude_agent_view.provider._run_claude") as mock_run:
+            mock_run.return_value = "bg-xyz"
+            from providers.claude_agent_view.provider import ClaudeAgentViewProvider
+            session_id = ClaudeAgentViewProvider().dispatch("do something", "/some/repo")
+            mock_run.assert_called_once_with(["--bg", "--", "do something"], cwd="/some/repo")
+            self.assertEqual(session_id, "bg-xyz")
+
+
 class TestValidation(unittest.TestCase):
 
     def test_dispatch_rejects_repo_starting_with_dash(self):

@@ -9,13 +9,14 @@ from .parser import parse_sessions
 from .session import AgentSession
 
 
-def _run_claude(args: List[str]) -> str:
+def _run_claude(args: List[str], cwd: Optional[str] = None) -> str:
     """Run `claude <args>` and return stdout. Single mock seam for all subprocess calls."""
     result = subprocess.run(
         ["claude"] + args,
         capture_output=True,
         text=True,
         timeout=30,
+        cwd=cwd,
     )
     return result.stdout.strip()
 
@@ -45,7 +46,7 @@ class ClaudeAgentViewProvider:
             raise ValueError(f"Invalid repo path: {repo!r}")
         if task.startswith("-"):
             raise ValueError(f"task must not start with '-': {task!r}")
-        output = _run_claude(["--bg", "--cwd", repo, "--", task])
+        output = _run_claude(["--bg", "--", task], cwd=repo)
         return output.splitlines()[0].strip() if output else ""
 
     def get_status(self, run_id: str) -> Optional[AgentSession]:
