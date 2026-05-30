@@ -72,3 +72,12 @@ class RulesAdvisor:
             if result is not None:
                 return result
         return None
+
+    async def advise_all(self, event: Dict, session: Any, ctx: Dict) -> list:
+        """Run all rules and return every non-None result (not just the first)."""
+        results = []
+        for rule in self.rules:
+            result = await rule.check(event, session, ctx)
+            if result is not None:
+                results.append(result)
+        return results
