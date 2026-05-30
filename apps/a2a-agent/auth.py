@@ -3,11 +3,14 @@ import os
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-_WELL_KNOWN_SUFFIX = "/.well-known/"
+_PUBLIC_PATHS = {
+    "/a2a/octowiz/.well-known/agent.json",
+    "/a2a/octowiz/.well-known/agent-card.json",
+}
 
 
 async def auth_middleware(request: Request, call_next):
-    if _WELL_KNOWN_SUFFIX in request.url.path:
+    if request.url.path in _PUBLIC_PATHS:
         return await call_next(request)
 
     secret = os.environ.get("OCTOWIZ_INBOUND_SECRET")
