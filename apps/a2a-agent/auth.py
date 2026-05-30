@@ -1,25 +1,18 @@
 import hmac
 import os
-import sys
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-
-def _warn_once():
-    print("[octowiz] WARNING: OCTOWIZ_INBOUND_SECRET not set — inbound auth disabled", file=sys.stderr)
-
-
-_warned = False
+_WELL_KNOWN_SUFFIX = "/.well-known/"
 
 
 async def auth_middleware(request: Request, call_next):
-    global _warned
+    if _WELL_KNOWN_SUFFIX in request.url.path:
+        return await call_next(request)
+
     secret = os.environ.get("OCTOWIZ_INBOUND_SECRET")
     if not secret:
-        if not _warned:
-            _warn_once()
-            _warned = True
-        return await call_next(request)
+        return JSONResponse(status_code=401, content={"error": "OCTOWIZ_INBOUND_SECRET not configured"})
 
     inbound = request.headers.get("x-octowiz-secret", "")
     try:
