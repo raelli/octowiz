@@ -1,7 +1,7 @@
 # octowiz
 <img src="assets/octowiz.jpeg" alt="octowiz cover image" width="666">
 
-A skill-backed memory stack for coding agents.
+**Octowiz Bridge** — Claude Code adapter for the Octowiz Engineering Agent.
 
 ---
 
@@ -13,7 +13,9 @@ A skill-backed memory stack for coding agents.
   <img src="https://img.shields.io/badge/skills-routed,_not_vendored-f97316.svg" alt="skills routed, not vendored">
 </p>
 
-octowiz is a memory stack and coordinator skill for AI-assisted development in Claude Code. It stores AI-coding operating doctrine in [LiteLLM Proxy](https://docs.litellm.ai/) `/v1/memory` — how to plan, write tests, review, and ship — and exposes a `/octowiz` entry point that reads those memories at runtime and routes to the right combination of [superpowers](https://github.com/obra/superpowers) and [mattpocock/skills](https://github.com/mattpocock/skills) for the current phase. One source of truth; each session fetches only what is relevant to the step it is on.
+This repository is the **Octowiz Bridge** — the Claude Code plugin component of the Octowiz Engineering Agent. It connects Claude Code sessions to the Octowiz memory stack and skill ecosystem. It stores AI-coding operating doctrine in [LiteLLM Proxy](https://docs.litellm.ai/) `/v1/memory` and exposes a `/octowiz` entry point that reads those memories at runtime and routes to the right combination of [superpowers](https://github.com/obra/superpowers) and [mattpocock/skills](https://github.com/mattpocock/skills) for the current phase.
+
+Octowiz is ÆLLI's coding alter-ego — the engineering tentacle of the ÆLLI agent network. This Bridge plugin is one component of that system, handling the Claude Code interface while the Octowiz A2A agent server handles reasoning, memory, and cross-agent orchestration.
 
 ## Why this exists
 
@@ -24,20 +26,30 @@ The result is a context window that stays small and focused. A planner gets plan
 ## Architecture
 
 ```
-        Developer in Claude Code
+        ÆLLI (orchestration brain)
           │
-          │  /octowiz
+          │  A2A  /a2a/octowiz
           ▼
         ┌──────────────────────────────────────┐
-        │     /octowiz coordinator skill       │
-        │  skills/octowiz-workflow/skill.md    │
+        │     Octowiz A2A Agent  (server)      │  ← coming in Phase 2
         │ ──────────────────────────────────── │
+        │  octowiz.plan / review / advise      │
+        │  reads Memory + Knowledge + Diary    │
+        │  escalates strategic decisions       │
+        └─────────────────┬────────────────────┘
+                          │
+                          │  events / advice
+                          ▼
+        ┌──────────────────────────────────────┐
+        │   Octowiz Bridge  (this repo)        │  ← Claude Code plugin
+        │ ──────────────────────────────────── │
+        │  skills/octowiz-workflow/skill.md    │
         │  reads project state + git status    │
-        │  fetches retrieval contract          │
+        │  fetches routing doctrine            │
         │  routes A / B / C / D                │
         └─────────────────┬────────────────────┘
                           │
-                          │  GET /v1/memory
+                          │  GET/PUT /v1/memory
                           ▼
         ┌──────────────────────────────────────┐
         │     LiteLLM Proxy · /v1/memory       │
@@ -45,7 +57,7 @@ The result is a context window that stays small and focused. A planner gets plan
         │     playbook:*           17 entries  │
         │     skills:*              3 entries  │
         │     agent:{role}:*        4 entries  │
-        │     config:*              2 entries  │
+        │     project:{id}:octowiz:*  seeded   │
         └─────────────────┬────────────────────┘
                           │
                           │  routes to installed skills
@@ -58,7 +70,16 @@ The result is a context window that stays small and focused. A planner gets plan
         └──────────────────────────────────────┘
 ```
 
-Three layers. The coordinator reads the project and fetches the relevant doctrine slice; LiteLLM holds the doctrine; installed skills do the work — referenced, never copied.
+## Component glossary
+
+| Name | What it is |
+|---|---|
+| **Octowiz Bridge** | This repo. The Claude Code plugin. Hooks into developer sessions, routes to skills, seeds project memory. Install name: `octowiz`. |
+| **Octowiz Agent** | The A2A server (`/a2a/octowiz`). Handles reasoning, advisor rules, diary writing, and escalation to ÆLLI. Built separately — not in this repo. |
+| **Octowiz Advisor** | Capability inside the Agent. Detects spec drift, file conflicts, and branch deviations. Formerly "Dev Advisor". |
+| **ÆLLI** | The orchestration brain. Delegates coding work to Octowiz via A2A. Makes strategic decisions Octowiz escalates up. |
+| **LiteLLM** | Platform layer. Hosts the A2A Gateway, Memory API, and IntegraHub Marketplace. |
+| `/a2a/dev-advisor` | Compatibility alias for `/a2a/octowiz`. Maintained while clients migrate. |
 
 ### Memory namespace breakdown
 
@@ -284,6 +305,8 @@ octowiz-cache refresh --all        # force-rebuild from LiteLLM
 octowiz-cache get --role planner   # print planner bundle to stdout
 octowiz-cache clear                # delete cache for current namespace
 octowiz-cache clear --all-namespaces  # wipe entire cache
+octowiz-cache seed                 # seed project namespace into LiteLLM Memory (idempotent)
+octowiz-cache seed --project slug  # seed with explicit project ID
 ```
 
 ### Environment variables

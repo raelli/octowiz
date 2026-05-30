@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "octowiz"
-version = "0.0.5"
-description = "Memory stack and coordinator skill for AI-assisted development in Claude Code"
+version = "0.0.6"
+description = "Octowiz Bridge — Claude Code adapter for the Octowiz Engineering Agent"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.8"

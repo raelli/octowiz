@@ -141,6 +141,33 @@ def cmd_clear(args) -> int:
     return 0
 
 
+def cmd_seed(args) -> int:
+    """Seed project namespace into LiteLLM Memory (merge/upsert, idempotent)."""
+    import httpx
+    cwd = Path(args.cwd) if getattr(args, "cwd", None) else Path.cwd()
+    try:
+        import octowiz_env as _env
+    except ImportError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    project_id = getattr(args, "project", None) or _env.derive_project_id(cwd)
+
+    try:
+        client = octowiz_cache.get_litellm_client()
+        _env.seed_project_namespace(project_id, client)
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError,
+            httpx.RemoteProtocolError, RuntimeError) as exc:
+        print(f"[octowiz-cache] seed failed: {exc}", file=sys.stderr)
+        return 1
+
+    repo_state = _env.load_repo_state(cwd) or _env.RepoState(created_at=_env._now_iso())
+    repo_state.project_id = project_id
+    _env.save_repo_state(repo_state, cwd)
+    print(f"[octowiz-cache] seeded namespace project:{project_id}:octowiz", file=sys.stderr)
+    return 0
+
+
 def cmd_init(args) -> int:
     """Bootstrap machine-state.json and/or setup-state.json if absent."""
     cwd = Path(args.cwd) if args.cwd else Path.cwd()
@@ -279,6 +306,21 @@ def _make_parser() -> argparse.ArgumentParser:
         help="Directory to check (default: current working directory)",
     )
     p_check.set_defaults(func=cmd_check)
+
+    # -- seed --
+    p_seed = sub.add_parser("seed", parents=[common], help="Seed project namespace into LiteLLM Memory")
+    p_seed.add_argument(
+        "--project",
+        default=None,
+        dest="project",
+        help="Explicit project ID (default: derived from git remote)",
+    )
+    p_seed.add_argument(
+        "--cwd",
+        default=None,
+        help="Repo directory (default: current working directory)",
+    )
+    p_seed.set_defaults(func=cmd_seed)
 
     return parser
 

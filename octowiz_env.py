@@ -46,6 +46,7 @@ class RepoState:
     antfu_relevant: Optional[bool] = None
     antfu_setup: bool = False
     antfu_deferred: bool = False
+    project_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +107,7 @@ def load_repo_state(cwd: Path) -> Optional[RepoState]:
         antfu_relevant=data.get("antfu_relevant"),
         antfu_setup=data.get("antfu_setup", False),
         antfu_deferred=data.get("antfu_deferred", False),
+        project_id=data.get("project_id"),
     )
 
 
@@ -355,6 +357,72 @@ def run_live_check(
         machine_state_absent=machine_state_absent,
         repo_state_absent=repo_state_absent,
     )
+
+
+def seed_project_namespace(project_id: str, client: "httpx.Client") -> None:
+    """Write default config and rules keys for a project namespace into LiteLLM Memory.
+
+    Uses merge/upsert: reads existing keys first, writes only absent or empty fields.
+    Raises RuntimeError on connection failure.
+    """
+    import json as _json
+    import urllib.parse
+
+    namespace = f"project:{project_id}:octowiz"
+    config_key = f"{namespace}:config"
+    rules_key = f"{namespace}:rules"
+
+    def _exists(key: str) -> bool:
+        resp = client.get(f"/v1/memory/{urllib.parse.quote(key, safe='')}")
+        return resp.status_code == 200
+
+    def _read_value(key: str) -> Optional[str]:
+        resp = client.get(f"/v1/memory/{urllib.parse.quote(key, safe='')}")
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("value") or data.get("memory")
+
+    def _put(key: str, value: str) -> None:
+        resp = client.put(
+            f"/v1/memory/{urllib.parse.quote(key, safe='')}",
+            json={"value": value, "metadata": {}},
+        )
+        resp.raise_for_status()
+
+    if not _exists(config_key):
+        _put(config_key, _json.dumps({"namespace": namespace, "created_at": _now_iso()}))
+
+    existing_rules = _read_value(rules_key)
+    if existing_rules is None:
+        _put(rules_key, _json.dumps([]))
+
+
+def derive_project_id(cwd: Path) -> str:
+    """Return a stable project slug derived from the git remote URL, or a UUID fallback."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=cwd, capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            url = result.stdout.strip().rstrip("/")
+            # Strip .git suffix
+            if url.endswith(".git"):
+                url = url[:-4]
+            # Handle SSH: git@github.com:org/repo → org/repo
+            if ":" in url and not url.startswith("http"):
+                url = url.split(":", 1)[1]
+            # Take last two path segments: org/repo
+            parts = url.replace("\\", "/").split("/")
+            parts = [p for p in parts if p]
+            slug = "-".join(parts[-2:]) if len(parts) >= 2 else parts[-1]
+            return slug.lower()
+    except Exception:
+        pass
+    import uuid
+    return uuid.uuid4().hex
 
 
 def dismiss_check(
