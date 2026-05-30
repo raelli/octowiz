@@ -68,6 +68,11 @@ class TestBuildEvent(unittest.TestCase):
         self.assertEqual(event["type"], "file-edit")
         self.assertIn("src/models.py", event["live_modified_files"])
 
+    def test_notebook_edit_uses_notebook_path(self):
+        event = self._build(tool="NotebookEdit", tool_input={"notebook_path": "analysis.ipynb"})
+        self.assertEqual(event["type"], "file-edit")
+        self.assertIn("analysis.ipynb", event["live_modified_files"])
+
     def test_bash_tool_produces_tool_used_event(self):
         event = self._build(tool="Bash", tool_input={"command": "pytest"})
         self.assertEqual(event["type"], "tool-used")
