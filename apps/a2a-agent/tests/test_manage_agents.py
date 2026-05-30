@@ -12,14 +12,17 @@ import unittest
 class FakeRunner:
     """Injected in place of _default_runner. Records calls for inspection."""
 
-    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = ""):
+    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "", raises: Exception = None):
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
+        self.raises = raises
         self.calls: list = []
 
     def __call__(self, args: list) -> tuple:
         self.calls.append(list(args))
+        if self.raises is not None:
+            raise self.raises
         return self.returncode, self.stdout, self.stderr
 
 
@@ -76,6 +79,14 @@ class TestManageAgentsList(unittest.TestCase):
         result = _run(handle_manage_agents({"operation": "list"}, runner=runner))
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["sessions"], [])
+
+    def test_list_cli_not_found_returns_warning_not_exception(self):
+        from capabilities.manage_agents import handle_manage_agents
+        runner = FakeRunner(raises=FileNotFoundError("claude: command not found"))
+        result = _run(handle_manage_agents({"operation": "list"}, runner=runner))
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["sessions"], [])
+        self.assertEqual(result.get("warning"), "supervisor_unavailable")
 
 
 class TestManageAgentsControlOps(unittest.TestCase):

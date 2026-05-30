@@ -1,7 +1,8 @@
 """octowiz.manage_agents capability — wraps the `claude agents` CLI."""
+import json
 import re
 import subprocess
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 
 Runner = Callable[[List[str]], Tuple[int, str, str]]
@@ -11,8 +12,11 @@ _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def _default_runner(args: List[str]) -> Tuple[int, str, str]:
-    result = subprocess.run(args, capture_output=True, text=True)
-    return result.returncode, result.stdout, result.stderr
+    try:
+        result = subprocess.run(args, capture_output=True, text=True)
+        return result.returncode, result.stdout, result.stderr
+    except OSError as exc:
+        return 1, "", str(exc)
 
 
 async def handle_manage_agents(event: Dict, runner: Optional[Runner] = None) -> Dict:
@@ -31,11 +35,14 @@ def _handle_list(event: Dict, runner: Runner) -> Dict:
     cwd = event.get("cwd")
     if cwd:
         args += ["--cwd", cwd]
-    rc, stdout, _stderr = runner(args)
+    try:
+        rc, stdout, _stderr = runner(args)
+    except Exception:
+        return {"status": "ok", "sessions": [], "warning": "supervisor_unavailable"}
     if rc != 0:
         return {"status": "ok", "sessions": [], "warning": "supervisor_unavailable"}
     try:
-        raw: List[Dict] = __import__("json").loads(stdout or "[]")
+        raw: List[Dict] = json.loads(stdout or "[]")
     except Exception:
         return {"status": "ok", "sessions": [], "warning": "supervisor_unavailable"}
     sessions = [
