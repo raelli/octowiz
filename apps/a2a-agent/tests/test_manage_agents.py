@@ -89,6 +89,53 @@ class TestManageAgentsList(unittest.TestCase):
         self.assertEqual(result.get("warning"), "supervisor_unavailable")
 
 
+class TestManageAgentsCwdValidation(unittest.TestCase):
+
+    def test_relative_cwd_returns_error(self):
+        from capabilities.manage_agents import handle_manage_agents
+        runner = FakeRunner(stdout="[]")
+        result = _run(handle_manage_agents({"operation": "list", "cwd": "relative/path"}, runner=runner))
+        self.assertEqual(result["status"], "error")
+        self.assertIn("absolute", result["message"])
+        self.assertEqual(runner.calls, [])
+
+    def test_absolute_cwd_is_accepted(self):
+        from capabilities.manage_agents import handle_manage_agents
+        runner = FakeRunner(stdout="[]")
+        result = _run(handle_manage_agents({"operation": "list", "cwd": "/projects/foo"}, runner=runner))
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(len(runner.calls), 1)
+        self.assertIn("--cwd", runner.calls[0])
+
+    def test_cwd_canonicalized_before_passing_to_cli(self):
+        from capabilities.manage_agents import handle_manage_agents
+        runner = FakeRunner(stdout="[]")
+        _run(handle_manage_agents({"operation": "list", "cwd": "/projects/../projects/foo"}, runner=runner))
+        self.assertEqual(len(runner.calls), 1)
+        cwd_idx = runner.calls[0].index("--cwd")
+        self.assertEqual(runner.calls[0][cwd_idx + 1], "/projects/foo")
+
+    def test_allowed_roots_blocks_outside_path(self):
+        from capabilities.manage_agents import handle_manage_agents
+        runner = FakeRunner(stdout="[]")
+        with __import__("unittest.mock", fromlist=["patch"]).patch.dict(
+            os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/allowed"}
+        ):
+            result = _run(handle_manage_agents({"operation": "list", "cwd": "/other/path"}, runner=runner))
+        self.assertEqual(result["status"], "error")
+        self.assertIn("allowed root", result["message"])
+        self.assertEqual(runner.calls, [])
+
+    def test_allowed_roots_permits_matching_path(self):
+        from capabilities.manage_agents import handle_manage_agents
+        runner = FakeRunner(stdout="[]")
+        with __import__("unittest.mock", fromlist=["patch"]).patch.dict(
+            os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/allowed"}
+        ):
+            result = _run(handle_manage_agents({"operation": "list", "cwd": "/allowed/project"}, runner=runner))
+        self.assertEqual(result["status"], "ok")
+
+
 class TestManageAgentsControlOps(unittest.TestCase):
 
     def test_logs_returns_output(self):
@@ -173,6 +220,12 @@ class TestManageAgentsTimeout(unittest.TestCase):
 class TestManageAgentsDispatchIntegration(unittest.TestCase):
     """Smoke test: verify dispatch routes octowiz.manage_agents to the handler."""
 
+    def setUp(self):
+        os.environ["OCTOWIZ_INBOUND_SECRET"] = "test-secret"
+
+    def tearDown(self):
+        os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
+
     def test_manage_agents_is_routed_not_not_implemented(self):
         import importlib
         import dispatch as dispatch_mod
@@ -189,7 +242,7 @@ class TestManageAgentsDispatchIntegration(unittest.TestCase):
                 "operation": "list",
             })}]}},
         }
-        resp = client.post("/a2a/octowiz", json=body)
+        resp = client.post("/a2a/octowiz", json=body, headers={"x-octowiz-secret": "test-secret"})
         self.assertEqual(resp.status_code, 200)
         artifact = json.loads(resp.json()["result"]["artifacts"][0]["parts"][0]["text"])
         self.assertNotEqual(artifact.get("status"), "not_implemented")
