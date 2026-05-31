@@ -90,6 +90,20 @@ class TestBuildEvent(unittest.TestCase):
         self.assertEqual(event["type"], "prompt")
         self.assertIn("refactor", event["prompt_summary"])
 
+    def test_session_start_produces_session_start_event(self):
+        data = {
+            "session_id": "sess-xyz",
+            "cwd": "/repo",
+            "hook_event_name": "SessionStart",
+        }
+        with unittest.mock.patch("bridge._git_context", return_value={"repoRoot": "/repo", "branch": "main"}):
+            event = _build_event(data)
+        self.assertEqual(event["type"], "session-start")
+        self.assertEqual(event["sessionId"], "sess-xyz")
+        self.assertEqual(event["capability"], "octowiz.advise")
+        self.assertNotIn("prompt_summary", event)
+        self.assertNotIn("live_modified_files", event)
+
     def test_unknown_hook_returns_none(self):
         data = {"hook_event_name": "Notification", "session_id": "x", "cwd": "/"}
         self.assertIsNone(_build_event(data))

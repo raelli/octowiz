@@ -74,6 +74,14 @@ def _build_event(data: Dict) -> Optional[Dict]:
             **git_ctx,
         }
 
+    if hook == "SessionStart":
+        return {
+            "type": "session-start",
+            "capability": "octowiz.advise",
+            "sessionId": session_id,
+            **git_ctx,
+        }
+
     return None
 
 
