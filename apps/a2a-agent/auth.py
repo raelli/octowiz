@@ -3,12 +3,14 @@ import os
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-# Agent card discovery endpoints are always public.
-_EXEMPT_PATH_FRAGMENT = "/.well-known/"
+_PUBLIC_PATHS = {
+    "/a2a/octowiz/.well-known/agent.json",
+    "/a2a/octowiz/.well-known/agent-card.json",
+}
 
 
 async def auth_middleware(request: Request, call_next):
-    if _EXEMPT_PATH_FRAGMENT in request.url.path:
+    if request.url.path in _PUBLIC_PATHS:
         return await call_next(request)
 
     secret = os.environ.get("OCTOWIZ_INBOUND_SECRET")

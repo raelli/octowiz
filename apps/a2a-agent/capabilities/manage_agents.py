@@ -14,6 +14,19 @@ _CONTROL_OPS = {"logs", "stop", "rm", "respawn"}
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
+def _validate_cwd(cwd: str) -> str:
+    """Canonicalize cwd and enforce OCTOWIZ_ALLOWED_ROOTS when set."""
+    if not os.path.isabs(cwd):
+        raise ValueError(f"cwd must be an absolute path: {cwd!r}")
+    canonical = os.path.realpath(cwd)
+    allowed_roots_env = os.environ.get("OCTOWIZ_ALLOWED_ROOTS", "")
+    if allowed_roots_env:
+        roots = [r.strip() for r in allowed_roots_env.split(":") if r.strip()]
+        if not any(canonical == r or canonical.startswith(r + os.sep) for r in roots):
+            raise ValueError(f"cwd {canonical!r} is not within an allowed root")
+    return canonical
+
+
 def _default_runner(args: List[str]) -> Tuple[int, str, str]:
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=30)
@@ -22,25 +35,6 @@ def _default_runner(args: List[str]) -> Tuple[int, str, str]:
         return 1, "", "operation timed out"
     except OSError as exc:
         return 1, "", str(exc)
-
-
-def _validate_cwd(cwd: str) -> Optional[str]:
-    """Return canonicalised cwd, or None if it violates the allowlist.
-
-    When OCTOWIZ_ALLOWED_ROOTS is unset every path is allowed (single-caller
-    deployment). When set (colon-separated), the canonicalised path must be
-    equal to or a child of one of the listed roots.
-    """
-    real = os.path.realpath(cwd)
-    allowed_env = os.environ.get("OCTOWIZ_ALLOWED_ROOTS", "")
-    if not allowed_env:
-        return real
-    roots = [r.strip() for r in allowed_env.split(":") if r.strip()]
-    for root in roots:
-        canonical_root = os.path.realpath(root)
-        if real == canonical_root or real.startswith(canonical_root + os.sep):
-            return real
-    return None
 
 
 async def handle_manage_agents(event: Dict, runner: Optional[Runner] = None) -> Dict:
@@ -58,10 +52,11 @@ def _handle_list(event: Dict, runner: Runner) -> Dict:
     args = ["claude", "agents", "--json"]
     cwd = event.get("cwd")
     if cwd:
-        canonical = _validate_cwd(str(cwd))
-        if canonical is None:
-            return {"status": "error", "message": f"cwd not under allowed roots: {cwd!r}"}
-        args += ["--cwd", canonical]
+        try:
+            cwd = _validate_cwd(cwd)
+        except ValueError as exc:
+            return {"status": "error", "message": str(exc)}
+        args += ["--cwd", cwd]
     try:
         rc, stdout, _stderr = runner(args)
     except Exception:

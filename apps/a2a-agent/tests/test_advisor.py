@@ -2,8 +2,10 @@
 import json
 import os
 import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ["OCTOWIZ_INBOUND_SECRET"] = "test-secret"
+_A2A_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT_DIR = os.path.dirname(os.path.dirname(_A2A_DIR))
+sys.path.insert(0, _A2A_DIR)
+sys.path.insert(0, _ROOT_DIR)
 
 import unittest
 from fastapi.testclient import TestClient
@@ -12,8 +14,8 @@ _SECRET = "test-secret"
 
 
 def _fresh_client():
-    import importlib
     os.environ["OCTOWIZ_INBOUND_SECRET"] = _SECRET
+    import importlib
     import packages.advisor.state as _state_mod
     importlib.reload(_state_mod)
     import packages.advisor.policy as _policy_mod
@@ -39,6 +41,9 @@ def _post_advise(client, event):
 class TestFileConflictRule(unittest.TestCase):
     def setUp(self):
         self.client = _fresh_client()
+
+    def tearDown(self):
+        os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
 
     def test_same_branch_sessions_do_not_trigger_conflict(self):
         # Two sessions on the SAME branch touching the same file should not conflict
@@ -97,6 +102,9 @@ class TestBranchDriftRule(unittest.TestCase):
     def setUp(self):
         self.client = _fresh_client()
 
+    def tearDown(self):
+        os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
+
     def test_20_file_events_triggers_drift_warning(self):
         sid = "sess-drift"
         for i in range(20):
@@ -130,6 +138,9 @@ class TestBranchDriftRule(unittest.TestCase):
 class TestSpecDeviationRule(unittest.TestCase):
     def setUp(self):
         self.client = _fresh_client()
+
+    def tearDown(self):
+        os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
 
     def test_files_absent_from_prompt_summary_triggers_deviation(self):
         result = _post_advise(self.client, {
