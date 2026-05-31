@@ -5,7 +5,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Literal, Optional, Tuple, Union
 
-Runner = Callable[[List[str]], Tuple[int, str, str]]
+Runner = Callable[[List[str], Optional[str]], Tuple[int, str, str]]
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _SESSION_RE = re.compile(r"backgrounded\s*[·•]\s*(\S+)")
@@ -32,9 +32,9 @@ class CliError:
     message: str
 
 
-def _default_runner(args: List[str], *, timeout: float) -> Tuple[int, str, str]:
+def _default_runner(args: List[str], cwd: Optional[str] = None, *, timeout: float) -> Tuple[int, str, str]:
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd)
         return result.returncode, result.stdout.strip(), result.stderr.strip()
     except subprocess.TimeoutExpired:
         return 1, "", "operation timed out"
@@ -49,20 +49,20 @@ class ClaudeCliAdapter:
     def __init__(self, runner: Optional[Runner] = None):
         self._injected_runner = runner
 
-    def _run(self, args: List[str], timeout: float) -> Tuple[int, str, str]:
+    def _run(self, args: List[str], timeout: float, *, cwd: Optional[str] = None) -> Tuple[int, str, str]:
         if self._injected_runner is not None:
-            return self._injected_runner(args)
-        return _default_runner(args, timeout=timeout)
+            return self._injected_runner(args, cwd)
+        return _default_runner(args, cwd, timeout=timeout)
 
     def start_session(
         self, task: str, cwd: str, name: Optional[str] = None
     ) -> Union[SessionStarted, CliError]:
-        args = ["claude", "--bg", "--cwd", cwd]
+        args = ["claude", "--bg"]
         if name:
             args += ["--name", str(name)]
         args += ["--", task]
 
-        rc, stdout, stderr = self._run(args, self._START_TIMEOUT)
+        rc, stdout, stderr = self._run(args, self._START_TIMEOUT, cwd=cwd)
         if rc != 0:
             return CliError(kind="nonzero_exit", message=stderr or f"claude --bg exited {rc}")
 

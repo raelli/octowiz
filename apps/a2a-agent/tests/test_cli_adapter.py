@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
 
 import unittest
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 
 class FakeRunner:
@@ -14,9 +14,11 @@ class FakeRunner:
         self.stdout = stdout
         self.stderr = stderr
         self.calls: list = []
+        self.cwds: list = []
 
-    def __call__(self, args: List[str]) -> Tuple[int, str, str]:
+    def __call__(self, args: List[str], cwd: Optional[str] = None) -> Tuple[int, str, str]:
         self.calls.append(list(args))
+        self.cwds.append(cwd)
         return self.returncode, self.stdout, self.stderr
 
 
@@ -62,6 +64,22 @@ class TestCliAdapterStartSession(unittest.TestCase):
         result = adapter.start_session(task="fix the bug", cwd="/repo")
         self.assertIsInstance(result, CliError)
         self.assertEqual(result.kind, "parse_failure")
+
+    def test_start_session_passes_cwd_as_subprocess_dir_not_argv_flag(self):
+        from capabilities.cli_adapter import ClaudeCliAdapter
+        runner = FakeRunner(stdout=PLAIN_OUTPUT)
+        adapter = ClaudeCliAdapter(runner=runner)
+        adapter.start_session(task="fix the bug", cwd="/my/repo")
+        self.assertNotIn("--cwd", runner.calls[0], "--cwd must not appear in claude --bg argv")
+        self.assertEqual(runner.cwds[0], "/my/repo", "cwd must be forwarded as subprocess working directory")
+
+    def test_start_session_with_name_also_excludes_cwd_from_argv(self):
+        from capabilities.cli_adapter import ClaudeCliAdapter
+        runner = FakeRunner(stdout=PLAIN_OUTPUT)
+        adapter = ClaudeCliAdapter(runner=runner)
+        adapter.start_session(task="fix the bug", cwd="/my/repo", name="feat/fix")
+        self.assertNotIn("--cwd", runner.calls[0])
+        self.assertEqual(runner.cwds[0], "/my/repo")
 
 
 SESSIONS_JSON = '[{"sessionId":"s1","name":"feat/auth","status":"idle","cwd":"/repo","pid":1234,"startedAt":1780000000}]'
