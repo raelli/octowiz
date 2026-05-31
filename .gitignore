@@ -7,3 +7,6 @@ docs/superpowers/plans/
 
 # Local agent workspace
 .claude/worktrees/
+
+# Octowiz local machine state (project_id, setup flags — must not be shared across clones)
+.octowiz/
