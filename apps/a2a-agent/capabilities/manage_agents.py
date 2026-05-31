@@ -1,5 +1,6 @@
 """octowiz.manage_agents capability — wraps the `claude agents` CLI."""
 import json
+import os
 import re
 import subprocess
 from typing import Callable, Dict, List, Optional, Tuple
@@ -9,6 +10,19 @@ Runner = Callable[[List[str]], Tuple[int, str, str]]
 
 _CONTROL_OPS = {"logs", "stop", "rm", "respawn"}
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+
+def _validate_cwd(cwd: str) -> str:
+    """Canonicalize cwd and enforce OCTOWIZ_ALLOWED_ROOTS when set."""
+    if not os.path.isabs(cwd):
+        raise ValueError(f"cwd must be an absolute path: {cwd!r}")
+    canonical = os.path.realpath(cwd)
+    allowed_roots_env = os.environ.get("OCTOWIZ_ALLOWED_ROOTS", "")
+    if allowed_roots_env:
+        roots = [r.strip() for r in allowed_roots_env.split(":") if r.strip()]
+        if not any(canonical == r or canonical.startswith(r + os.sep) for r in roots):
+            raise ValueError(f"cwd {canonical!r} is not within an allowed root")
+    return canonical
 
 
 def _default_runner(args: List[str]) -> Tuple[int, str, str]:
@@ -36,6 +50,10 @@ def _handle_list(event: Dict, runner: Runner) -> Dict:
     args = ["claude", "agents", "--json"]
     cwd = event.get("cwd")
     if cwd:
+        try:
+            cwd = _validate_cwd(cwd)
+        except ValueError as exc:
+            return {"status": "error", "message": str(exc)}
         args += ["--cwd", cwd]
     try:
         rc, stdout, _stderr = runner(args)

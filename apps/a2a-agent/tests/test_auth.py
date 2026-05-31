@@ -61,6 +61,10 @@ class TestAuthWithNoSecretEnvVar(unittest.TestCase):
     def tearDown(self):
         os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
 
-    def test_request_passes_when_secret_not_configured(self):
+    def test_request_rejected_when_secret_not_configured(self):
         resp = self.client.post("/a2a/octowiz", json=MINIMAL_BODY)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_agent_card_bypasses_auth_when_secret_not_configured(self):
+        resp = self.client.get("/a2a/octowiz/.well-known/agent.json")
         self.assertEqual(resp.status_code, 200)
