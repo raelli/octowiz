@@ -2,7 +2,10 @@
 import json
 import os
 import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_A2A_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT_DIR = os.path.dirname(os.path.dirname(_A2A_DIR))
+sys.path.insert(0, _A2A_DIR)
+sys.path.insert(0, _ROOT_DIR)
 
 import unittest
 from fastapi.testclient import TestClient
@@ -53,6 +56,7 @@ class TestFileConflictRule(unittest.TestCase):
             "prompt_summary": "utils.py",
         })
         self.assertIsNone(result.get("type"))
+        self.assertIsNone(result.get("level"))
 
     def test_cleared_files_do_not_remain_in_conflict_index(self):
         # Session registers files, then sends event with empty files — conflict should clear
@@ -74,6 +78,7 @@ class TestFileConflictRule(unittest.TestCase):
             "prompt_summary": "foo.py",
         })
         self.assertIsNone(result.get("type"))
+        self.assertIsNone(result.get("level"))
 
     def test_two_sessions_touching_same_file_different_branches_triggers_conflict(self):
         # Session A registers file on branch-a
@@ -89,6 +94,7 @@ class TestFileConflictRule(unittest.TestCase):
             "prompt_summary": "src/payment.py",
         })
         self.assertEqual(result["type"], "file-conflict")
+        self.assertEqual(result.get("level"), "intervene")
         self.assertIn("src/payment.py", result["files"])
 
 
@@ -112,6 +118,7 @@ class TestBranchDriftRule(unittest.TestCase):
             "repoRoot": "/repo", "live_modified_files": [], "prompt_summary": "something",
         })
         self.assertEqual(result["type"], "branch-drift")
+        self.assertEqual(result.get("level"), "advise")
 
     def test_19_file_events_does_not_trigger_drift(self):
         sid = "sess-nodrift"
@@ -126,6 +133,7 @@ class TestBranchDriftRule(unittest.TestCase):
             "repoRoot": "/repo", "live_modified_files": [], "prompt_summary": "ok",
         })
         self.assertIsNone(result.get("type"))
+        self.assertIsNone(result.get("level"))
 
 
 class TestSpecDeviationRule(unittest.TestCase):
@@ -143,5 +151,6 @@ class TestSpecDeviationRule(unittest.TestCase):
             "prompt_summary": "update auth.py — fix login flow",
         })
         self.assertEqual(result["type"], "spec-deviation")
+        self.assertEqual(result.get("level"), "advise")
         self.assertIn("payment.py", result["files"])
         self.assertNotIn("auth.py", result["files"])
