@@ -1,14 +1,10 @@
 """octowiz.manage_agents capability — wraps the `claude agents` CLI."""
-import json
 import os
 import re
-import subprocess
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import session_owners
-
-
-Runner = Callable[[List[str]], Tuple[int, str, str]]
+from capabilities.cli_adapter import CliError, ClaudeCliAdapter, SessionInfo
 
 _CONTROL_OPS = {"logs", "stop", "rm", "respawn"}
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
@@ -27,71 +23,54 @@ def _validate_cwd(cwd: str) -> str:
     return canonical
 
 
-def _default_runner(args: List[str]) -> Tuple[int, str, str]:
-    try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=30)
-        return result.returncode, result.stdout, result.stderr
-    except subprocess.TimeoutExpired:
-        return 1, "", "operation timed out"
-    except OSError as exc:
-        return 1, "", str(exc)
-
-
-async def handle_manage_agents(event: Dict, runner: Optional[Runner] = None) -> Dict:
-    if runner is None:
-        runner = _default_runner
+async def handle_manage_agents(event: Dict, adapter: Optional[ClaudeCliAdapter] = None) -> Dict:
+    if adapter is None:
+        adapter = ClaudeCliAdapter()
     op = event.get("operation", "")
     if op == "list":
-        return _handle_list(event, runner)
+        return _handle_list(event, adapter)
     if op in _CONTROL_OPS:
-        return _handle_control(op, event, runner)
+        return _handle_control(op, event, adapter)
     return {"status": "error", "message": f"unknown operation: {op}"}
 
 
-def _handle_list(event: Dict, runner: Runner) -> Dict:
-    args = ["claude", "agents", "--json"]
+def _handle_list(event: Dict, adapter: ClaudeCliAdapter) -> Dict:
     cwd = event.get("cwd")
     if cwd:
         try:
             cwd = _validate_cwd(cwd)
         except ValueError as exc:
             return {"status": "error", "message": str(exc)}
-        args += ["--cwd", cwd]
-    try:
-        rc, stdout, _stderr = runner(args)
-    except Exception:
+
+    result = adapter.list_sessions(cwd=cwd)
+    if isinstance(result, CliError):
         return {"status": "ok", "sessions": [], "warning": "supervisor_unavailable"}
-    if rc != 0:
-        return {"status": "ok", "sessions": [], "warning": "supervisor_unavailable"}
-    try:
-        raw: List[Dict] = json.loads(stdout or "[]")
-    except Exception:
-        return {"status": "ok", "sessions": [], "warning": "supervisor_unavailable"}
-    sessions = [
-        {
-            "sessionId": s.get("sessionId", ""),
-            "name": s.get("name", ""),
-            "status": s.get("status", ""),
-            "cwd": s.get("cwd", ""),
-            "pid": s.get("pid"),
-            "startedAt": s.get("startedAt"),
-        }
-        for s in raw
-    ]
-    return {"status": "ok", "sessions": sessions}
+
+    return {
+        "status": "ok",
+        "sessions": [
+            {
+                "sessionId": s.session_id,
+                "name": s.name,
+                "status": s.status,
+                "cwd": s.cwd,
+                "pid": s.pid,
+                "startedAt": s.started_at,
+            }
+            for s in result
+        ],
+    }
 
 
-def _handle_control(op: str, event: Dict, runner: Runner) -> Dict:
+def _handle_control(op: str, event: Dict, adapter: ClaudeCliAdapter) -> Dict:
     session_id = event.get("sessionId", "")
     if not session_id or not _SESSION_ID_RE.match(session_id):
         return {"status": "error", "message": f"invalid sessionId: {session_id!r}"}
     principal = event.get("_principal", "")
     if not session_owners.check(session_id, principal):
         return {"status": "error", "message": f"session {session_id!r} is not owned by this caller"}
-    try:
-        rc, stdout, stderr = runner(["claude", op, "--", session_id])
-    except Exception as exc:
-        return {"status": "error", "message": str(exc) or "runner error"}
-    if rc != 0:
-        return {"status": "error", "message": stderr or f"claude {op} exited with code {rc}"}
-    return {"status": "ok", "output": stdout}
+
+    result = adapter.control(op, session_id)
+    if isinstance(result, CliError):
+        return {"status": "error", "message": result.message}
+    return {"status": "ok", "output": result}
