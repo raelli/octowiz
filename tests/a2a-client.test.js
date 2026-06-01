@@ -52,6 +52,30 @@ describe("parseSseEvents", () => {
     expect(events).toHaveLength(1);
     expect(events[0].data).toBe("line1\nline2\nline3");
   });
+
+  it("parses a complete event with CRLF framing", () => {
+    const buf = "event: task-new\r\ndata: {\"id\":\"t1\"}\r\n\r\n";
+    const { events, remainder } = parseSseEvents(buf);
+    expect(events).toEqual([{ event: "task-new", data: '{"id":"t1"}' }]);
+    expect(remainder).toBe("");
+  });
+
+  it("parses multiple events with CRLF framing", () => {
+    const buf = "event: a\r\ndata: 1\r\n\r\nevent: b\r\ndata: 2\r\n\r\n";
+    const { events, remainder } = parseSseEvents(buf);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toEqual({ event: "a", data: "1" });
+    expect(events[1]).toEqual({ event: "b", data: "2" });
+    expect(remainder).toBe("");
+  });
+
+  it("returns partial chunk as remainder with CRLF framing", () => {
+    const buf = "event: task-new\r\ndata: {}\r\n\r\nevent: ping\r\n";
+    const { events, remainder } = parseSseEvents(buf);
+    expect(events).toHaveLength(1);
+    expect(events[0].event).toBe("task-new");
+    expect(remainder).toBe("event: ping\n");
+  });
 });
 
 describe("subscribe", () => {

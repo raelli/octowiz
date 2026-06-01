@@ -55,7 +55,8 @@ function makeAuthHeaders() {
 // Pure SSE framing parser. Takes the accumulated buffer string, returns
 // complete events and the leftover partial chunk.
 function parseSseEvents(buffer) {
-  const blocks = buffer.split("\n\n");
+  const normalized = buffer.replace(/\r\n/g, "\n");
+  const blocks = normalized.split("\n\n");
   const remainder = blocks.pop(); // last entry is always the incomplete tail
   const events = [];
   for (const block of blocks) {
