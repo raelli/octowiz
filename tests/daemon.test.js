@@ -153,6 +153,23 @@ describe("daemon.processTask (forwarding)", () => {
       expect.objectContaining({ status: "error", message: expect.stringContaining("unknown capability") }));
   });
 
+  it("handles octowiz.observe capability and returns completed", async () => {
+    // AELLI enqueues tasks with capability "octowiz.observe"; the daemon must
+    // handle them locally (no A2A forwarding) — log the advisory and return
+    // { status: "completed", advisory: <echo> }.
+    claimTask.mockResolvedValue({ ok: true, leaseToken: "lt-obs" });
+    const payload = {
+      sessionId: "s1",
+      advisory: { type: "file-conflict", message: "conflict", files: ["src/a.js"] },
+    };
+    await processTask({ id: "t-obs", capability: "octowiz.observe", payload });
+    expect(postResult).toHaveBeenCalledWith("t-obs", "lt-obs",
+      expect.objectContaining({
+        status: "completed",
+        advisory: payload.advisory,
+      }));
+  });
+
   it("skips processing when claim fails (409)", async () => {
     claimTask.mockResolvedValue({ ok: false, reason: "already_claimed" });
     await processTask({ id: "t1", capability: "octowiz.dispatch", payload: {} });

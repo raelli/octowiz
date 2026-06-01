@@ -29,6 +29,7 @@ const A2A_TIMEOUT_MS = _dispatchTimeoutSec * 1000 + 30_000;
 const KNOWN_CAPABILITIES = new Set([
   "octowiz.dispatch",
   "octowiz.manage_agents",
+  "octowiz.observe",
 ]);
 
 /**
@@ -127,6 +128,15 @@ async function processTask(task) {
       await postResult(id, leaseToken, { status: "error", message: err.message });
       return;
     }
+  }
+
+  // octowiz.observe is handled locally — no A2A forwarding needed.
+  // Log the advisory and echo it back as the artifact.
+  if (capability === "octowiz.observe") {
+    const { sessionId, advisory = {} } = payload;
+    console.log(`[octowiz] advisory for session ${sessionId}: ${advisory.type} — ${advisory.message}`);
+    await postResult(id, leaseToken, { status: "completed", advisory });
+    return;
   }
 
   try {
