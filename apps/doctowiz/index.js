@@ -69,30 +69,33 @@ function isPortOpen(port) {
   });
 }
 
-function httpGet(rawUrl) {
+function httpRequest(rawUrl, { method = "GET", headers = {}, body } = {}) {
   return new Promise((resolve) => {
     let parsed;
     try { parsed = new URL(rawUrl); } catch { return resolve({ status: null, error: "invalid url" }); }
     const lib = parsed.protocol === "https:" ? https : http;
-    const req = lib.request(
-      {
-        hostname: parsed.hostname,
-        port: parsed.port || (parsed.protocol === "https:" ? 443 : 80),
-        path: parsed.pathname + parsed.search,
-        method: "GET",
-        timeout: 5000,
-      },
-      (res) => {
-        let body = "";
-        res.on("data", (d) => { body += d; });
-        res.on("end", () => resolve({ status: res.statusCode, body: body.slice(0, 300) }));
-      }
-    );
+    const opts = {
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === "https:" ? 443 : 80),
+      path: parsed.pathname + parsed.search,
+      method,
+      headers,
+      timeout: 5000,
+    };
+    if (body) opts.headers["Content-Length"] = Buffer.byteLength(body);
+    const req = lib.request(opts, (res) => {
+      let buf = "";
+      res.on("data", (d) => { buf += d; });
+      res.on("end", () => resolve({ status: res.statusCode, body: buf.slice(0, 300) }));
+    });
     req.on("error", (e) => resolve({ status: null, error: e.message }));
     req.on("timeout", () => { req.destroy(); resolve({ status: null, error: "timeout" }); });
+    if (body) req.write(body);
     req.end();
   });
 }
+
+const httpGet = (url, headers) => httpRequest(url, { method: "GET", headers });
 
 function runBridge(event) {
   if (!fs.existsSync(BRIDGE_PY)) {
@@ -212,34 +215,65 @@ async function checkEndpoints() {
     nodeUp ? "TCP connection accepted" : "Connection refused"
   );
 
-  // Python A2A port
+  // Python A2A — probe the actual agent-card route, not /
   const pyUp = await isPortOpen(A2A_PORT);
   if (pyUp) {
-    const r = await httpGet(`http://localhost:${A2A_PORT}/`);
-    addCheck("endpoint", `AELLI Python :${A2A_PORT}`, PASS,
-      r.status === 401 ? "401 Unauthorized (auth enforced)" : `HTTP ${r.status}`
-    );
+    const r = await httpGet(`http://localhost:${A2A_PORT}/a2a/octowiz/.well-known/agent.json`);
+    if (r.status === 200) {
+      addCheck("endpoint", `AELLI Python :${A2A_PORT}`, PASS,
+        "Agent card returned (octowiz A2A service confirmed)");
+    } else if (r.status === 401) {
+      addCheck("endpoint", `AELLI Python :${A2A_PORT}`, PASS,
+        "401 Unauthorized — correct service, auth enforced");
+    } else if (r.status === 404) {
+      addCheck("endpoint", `AELLI Python :${A2A_PORT}`, FAIL,
+        "Port open but /a2a/octowiz not found — wrong service bound to port");
+    } else {
+      addCheck("endpoint", `AELLI Python :${A2A_PORT}`, WARN,
+        `Unexpected HTTP ${r.status} from agent-card route`);
+    }
   } else {
     addCheck("endpoint", `AELLI Python :${A2A_PORT}`, WARN,
       "Port closed — may start on first session"
     );
   }
 
-  // LiteLLM gateway
+  // LiteLLM gateway — probe the exact delivery route bridge.py and a2a-client.js use
   if (LITELLM_BASE) {
-    const r = await httpGet(`${LITELLM_BASE}/a2a/dev-advisor/.well-known/agent.json`);
-    if (r.status === 401 || r.status === 200) {
-      addCheck("endpoint", "LiteLLM gateway", PASS,
-        `${LITELLM_BASE} → HTTP ${r.status}`);
+    const deliveryUrl = `${LITELLM_BASE}/a2a/aelli-dev-advisor/message/send`;
+    const token = process.env.AELLI_AUTH_TOKEN || "";
+    const minimalBody = JSON.stringify({
+      jsonrpc: "2.0", method: "message/send", id: "doctowiz-probe",
+      params: { message: { role: "user", messageId: "probe", parts: [] } },
+    });
+    const r = await httpRequest(deliveryUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: minimalBody,
+    });
+    if (r.status === 200 || r.status === 422) {
+      // 422 = route live, AELLI rejected malformed payload — that's fine
+      addCheck("endpoint", "LiteLLM delivery route", PASS,
+        `${deliveryUrl} → HTTP ${r.status}`);
+    } else if (r.status === 401) {
+      addCheck("endpoint", "LiteLLM delivery route", FAIL,
+        "401 — AELLI_AUTH_TOKEN rejected by gateway");
+    } else if (r.status === 404) {
+      addCheck("endpoint", "LiteLLM delivery route", FAIL,
+        "404 — aelli-dev-advisor not registered in gateway");
     } else if (r.status === null) {
-      addCheck("endpoint", "LiteLLM gateway", FAIL,
+      addCheck("endpoint", "LiteLLM delivery route", FAIL,
         `Unreachable: ${r.error}`);
     } else {
-      addCheck("endpoint", "LiteLLM gateway", WARN, `HTTP ${r.status}`);
+      addCheck("endpoint", "LiteLLM delivery route", WARN,
+        `HTTP ${r.status}`);
     }
   } else {
-    addCheck("endpoint", "LiteLLM gateway", WARN,
-      "AELLI_LITELLM_BASE not set — local AELLI only");
+    addCheck("endpoint", "LiteLLM delivery route", WARN,
+      "AELLI_LITELLM_BASE not set — using local AELLI on :3456");
   }
 }
 
