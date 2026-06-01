@@ -3,6 +3,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { spawn } = require("child_process");
 
 const CACHE_DIR = process.env.AELLI_CACHE_DIR || path.join(os.homedir(), ".cache", "aelli-cc");
 const LOG_FILE = path.join(CACHE_DIR, "aelli-cc.log");
@@ -12,6 +13,18 @@ function appendLog(msg) {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
     fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`);
   } catch {}
+}
+
+function spawnSubscriber(sessionId) {
+  const subscriberJs = path.join(__dirname, "session-subscriber.js");
+  const child = spawn(process.execPath, [subscriberJs], {
+    env: { ...process.env, PTY_SESSION_ID: sessionId },
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+  fs.writeFileSync(path.join(CACHE_DIR, `${sessionId}.pid`), String(child.pid));
 }
 
 async function handleStart(input) {
@@ -32,6 +45,8 @@ async function handleStart(input) {
   const ctx = captureContext(sessionId, cwd);
   const payload = buildSessionStart(ctx);
   await post("session-start", payload, { sync: true, timeoutMs: 500 });
+
+  spawnSubscriber(sessionId);
 }
 
 if (require.main === module) {
