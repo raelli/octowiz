@@ -10,7 +10,7 @@ class AgentSession:
     """Represents a Claude agent background session."""
 
     id: str
-    status: str               # running | stopped | waiting | error | <unknown>
+    status: str               # busy | idle (real CLI values); stopped | error (test mocks)
     branch: Optional[str]
     repo: Optional[str]
     needs_input: bool
