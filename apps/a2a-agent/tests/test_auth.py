@@ -82,10 +82,11 @@ class TestAuthWithNoSecretEnvVar(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
 
 
-class TestPrincipalHeader(unittest.TestCase):
-    """x-octowiz-principal header: daemon-forwarded tasks pass their principal
-    explicitly; direct callers (bridge.py) must still derive principal from
-    the secret hash via _principal_from().
+class TestPrincipalIsAlwaysDerivedServerSide(unittest.TestCase):
+    """Principal is always derived server-side from the authenticated secret via
+    _principal_from(). No client-supplied header can override this — doing so
+    would let any holder of the shared secret impersonate another principal and
+    hijack session ownership.
     """
 
     def setUp(self):
@@ -99,8 +100,9 @@ class TestPrincipalHeader(unittest.TestCase):
     def tearDown(self):
         os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
 
-    def test_explicit_principal_header_is_used_when_present(self):
-        """When x-octowiz-principal is sent, main.py uses that value."""
+    def test_x_octowiz_principal_header_is_ignored(self):
+        """Sending x-octowiz-principal does not override the server-derived principal.
+        Authentication is still enforced; the header is silently ignored."""
         body = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -111,14 +113,14 @@ class TestPrincipalHeader(unittest.TestCase):
             json=body,
             headers={
                 "x-octowiz-secret": self.secret,
-                "x-octowiz-principal": "explicit-principal-123",
+                "x-octowiz-principal": "attacker-chosen-principal",
             },
         )
-        # Authentication still required even when principal header is present.
+        # Request succeeds (auth passes) but the spoofed header is not honoured.
         self.assertEqual(resp.status_code, 200)
 
-    def test_no_principal_header_falls_back_to_derived_principal(self):
-        """When x-octowiz-principal is absent, falls back to _principal_from()."""
+    def test_principal_derived_from_secret_when_no_header(self):
+        """Without x-octowiz-principal, principal is derived from _principal_from()."""
         body = {
             "jsonrpc": "2.0",
             "id": 1,

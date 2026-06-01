@@ -112,16 +112,15 @@ describe("daemon.processTask (forwarding)", () => {
     const inner = JSON.parse(innerText);
     expect(inner.capability).toBe("octowiz.dispatch");
     expect(inner.task).toBe("fix");
-    // _principal is NOT in the body; it travels via the header
+    // Principal is derived server-side; it is never sent as a header
     expect(inner._principal).toBeUndefined();
-    expect(capturedHeaders["x-octowiz-principal"]).toBe("alice");
 
     server.close();
   });
 
-  it("sends x-octowiz-secret and x-octowiz-principal headers", async () => {
+  it("sends x-octowiz-secret header; does NOT send x-octowiz-principal", async () => {
     const capturedHeaders = {};
-    const { server, port, requests } = await mockA2AServer(
+    const { server, port } = await mockA2AServer(
       makeA2AResponse({ status: "completed" })
     );
 
@@ -139,11 +138,11 @@ describe("daemon.processTask (forwarding)", () => {
       id: "t-hdr",
       capability: "octowiz.advise",
       payload: { type: "prompt", sessionId: "s1" },
-      principal: "bob",
     });
 
     expect(capturedHeaders["x-octowiz-secret"]).toBe("test-secret");
-    expect(capturedHeaders["x-octowiz-principal"]).toBe("bob");
+    // Security: principal must never be spoofable via a client-supplied header
+    expect(capturedHeaders["x-octowiz-principal"]).toBeUndefined();
     server.close();
   });
 
@@ -257,7 +256,7 @@ describe("daemon._forwardToA2A", () => {
     );
     process.env.OCTOWIZ_A2A_URL = `http://127.0.0.1:${port}`;
 
-    const result = await _forwardToA2A("octowiz.advise", { type: "prompt" }, "user1");
+    const result = await _forwardToA2A("octowiz.advise", { type: "prompt" });
     expect(result.level).toBe("advise");
     expect(result.type).toBe("branch-drift");
     server.close();
@@ -267,7 +266,7 @@ describe("daemon._forwardToA2A", () => {
     const { server, port } = await mockA2AServer("Unauthorized", 401);
     process.env.OCTOWIZ_A2A_URL = `http://127.0.0.1:${port}`;
 
-    await expect(_forwardToA2A("octowiz.advise", {}, "x")).rejects.toThrow(/HTTP 401/);
+    await expect(_forwardToA2A("octowiz.advise", {})).rejects.toThrow(/HTTP 401/);
     server.close();
   });
 });
