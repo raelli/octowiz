@@ -74,7 +74,7 @@ class TestDefaultUrl(unittest.TestCase):
         self.assertEqual(out.strip(), "")
 
     def test_posts_to_aelli_dev_advisor_url(self):
-        """bridge.py posts to AELLI_DEV_ADVISOR_URL, not to an octowiz-specific path."""
+        """bridge.py posts to AELLI_DEV_ADVISOR_URL when AELLI_LITELLM_BASE is absent."""
         captured_urls = []
 
         def fake_post(url, event):
@@ -85,11 +85,52 @@ class TestDefaultUrl(unittest.TestCase):
              unittest.mock.patch("bridge._post_event", side_effect=fake_post):
             _run_main(
                 _hook_data(tool="Write", tool_input={"file_path": "auth.py"}),
-                env={"AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor"},
+                # Explicitly absent AELLI_LITELLM_BASE so AELLI_DEV_ADVISOR_URL is used
+                env={"AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor",
+                     "AELLI_LITELLM_BASE": ""},
             )
 
         self.assertEqual(len(captured_urls), 1)
         self.assertEqual(captured_urls[0], "http://localhost:3456/a2a/dev-advisor")
+
+    def test_litellm_base_takes_priority_over_dev_advisor_url(self):
+        """AELLI_LITELLM_BASE overrides AELLI_DEV_ADVISOR_URL, matching a2a-client.js behaviour."""
+        captured_urls = []
+
+        def fake_post(url, event):
+            captured_urls.append(url)
+            return None
+
+        with unittest.mock.patch("bridge._git_context", return_value={"repoRoot": "/repo", "branch": "main"}), \
+             unittest.mock.patch("bridge._post_event", side_effect=fake_post):
+            _run_main(
+                _hook_data(tool="Write", tool_input={"file_path": "auth.py"}),
+                env={
+                    "AELLI_LITELLM_BASE": "https://gateway.example.com",
+                    "AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor",
+                },
+            )
+
+        self.assertEqual(len(captured_urls), 1)
+        self.assertEqual(captured_urls[0], "https://gateway.example.com/a2a/aelli-dev-advisor/message/send")
+
+    def test_litellm_base_used_when_dev_advisor_url_absent(self):
+        """AELLI_LITELLM_BASE works even without AELLI_DEV_ADVISOR_URL set."""
+        captured_urls = []
+
+        def fake_post(url, event):
+            captured_urls.append(url)
+            return None
+
+        with unittest.mock.patch("bridge._git_context", return_value={"repoRoot": "/repo", "branch": "main"}), \
+             unittest.mock.patch("bridge._post_event", side_effect=fake_post):
+            _run_main(
+                _hook_data(tool="Edit", tool_input={"file_path": "main.py"}),
+                env={"AELLI_LITELLM_BASE": "https://gateway.example.com"},
+            )
+
+        self.assertEqual(len(captured_urls), 1)
+        self.assertEqual(captured_urls[0], "https://gateway.example.com/a2a/aelli-dev-advisor/message/send")
 
     def test_post_event_sends_x_aelli_secret_header(self):
         """_post_event sends AELLI_AUTH_TOKEN as x-aelli-secret header."""

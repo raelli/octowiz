@@ -142,8 +142,18 @@ def _post_event(url: str, event: Dict) -> Optional[Dict]:
         return None
 
 
+def _resolve_advisor_url() -> str:
+    """Mirror the URL resolution in src/a2a-client.js:
+    AELLI_LITELLM_BASE takes priority (gateway route); fall back to
+    AELLI_DEV_ADVISOR_URL; final default is direct localhost dev-advisor."""
+    litellm_base = os.environ.get("AELLI_LITELLM_BASE", "").rstrip("/")
+    if litellm_base:
+        return f"{litellm_base}/a2a/aelli-dev-advisor/message/send"
+    return os.environ.get("AELLI_DEV_ADVISOR_URL", "http://localhost:3456/a2a/dev-advisor").rstrip("/")
+
+
 def main() -> int:
-    url = os.environ.get("AELLI_DEV_ADVISOR_URL", "http://localhost:3456/a2a/dev-advisor").rstrip("/")
+    url = _resolve_advisor_url()
 
     # Warn on cleartext HTTP to non-local endpoints — token sent in plaintext.
     # Parse the URL to get the exact hostname; string prefix checks are bypassed by
