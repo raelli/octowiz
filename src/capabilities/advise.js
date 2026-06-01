@@ -35,6 +35,18 @@ class ConflictIndex {
     }
     for (const file of toDelete) delete this._idx[repoRoot][file];
   }
+  /** Remove all traces of a session from the index (called on session-end). */
+  dropSession(sessionId) {
+    delete this._branches[sessionId];
+    for (const repoFiles of Object.values(this._idx)) {
+      const toDelete = [];
+      for (const [file, set] of Object.entries(repoFiles)) {
+        set.delete(sessionId);
+        if (set.size === 0) toDelete.push(file);
+      }
+      for (const file of toDelete) delete repoFiles[file];
+    }
+  }
   findConflicts(repoRoot, files, ownSessionId) {
     const result = [];
     const idx = this._idx[repoRoot] || {};
@@ -50,9 +62,13 @@ class ConflictIndex {
 }
 
 class SessionStore {
-  constructor() {
+  /**
+   * @param {ConflictIndex|null} conflicts - Shared ConflictIndex. If null, a
+   *   private one is created (standalone usage or tests).
+   */
+  constructor(conflicts = null) {
     this._sessions = {};
-    this._conflicts = new ConflictIndex();
+    this._conflicts = conflicts !== null ? conflicts : new ConflictIndex();
   }
   getSession(sessionId) { return sessionId ? this._sessions[sessionId] : null; }
   recordEvent(event) {
@@ -69,6 +85,44 @@ class SessionStore {
   findConflicts(repoRoot, files, sessionId) {
     return this._conflicts.findConflicts(repoRoot, files, sessionId);
   }
+}
+
+// ─── StoreRegistry ───────────────────────────────────────────────────────────
+
+/**
+ * Registry of per-session SessionStore instances sharing one ConflictIndex.
+ *
+ * The ConflictIndex must be shared so that cross-session file-conflict
+ * detection works. Per-session event lists (BranchDrift, SpecDeviation)
+ * are isolated inside each session's SessionStore.
+ */
+class StoreRegistry {
+  constructor() {
+    this._stores = {};
+    this._conflicts = new ConflictIndex(); // shared across all sessions
+  }
+
+  /** Return the store for sessionId, creating one if needed. */
+  get(sessionId) {
+    if (!this._stores[sessionId]) {
+      this._stores[sessionId] = new SessionStore(this._conflicts);
+    }
+    return this._stores[sessionId];
+  }
+
+  /** Remove the store for sessionId and purge it from the shared ConflictIndex. */
+  drop(sessionId) {
+    delete this._stores[sessionId];
+    this._conflicts.dropSession(sessionId);
+  }
+
+  /** Drop all stores and reset the conflict index (for testing). */
+  clear() {
+    this._stores = {};
+    this._conflicts = new ConflictIndex();
+  }
+
+  get size() { return Object.keys(this._stores).length; }
 }
 
 // ─── Rules ───────────────────────────────────────────────────────────────────
@@ -154,16 +208,31 @@ class InvocationPolicy {
   }
 }
 
-// ─── Module-level store and advisor (singletons, live across daemon calls) ───
+// ─── Module-level registry (one per process; stores are per-session) ──────────
 
-const _store = new SessionStore();
 const _advisor = new RulesAdvisor();
 const _policy = new InvocationPolicy();
+const _registry = new StoreRegistry();
 
-async function handleAdvise(event) {
-  _store.recordEvent(event);
-  const session = _store.getSession(event.sessionId);
-  const results = await _advisor.adviseAll(event, session, { store: _store });
+/**
+ * Process an advise event.
+ *
+ * @param {object} event - The incoming event (must contain sessionId).
+ * @param {StoreRegistry|null} registry - Optional registry for testing.
+ *   Defaults to the module-level _registry.
+ */
+async function handleAdvise(event, registry = null) {
+  const reg = registry !== null ? registry : _registry;
+  const sessionId = event.sessionId || "";
+  let store;
+  if (sessionId) {
+    store = reg.get(sessionId);
+  } else {
+    store = new SessionStore();
+  }
+  store.recordEvent(event);
+  const session = store.getSession(sessionId);
+  const results = await _advisor.adviseAll(event, session, { store });
   const decision = _policy.decide(results);
   if (!decision) return null;
   const files = results.flatMap((r) => r.files || []).filter((v, i, a) => a.indexOf(v) === i);
@@ -171,4 +240,16 @@ async function handleAdvise(event) {
            reason: decision.reason || "", question: decision.question || "", files };
 }
 
-module.exports = { handleAdvise, SessionStore, RulesAdvisor, InvocationPolicy };
+/**
+ * Drop the store for sessionId, freeing per-session state and purging the
+ * session from the shared ConflictIndex to prevent memory leaks.
+ *
+ * @param {string} sessionId - The session that has ended.
+ * @param {StoreRegistry|null} registry - Optional registry. Defaults to _registry.
+ */
+function handleSessionEnd(sessionId, registry = null) {
+  const reg = registry !== null ? registry : _registry;
+  reg.drop(sessionId);
+}
+
+module.exports = { handleAdvise, handleSessionEnd, StoreRegistry, SessionStore, RulesAdvisor, InvocationPolicy };

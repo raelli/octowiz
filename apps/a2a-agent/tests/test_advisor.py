@@ -16,6 +16,11 @@ _SECRET = "test-secret"
 def _fresh_client():
     os.environ["OCTOWIZ_INBOUND_SECRET"] = _SECRET
     import importlib
+    # Reload state.py first so _registry is a fresh StoreRegistry instance;
+    # without this, the module-level _registry persists across tests even after
+    # reloading advise.py, causing cross-test state contamination.
+    import packages.advisor.state as _state_mod
+    importlib.reload(_state_mod)
     import packages.advisor.policy as _policy_mod
     importlib.reload(_policy_mod)
     import capabilities.advise as _adv_mod
