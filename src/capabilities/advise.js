@@ -1,0 +1,174 @@
+const BRANCH_DRIFT_THRESHOLD = 20;
+
+// ─── SessionStore ────────────────────────────────────────────────────────────
+
+class Session {
+  constructor(sessionId, branch = "") {
+    this.sessionId = sessionId;
+    this.branch = branch;
+    this.events = [];
+  }
+}
+
+class ConflictIndex {
+  constructor() {
+    this._idx = {}; // repoRoot → file → Set<sessionId>
+    this._branches = {}; // sessionId → branch
+  }
+  track(sessionId, branch, repoRoot, files) {
+    this._branches[sessionId] = branch;
+    this.untrack(sessionId, repoRoot);
+    if (!files.length) return;
+    if (!this._idx[repoRoot]) this._idx[repoRoot] = {};
+    for (const f of files) {
+      if (!f) continue;
+      if (!this._idx[repoRoot][f]) this._idx[repoRoot][f] = new Set();
+      this._idx[repoRoot][f].add(sessionId);
+    }
+  }
+  untrack(sessionId, repoRoot) {
+    if (!this._idx[repoRoot]) return;
+    const toDelete = [];
+    for (const [file, set] of Object.entries(this._idx[repoRoot])) {
+      set.delete(sessionId);
+      if (set.size === 0) toDelete.push(file);
+    }
+    for (const file of toDelete) delete this._idx[repoRoot][file];
+  }
+  findConflicts(repoRoot, files, ownSessionId) {
+    const result = [];
+    const idx = this._idx[repoRoot] || {};
+    for (const f of files) {
+      for (const sid of idx[f] || []) {
+        if (sid !== ownSessionId) {
+          result.push({ file: f, otherSessionId: sid, otherBranch: this._branches[sid] || "" });
+        }
+      }
+    }
+    return result;
+  }
+}
+
+class SessionStore {
+  constructor() {
+    this._sessions = {};
+    this._conflicts = new ConflictIndex();
+  }
+  getSession(sessionId) { return sessionId ? this._sessions[sessionId] : null; }
+  recordEvent(event) {
+    const sid = event.sessionId;
+    if (!sid) return;
+    if (!this._sessions[sid]) this._sessions[sid] = new Session(sid, event.branch || "");
+    const s = this._sessions[sid];
+    if (event.branch) s.branch = event.branch;
+    s.events.push(event);
+    const files = event.live_modified_files || [];
+    const repo = event.repoRoot || "";
+    if (repo) this._conflicts.track(sid, s.branch, repo, files);
+  }
+  findConflicts(repoRoot, files, sessionId) {
+    return this._conflicts.findConflicts(repoRoot, files, sessionId);
+  }
+}
+
+// ─── Rules ───────────────────────────────────────────────────────────────────
+
+class FileConflictRule {
+  async check(event, session, ctx) {
+    if (event.type !== "prompt") return null;
+    const files = event.live_modified_files || [];
+    const repo = event.repoRoot || "";
+    const sid = event.sessionId || "";
+    const branch = event.branch || "";
+    if (!files.length || !repo) return null;
+    const conflicts = ctx.store.findConflicts(repo, files, sid).filter((c) => c.otherBranch !== branch);
+    if (!conflicts.length) return null;
+    const conflictFiles = [...new Set(conflicts.map((c) => c.file))];
+    const conflictBranches = [...new Set(conflicts.map((c) => c.otherBranch))];
+    return {
+      type: "file-conflict",
+      message: `Branch ${conflictBranches.join(", ")} also modified: ${conflictFiles.join(", ")}.`.slice(0, 500),
+      files: conflictFiles,
+    };
+  }
+}
+
+class BranchDriftRule {
+  async check(event, session, _ctx) {
+    if (event.type !== "prompt" || !session) return null;
+    const fileEvents = session.events.filter((e) => e.type === "file-write" || e.type === "file-edit");
+    if (fileEvents.length < BRANCH_DRIFT_THRESHOLD) return null;
+    return {
+      type: "branch-drift",
+      message: `${fileEvents.length} file changes on branch ${session.branch} without a restart checkpoint. Consider committing.`,
+      files: [],
+    };
+  }
+}
+
+class SpecDeviationRule {
+  async check(event, _session, _ctx) {
+    if (event.type !== "prompt") return null;
+    const files = event.live_modified_files || [];
+    const summary = event.prompt_summary || "";
+    if (!files.length || !summary) return null;
+    const deviating = files.filter((f) => !summary.includes(f));
+    if (!deviating.length) return null;
+    return {
+      type: "spec-deviation",
+      message: `Modified files not mentioned in prompt: ${deviating.join(", ")}.`.slice(0, 500),
+      files: deviating,
+    };
+  }
+}
+
+class RulesAdvisor {
+  constructor() { this._rules = [new FileConflictRule(), new BranchDriftRule(), new SpecDeviationRule()]; }
+  async adviseAll(event, session, ctx) {
+    const results = [];
+    for (const rule of this._rules) {
+      const r = await rule.check(event, session, ctx);
+      if (r !== null) results.push(r);
+    }
+    return results;
+  }
+}
+
+// ─── Policy ──────────────────────────────────────────────────────────────────
+
+const LEVEL_MAP = { "file-conflict": "intervene", "branch-drift": "advise", "spec-deviation": "advise" };
+
+class InvocationPolicy {
+  decide(results) {
+    if (!results.length) return null;
+    if (results.length >= 2) {
+      return {
+        level: "escalate", type: "multi-rule",
+        message: results.map((r) => r.message).join("; "),
+        reason: `Multiple concurrent risks: ${results.map((r) => r.type).join(", ")}.`,
+        question: "Multiple risk signals fired simultaneously. Should I pause for human review or proceed?",
+      };
+    }
+    const { type, message } = results[0];
+    return { level: LEVEL_MAP[type] || "advise", type, message };
+  }
+}
+
+// ─── Module-level store and advisor (singletons, live across daemon calls) ───
+
+const _store = new SessionStore();
+const _advisor = new RulesAdvisor();
+const _policy = new InvocationPolicy();
+
+async function handleAdvise(event) {
+  _store.recordEvent(event);
+  const session = _store.getSession(event.sessionId);
+  const results = await _advisor.adviseAll(event, session, { store: _store });
+  const decision = _policy.decide(results);
+  if (!decision) return null;
+  const files = results.flatMap((r) => r.files || []).filter((v, i, a) => a.indexOf(v) === i);
+  return { level: decision.level, type: decision.type, message: decision.message,
+           reason: decision.reason || "", question: decision.question || "", files };
+}
+
+module.exports = { handleAdvise, SessionStore, RulesAdvisor, InvocationPolicy };

@@ -1,0 +1,23 @@
+{
+  "name": "octowiz",
+  "version": "0.5.0",
+  "description": "Octowiz — AELLI's coding agent: monitors Claude Code sessions and executes sandboxed tasks",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "src/",
+    "hooks/"
+  ],
+  "scripts": {
+    "start": "node index.js",
+    "test": "jest --testPathPattern=tests/"
+  },
+  "dependencies": {
+    "@ai-hero/sandcastle": "^0.7.0"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  },
+  "keywords": ["claude-code", "octowiz", "aelli", "a2a", "daemon"],
+  "license": "MIT"
+}

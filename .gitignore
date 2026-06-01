@@ -10,3 +10,6 @@ docs/superpowers/plans/
 
 # Octowiz local machine state (project_id, setup flags — must not be shared across clones)
 .octowiz/
+
+node_modules/
+.worktrees/
