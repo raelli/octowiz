@@ -19,7 +19,7 @@ endif
 # Ensure providers/ and packages/ always resolve from the repo root.
 export PYTHONPATH := $(CURDIR)
 
-.PHONY: help install serve dev test test-a2a test-packages test-providers clean
+.PHONY: help install serve dev test test-a2a test-bridge test-packages test-providers clean
 
 help:
 	@echo ""
@@ -29,6 +29,7 @@ help:
 	@echo "  make dev              Start with auto-reload"
 	@echo "  make test             Run all tests"
 	@echo "  make test-a2a         Run apps/a2a-agent tests only"
+	@echo "  make test-bridge      Run apps/claude_code_bridge tests only"
 	@echo "  make test-packages    Run packages/ tests only"
 	@echo "  make test-providers   Run providers/ tests only"
 	@echo "  make clean            Remove __pycache__ and .pyc files"
@@ -54,11 +55,14 @@ dev: serve
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 test:
-	$(PYTHON) -m pytest tests/ packages/ providers/ -q
+	$(PYTHON) -m pytest tests/ packages/ providers/ apps/claude_code_bridge/ -q
 	$(PYTHON) -m pytest $(A2A_DIR)/tests/ -q
 
 test-a2a:
 	$(PYTHON) -m pytest $(A2A_DIR)/tests/ -v
+
+test-bridge:
+	$(PYTHON) -m pytest apps/claude_code_bridge/ -v
 
 test-packages:
 	$(PYTHON) -m pytest packages/ -v

@@ -26,4 +26,4 @@ include = ["packages*", "providers*"]
 octowiz-cache = "packages.memory_client.cli:main"
 
 [tool.pytest.ini_options]
-testpaths = ["packages", "providers", "tests"]
+testpaths = ["packages", "providers", "tests", "apps/claude_code_bridge"]

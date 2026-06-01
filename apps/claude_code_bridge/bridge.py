@@ -13,6 +13,13 @@ import sys
 import uuid
 from typing import Dict, Optional
 
+
+def _verbose_log(msg: str) -> None:
+    """Write a diagnostic message to stderr when OCTOWIZ_VERBOSE is set."""
+    if os.environ.get("OCTOWIZ_VERBOSE", "").lower() in ("1", "true", "yes"):
+        print(f"[octowiz] {msg}", file=sys.stderr)
+
+
 TOOL_EVENT_MAP = {
     "Edit": "file-edit",
     "Write": "file-write",
@@ -103,11 +110,17 @@ def _post_event(url: str, event: Dict) -> Optional[Dict]:
         resp.raise_for_status()
         artifacts = resp.json().get("result", {}).get("artifacts", [])
         if not artifacts:
+            _verbose_log("advisory delivered; no advice returned")
             return None
         text = artifacts[0].get("parts", [{}])[0].get("text", "{}")
         result = json.loads(text)
-        return result if result.get("type") else None
-    except Exception:
+        if result.get("type"):
+            _verbose_log(f"advisory delivered: type={result['type']}")
+            return result
+        _verbose_log("advisory delivered; response has no type")
+        return None
+    except Exception as exc:
+        _verbose_log(f"advisory delivery failed: {exc}")
         return None
 
 
@@ -135,7 +148,8 @@ def main() -> int:
 
     try:
         data = json.load(sys.stdin)
-    except Exception:
+    except Exception as exc:
+        _verbose_log(f"could not parse stdin: {exc}")
         return 0
 
     event = _build_event(data)

@@ -40,6 +40,25 @@ def _run_main(hook_data: dict, env: dict = None):
     return code, buf.getvalue()
 
 
+def _run_main_with_stderr(hook_data: dict, env: dict = None):
+    """Run main() capturing both stdout and stderr, return (exit_code, stdout, stderr)."""
+    import io
+    from contextlib import redirect_stdout, redirect_stderr
+
+    env = env or {}
+    stdin_data = json.dumps(hook_data)
+    stdout_buf = io.StringIO()
+    stderr_buf = io.StringIO()
+
+    with unittest.mock.patch.dict(os.environ, env, clear=False), \
+         unittest.mock.patch("sys.stdin", io.StringIO(stdin_data)), \
+         redirect_stdout(stdout_buf), \
+         redirect_stderr(stderr_buf):
+        code = main()
+
+    return code, stdout_buf.getvalue(), stderr_buf.getvalue()
+
+
 # ---------------------------------------------------------------------------
 
 
@@ -180,3 +199,47 @@ class TestMainOutput(unittest.TestCase):
             )
         self.assertEqual(code, 0)
         self.assertEqual(out.strip(), "")
+
+
+class TestVerboseLogging(unittest.TestCase):
+    def test_network_error_logs_to_stderr_when_verbose(self):
+        import httpx
+        with unittest.mock.patch("bridge._git_context", return_value={"repoRoot": "/repo", "branch": "main"}), \
+             unittest.mock.patch("httpx.post", side_effect=httpx.ConnectError("refused")):
+            code, out, err = _run_main_with_stderr(
+                _hook_data(tool="Write", tool_input={"file_path": "auth.py"}),
+                env={"OCTOWIZ_A2A_URL": "http://octowiz:8000", "OCTOWIZ_VERBOSE": "1"},
+            )
+        self.assertEqual(code, 0)   # never blocks
+        self.assertEqual(out.strip(), "")
+        self.assertIn("advisory delivery failed", err)
+
+    def test_network_error_silent_when_not_verbose(self):
+        import httpx
+        with unittest.mock.patch("bridge._git_context", return_value={"repoRoot": "/repo", "branch": "main"}), \
+             unittest.mock.patch("httpx.post", side_effect=httpx.ConnectError("refused")):
+            code, out, err = _run_main_with_stderr(
+                _hook_data(tool="Write", tool_input={"file_path": "auth.py"}),
+                env={"OCTOWIZ_A2A_URL": "http://octowiz:8000"},
+            )
+        self.assertEqual(code, 0)
+        # Advisory delivery error must NOT appear (URL is non-local http:// so the
+        # cleartext-secret warning may still fire, but that's a separate concern).
+        self.assertNotIn("advisory delivery failed", err)
+
+    def test_invalid_stdin_logs_to_stderr_when_verbose(self):
+        import io as _io
+        from contextlib import redirect_stdout, redirect_stderr
+        stdout_buf = _io.StringIO()
+        stderr_buf = _io.StringIO()
+        # Use a local URL to suppress the unrelated cleartext-HTTP warning on stderr.
+        with unittest.mock.patch.dict(
+                os.environ,
+                {"OCTOWIZ_A2A_URL": "http://localhost:8000", "OCTOWIZ_VERBOSE": "1"},
+                clear=False), \
+             unittest.mock.patch("sys.stdin", _io.StringIO("not json at all")), \
+             redirect_stdout(stdout_buf), \
+             redirect_stderr(stderr_buf):
+            code = main()
+        self.assertEqual(code, 0)
+        self.assertIn("could not parse stdin", stderr_buf.getvalue())
