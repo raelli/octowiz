@@ -46,8 +46,16 @@ with open('.claude-plugin/plugin.json', 'w') as f:
     f.write('\n')
           "
 
-          # Update pyproject.toml
-          sed -i "s/^version = \"$OLD\"/version = \"$NEW\"/" pyproject.toml
+          # Update package.json
+          python3 -c "
+import json
+with open('package.json') as f:
+    d = json.load(f)
+d['version'] = '$NEW'
+with open('package.json', 'w') as f:
+    json.dump(d, f, indent=2)
+    f.write('\n')
+          "
 
       - name: Commit and tag
         # NOTE: if main has branch protection requiring pull requests, the
@@ -56,7 +64,7 @@ with open('.claude-plugin/plugin.json', 'w') as f:
         # value in the checkout step with ${{ secrets.RELEASE_TOKEN }}.
         run: |
           NEW="${{ steps.bump.outputs.new_version }}"
-          git add .claude-plugin/plugin.json pyproject.toml
+          git add .claude-plugin/plugin.json package.json
           git commit -m "chore: bump version to $NEW"
           git tag "v$NEW"
           git push origin main --tags

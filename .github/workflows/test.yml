@@ -11,24 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.11", "3.12"]
+        node-version: ["18", "20", "22"]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          node-version: ${{ matrix.node-version }}
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: npm ci
 
-      - name: Run package and provider tests
-        run: python -m pytest packages/ providers/ -v
-
-      - name: Run A2A agent tests
-        run: python -m pytest apps/a2a-agent/tests/ -v
-
-      - name: Run bridge tests
-        run: python -m pytest apps/claude_code_bridge/tests/ -v
+      - name: Run tests
+        run: npm test
