@@ -40,7 +40,14 @@ async def _handle(request: Request):
     event = parse_event(body)
     if event is None:
         return make_response(req_id, {})
-    event["_principal"] = _principal_from(request)
+    # When the Node.js daemon forwards a queue task it passes the pre-resolved
+    # principal in x-octowiz-principal (the daemon has the principal from the
+    # queue task record).  Direct callers such as bridge.py send no such header
+    # and continue to derive the principal from the shared secret via
+    # _principal_from().  This is additive: authentication is still enforced by
+    # auth_middleware regardless of which path sets the principal.
+    explicit_principal = request.headers.get("x-octowiz-principal", "")
+    event["_principal"] = explicit_principal if explicit_principal else _principal_from(request)
     artifact = await dispatch(event)
     return make_response(req_id, artifact, session_id=event.get("sessionId"))
 
