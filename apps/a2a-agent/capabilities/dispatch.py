@@ -4,6 +4,8 @@ import os
 import time
 from typing import Any, Dict, Optional
 
+import session_owners
+
 _DEFAULT_POLL_INTERVAL = float(os.environ.get("OCTOWIZ_DISPATCH_POLL_INTERVAL", "5"))
 _DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "300"))
 
@@ -44,6 +46,9 @@ async def handle_dispatch(
 
     if not session_id:
         return {"status": "error", "message": "session failed to start: no session ID returned"}
+
+    principal = event.get("_principal", "")
+    session_owners.register(session_id, principal)
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

@@ -19,10 +19,10 @@ def register(session_id: str, principal: str) -> None:
 
 
 def check(session_id: str, principal: str) -> bool:
-    """Return True if principal owns session_id, or if the session was never registered."""
+    """Return True if principal owns session_id. Returns False for unregistered sessions."""
     owner = _owners.get(session_id)
     if owner is None:
-        return True  # unregistered sessions are not restricted
+        return False
     return owner == principal
 
 

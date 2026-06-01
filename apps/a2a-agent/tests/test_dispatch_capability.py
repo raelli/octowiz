@@ -200,6 +200,51 @@ class TestDispatchValidation(unittest.TestCase):
         self.assertIn("timeout", result["message"].lower())
 
 
+class TestDispatchOwnershipRegistration(unittest.TestCase):
+
+    def setUp(self):
+        import session_owners
+        session_owners.clear()
+
+    def tearDown(self):
+        import session_owners
+        session_owners.clear()
+
+    def test_successful_dispatch_registers_session_owner(self):
+        import session_owners
+        from capabilities.dispatch import handle_dispatch
+        provider = _MockProvider(
+            session_id="reg-s1",
+            status_sequence=[_Session("reg-s1", "stopped")],
+        )
+        _run(handle_dispatch(
+            {"task": "add tests", "cwd": "/repo", "_principal": "p-abc"},
+            provider=provider, **_FAST,
+        ))
+        self.assertTrue(session_owners.check("reg-s1", "p-abc"))
+        self.assertFalse(session_owners.check("reg-s1", "other-principal"))
+
+    def test_failed_dispatch_does_not_register_ownership(self):
+        import session_owners
+        from capabilities.dispatch import handle_dispatch
+        provider = _MockProvider(dispatch_exc=RuntimeError("claude not found"))
+        _run(handle_dispatch(
+            {"task": "add tests", "cwd": "/repo", "_principal": "p-abc"},
+            provider=provider, **_FAST,
+        ))
+        self.assertFalse(session_owners.check("any-id", "p-abc"))
+
+    def test_empty_session_id_does_not_register_ownership(self):
+        import session_owners
+        from capabilities.dispatch import handle_dispatch
+        provider = _MockProvider(session_id="")
+        _run(handle_dispatch(
+            {"task": "add tests", "cwd": "/repo", "_principal": "p-abc"},
+            provider=provider, **_FAST,
+        ))
+        self.assertFalse(session_owners.check("", "p-abc"))
+
+
 class TestDispatchRouting(unittest.TestCase):
     """Smoke test: verify dispatch.py routes octowiz.dispatch to the capability."""
 

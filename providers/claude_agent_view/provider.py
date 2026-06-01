@@ -8,6 +8,9 @@ from typing import List, Optional
 from .parser import parse_sessions
 from .session import AgentSession
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+_SESSION_RE = re.compile(r"backgrounded\s*[·•]\s*(\S+)")
+
 
 def _run_claude(args: List[str], cwd: Optional[str] = None) -> str:
     """Run `claude <args>` and return stdout. Single mock seam for all subprocess calls."""
@@ -47,7 +50,9 @@ class ClaudeAgentViewProvider:
         if task.startswith("-"):
             raise ValueError(f"task must not start with '-': {task!r}")
         output = _run_claude(["--bg", "--", task], cwd=repo)
-        return output.splitlines()[0].strip() if output else ""
+        clean = _ANSI_RE.sub("", output)
+        m = _SESSION_RE.search(clean)
+        return m.group(1) if m else ""
 
     def get_status(self, run_id: str) -> Optional[AgentSession]:
         """Return the session for run_id, or None if not found."""

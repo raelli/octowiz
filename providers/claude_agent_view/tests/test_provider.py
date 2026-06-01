@@ -65,11 +65,32 @@ class TestDispatch(unittest.TestCase):
 
     def test_dispatch_passes_cwd_to_subprocess_not_argv(self):
         with patch("providers.claude_agent_view.provider._run_claude") as mock_run:
-            mock_run.return_value = "bg-xyz"
+            mock_run.return_value = "backgrounded · bg-xyz feat/my-work"
             from providers.claude_agent_view.provider import ClaudeAgentViewProvider
             session_id = ClaudeAgentViewProvider().dispatch("do something", "/some/repo")
             mock_run.assert_called_once_with(["--bg", "--", "do something"], cwd="/some/repo")
             self.assertEqual(session_id, "bg-xyz")
+
+    def test_dispatch_parses_session_id_from_banner(self):
+        with patch("providers.claude_agent_view.provider._run_claude") as mock_run:
+            mock_run.return_value = "backgrounded • s-abc123 some-name"
+            from providers.claude_agent_view.provider import ClaudeAgentViewProvider
+            session_id = ClaudeAgentViewProvider().dispatch("run tests", "/repo")
+            self.assertEqual(session_id, "s-abc123")
+
+    def test_dispatch_strips_ansi_before_parsing(self):
+        with patch("providers.claude_agent_view.provider._run_claude") as mock_run:
+            mock_run.return_value = "\x1b[32mbackgrounded · ansi-id work-name\x1b[0m"
+            from providers.claude_agent_view.provider import ClaudeAgentViewProvider
+            session_id = ClaudeAgentViewProvider().dispatch("run tests", "/repo")
+            self.assertEqual(session_id, "ansi-id")
+
+    def test_dispatch_returns_empty_string_when_banner_not_matched(self):
+        with patch("providers.claude_agent_view.provider._run_claude") as mock_run:
+            mock_run.return_value = "unexpected output format"
+            from providers.claude_agent_view.provider import ClaudeAgentViewProvider
+            session_id = ClaudeAgentViewProvider().dispatch("run tests", "/repo")
+            self.assertEqual(session_id, "")
 
 
 class TestValidation(unittest.TestCase):

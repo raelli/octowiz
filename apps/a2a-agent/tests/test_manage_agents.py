@@ -161,6 +161,9 @@ class TestManageAgentsControlOps(unittest.TestCase):
     def setUp(self):
         import session_owners
         session_owners.clear()
+        # Pre-register "s1" with the empty principal that control-op tests use
+        # (events without _principal default to "").
+        session_owners.register("s1", "")
 
     def test_logs_returns_output(self):
         from capabilities.manage_agents import handle_manage_agents
@@ -213,14 +216,17 @@ class TestManageAgentsControlOps(unittest.TestCase):
         self.assertIn("sessionId", result["message"])
         self.assertEqual(adapter.control_calls, [])
 
-    def test_unregistered_session_passes_ownership_check(self):
+    def test_unregistered_session_denied_by_ownership_check(self):
         from capabilities.manage_agents import handle_manage_agents
         adapter = FakeAdapter(control_result="stopped")
+        # "never-registered" is not in session_owners — must be denied fail-closed
         result = _run(handle_manage_agents(
-            {"operation": "stop", "sessionId": "s1", "_principal": "any-principal"},
+            {"operation": "stop", "sessionId": "never-registered", "_principal": "any-principal"},
             adapter=adapter,
         ))
-        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["status"], "error")
+        self.assertIn("not owned", result["message"])
+        self.assertEqual(adapter.control_calls, [])
 
     def test_registered_session_wrong_principal_returns_error(self):
         import session_owners
