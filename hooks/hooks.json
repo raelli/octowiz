@@ -14,6 +14,11 @@
             "type": "command",
             "command": "node \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/start.js\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/apps/claude_code_bridge/bridge.py\"",
+            "timeout": 10
           }
         ]
       }

@@ -165,7 +165,7 @@ describe("post", () => {
     const [url, init] = global.fetch.mock.calls[0];
     expect(url).toBe("http://localhost:4000/a2a/aelli-dev-advisor/message/send");
     expect(init.method).toBe("POST");
-    expect(init.headers.Authorization).toBe("Bearer test-bearer");
+    expect(init.headers["x-aelli-secret"]).toBe("test-bearer");
   });
 
   it("fire-and-forget: embeds eventType inside the JSON-RPC payload", async () => {
@@ -214,14 +214,14 @@ describe("post", () => {
     expect(result).toBeNull();
   });
 
-  it("omits Authorization header when AELLI_AUTH_TOKEN is not set", async () => {
+  it("omits x-aelli-secret header when AELLI_AUTH_TOKEN is not set", async () => {
     jest.resetModules();
     delete process.env.AELLI_AUTH_TOKEN;
     global.fetch = jest.fn().mockResolvedValue({ json: async () => ({}) });
     ({ post } = require("../src/a2a-client"));
     await post("test", {}, { sync: false });
     const [, init] = global.fetch.mock.calls[0];
-    expect(init.headers.Authorization).toBeUndefined();
+    expect(init.headers["x-aelli-secret"]).toBeUndefined();
   });
 
   it("uses dev-advisor URL directly when AELLI_LITELLM_BASE is not set", async () => {

@@ -73,10 +73,13 @@ def _build_event(data: Dict) -> Optional[Dict]:
         return event
 
     if hook == "UserPromptSubmit":
+        # Include live_modified_files so SpecDeviationRule can cross-reference
+        # modified files against the prompt intent on the same event.
         return {
             "type": "prompt",
             "sessionId": session_id,
             "prompt_summary": data.get("prompt", "")[:200],
+            "live_modified_files": _git_modified_files(cwd),
             **git_ctx,
         }
 
@@ -90,9 +93,25 @@ def _build_event(data: Dict) -> Optional[Dict]:
     return None
 
 
-def _post_event(url: str, event: Dict) -> Optional[Dict]:
-    import httpx
+def _git_modified_files(cwd: str) -> list:
+    """Return list of modified file paths from git status --porcelain."""
+    try:
+        r = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=cwd, capture_output=True, text=True, timeout=1,
+        )
+        if r.returncode != 0:
+            return []
+        files = []
+        for line in r.stdout.splitlines():
+            if len(line) > 3:
+                files.append(line[3:].strip())
+        return files
+    except Exception:
+        return []
 
+
+def _post_event(url: str, event: Dict) -> Optional[Dict]:
     body = {
         "jsonrpc": "2.0",
         "method": "message/send",
@@ -104,6 +123,7 @@ def _post_event(url: str, event: Dict) -> Optional[Dict]:
     if token:
         headers["x-aelli-secret"] = token
     try:
+        import httpx
         resp = httpx.post(url, json=body, headers=headers, timeout=5)
         resp.raise_for_status()
         artifacts = resp.json().get("result", {}).get("artifacts", [])
