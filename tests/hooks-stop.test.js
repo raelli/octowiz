@@ -29,6 +29,13 @@ describe("hooks/scripts/stop.js", () => {
     mockGetContext.mockReturnValueOnce(null);
     await expect(handleStop({ session_id: "s1" })).resolves.not.toThrow();
   });
+
+  it("only calls post once — notifyOctowizServer is gone", async () => {
+    await handleStop({ session_id: "s1" });
+    // Only the AELLI session-end post; the old notifyOctowizServer call is removed
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost).toHaveBeenCalledWith("session-end", expect.any(Object), expect.any(Object));
+  });
 });
 
 describe("hooks/scripts/stop.js — subscriber cleanup", () => {

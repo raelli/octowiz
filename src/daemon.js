@@ -28,7 +28,6 @@ const A2A_TIMEOUT_MS = _dispatchTimeoutSec * 1000 + 30_000;
 
 const KNOWN_CAPABILITIES = new Set([
   "octowiz.dispatch",
-  "octowiz.advise",
   "octowiz.manage_agents",
 ]);
 

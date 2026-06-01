@@ -49,7 +49,7 @@ function appendLog(msg) {
 }
 
 function makeAuthHeaders() {
-  return AUTH_TOKEN ? { Authorization: `Bearer ${AUTH_TOKEN}` } : {};
+  return AUTH_TOKEN ? { "x-aelli-secret": AUTH_TOKEN } : {};
 }
 
 // Pure SSE framing parser. Takes the accumulated buffer string, returns

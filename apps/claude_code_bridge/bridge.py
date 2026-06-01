@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Octowiz Bridge — forwards Claude Code hook events to the Octowiz A2A server.
+Octowiz Bridge — forwards Claude Code hook events to AELLI's dev-advisor.
 
-Reads JSON from stdin (Claude Code hook format), normalises to an OctowizEvent,
-POSTs to $OCTOWIZ_A2A_URL/a2a/octowiz, and writes a systemMessage to stdout
-if the advisor returns advice. Exits 0 always — never blocks the developer.
+Reads JSON from stdin (Claude Code hook format), normalises to an event,
+POSTs to $AELLI_DEV_ADVISOR_URL (default http://localhost:3456/a2a/dev-advisor),
+and writes a systemMessage to stdout if the advisor returns advice.
+Exits 0 always — never blocks the developer.
 """
 import json
 import os
@@ -63,7 +64,6 @@ def _build_event(data: Dict) -> Optional[Dict]:
         event_type = TOOL_EVENT_MAP.get(tool, "tool-used")
         event: Dict = {
             "type": event_type,
-            "capability": "octowiz.advise",
             "sessionId": session_id,
             **git_ctx,
         }
@@ -73,18 +73,19 @@ def _build_event(data: Dict) -> Optional[Dict]:
         return event
 
     if hook == "UserPromptSubmit":
+        # Include live_modified_files so SpecDeviationRule can cross-reference
+        # modified files against the prompt intent on the same event.
         return {
             "type": "prompt",
-            "capability": "octowiz.advise",
             "sessionId": session_id,
             "prompt_summary": data.get("prompt", "")[:200],
+            "live_modified_files": _git_modified_files(cwd),
             **git_ctx,
         }
 
     if hook == "SessionStart":
         return {
             "type": "session-start",
-            "capability": "octowiz.advise",
             "sessionId": session_id,
             **git_ctx,
         }
@@ -92,21 +93,38 @@ def _build_event(data: Dict) -> Optional[Dict]:
     return None
 
 
-def _post_event(url: str, event: Dict) -> Optional[Dict]:
-    import httpx
+def _git_modified_files(cwd: str) -> list:
+    """Return list of modified file paths from git status --porcelain."""
+    try:
+        r = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=cwd, capture_output=True, text=True, timeout=1,
+        )
+        if r.returncode != 0:
+            return []
+        files = []
+        for line in r.stdout.splitlines():
+            if len(line) > 3:
+                files.append(line[3:].strip())
+        return files
+    except Exception:
+        return []
 
+
+def _post_event(url: str, event: Dict) -> Optional[Dict]:
     body = {
         "jsonrpc": "2.0",
-        "method": "octowiz/event",
+        "method": "message/send",
         "id": str(uuid.uuid4()),
-        "params": {"message": {"parts": [{"text": json.dumps(event)}]}},
+        "params": {"message": {"parts": [{"kind": "text", "text": json.dumps(event)}]}},
     }
     headers = {}
-    secret = os.environ.get("OCTOWIZ_INBOUND_SECRET", "")
-    if secret:
-        headers["x-octowiz-secret"] = secret
+    token = os.environ.get("AELLI_AUTH_TOKEN", "")
+    if token:
+        headers["x-aelli-secret"] = token
     try:
-        resp = httpx.post(f"{url}/a2a/octowiz", json=body, headers=headers, timeout=5)
+        import httpx
+        resp = httpx.post(url, json=body, headers=headers, timeout=5)
         resp.raise_for_status()
         artifacts = resp.json().get("result", {}).get("artifacts", [])
         if not artifacts:
@@ -124,14 +142,22 @@ def _post_event(url: str, event: Dict) -> Optional[Dict]:
         return None
 
 
-def main() -> int:
-    url = os.environ.get("OCTOWIZ_A2A_URL", "").rstrip("/")
-    if not url:
-        return 0
+def _resolve_advisor_url() -> str:
+    """Mirror the URL resolution in src/a2a-client.js:
+    AELLI_LITELLM_BASE takes priority (gateway route); fall back to
+    AELLI_DEV_ADVISOR_URL; final default is direct localhost dev-advisor."""
+    litellm_base = os.environ.get("AELLI_LITELLM_BASE", "").rstrip("/")
+    if litellm_base:
+        return f"{litellm_base}/a2a/aelli-dev-advisor/message/send"
+    return os.environ.get("AELLI_DEV_ADVISOR_URL", "http://localhost:3456/a2a/dev-advisor").rstrip("/")
 
-    # Warn on cleartext HTTP to non-local endpoints — secret sent in plaintext.
+
+def main() -> int:
+    url = _resolve_advisor_url()
+
+    # Warn on cleartext HTTP to non-local endpoints — token sent in plaintext.
     # Parse the URL to get the exact hostname; string prefix checks are bypassed by
-    # hosts like localhost.evil.com or 127.0.0.1.attacker.com (issue #53).
+    # hosts like localhost.evil.com or 127.0.0.1.attacker.com.
     # Warning goes to stderr to avoid corrupting the stdout JSON channel.
     try:
         from urllib.parse import urlparse as _urlparse
@@ -139,8 +165,8 @@ def main() -> int:
         _local_hosts = {"localhost", "127.0.0.1", "::1", "[::1]"}
         if _parsed.scheme == "http" and _parsed.hostname not in _local_hosts:
             print(
-                "[octowiz] WARNING: OCTOWIZ_A2A_URL uses plain HTTP; "
-                "the inbound secret will be sent in cleartext. Use HTTPS for non-local deployments.",
+                "[octowiz] WARNING: AELLI_DEV_ADVISOR_URL uses plain HTTP; "
+                "the auth token will be sent in cleartext. Use HTTPS for non-local deployments.",
                 file=sys.stderr,
             )
     except Exception:

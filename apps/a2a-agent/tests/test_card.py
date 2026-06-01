@@ -10,7 +10,6 @@ from main import app
 
 EXPECTED_CAPABILITIES = {
     "octowiz.observe",
-    "octowiz.advise",
     "octowiz.plan",
     "octowiz.review",
     "octowiz.dispatch",
@@ -30,7 +29,7 @@ class TestAgentCard(unittest.TestCase):
         resp = self.client.get("/a2a/octowiz/.well-known/agent.json")
         self.assertEqual(resp.status_code, 200)
 
-    def test_agent_card_lists_all_10_capabilities(self):
+    def test_agent_card_lists_all_9_capabilities(self):
         resp = self.client.get("/a2a/octowiz/.well-known/agent.json")
         card = resp.json()
         skill_ids = {s["id"] for s in card["skills"]}

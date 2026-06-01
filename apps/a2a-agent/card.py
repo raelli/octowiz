@@ -2,7 +2,6 @@ import os
 
 CAPABILITIES = [
     {"id": "octowiz.observe",           "name": "Observe",           "description": "Record session events without reacting.", "tags": ["monitoring"]},
-    {"id": "octowiz.advise",            "name": "Advise",            "description": "Analyse events and return risk advice.", "tags": ["advisor", "risk"]},
     {"id": "octowiz.plan",              "name": "Plan",              "description": "Plan a coding task.", "tags": ["planning"]},
     {"id": "octowiz.review",            "name": "Review",            "description": "Review code changes.", "tags": ["review"]},
     {"id": "octowiz.dispatch",          "name": "Dispatch",          "description": "Start a new Claude Code background session. Operation: start (required fields: task, cwd; optional: name). Returns sessionId for use with manage_agents.", "tags": ["execution"]},

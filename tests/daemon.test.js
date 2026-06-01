@@ -136,14 +136,21 @@ describe("daemon.processTask (forwarding)", () => {
 
     await processTask({
       id: "t-hdr",
-      capability: "octowiz.advise",
-      payload: { type: "prompt", sessionId: "s1" },
+      capability: "octowiz.dispatch",
+      payload: { task: "fix", cwd: "/allowed/repo" },
     });
 
     expect(capturedHeaders["x-octowiz-secret"]).toBe("test-secret");
     // Security: principal must never be spoofable via a client-supplied header
     expect(capturedHeaders["x-octowiz-principal"]).toBeUndefined();
     server.close();
+  });
+
+  it("rejects octowiz.advise as unknown capability (removed; handled by AELLI)", async () => {
+    claimTask.mockResolvedValue({ ok: true, leaseToken: "lt-advise" });
+    await processTask({ id: "t-advise", capability: "octowiz.advise", payload: { type: "prompt", sessionId: "s1" } });
+    expect(postResult).toHaveBeenCalledWith("t-advise", "lt-advise",
+      expect.objectContaining({ status: "error", message: expect.stringContaining("unknown capability") }));
   });
 
   it("skips processing when claim fails (409)", async () => {
@@ -176,8 +183,8 @@ describe("daemon.processTask (forwarding)", () => {
 
     await processTask({
       id: "t4",
-      capability: "octowiz.advise",
-      payload: { type: "prompt", sessionId: "s1" },
+      capability: "octowiz.dispatch",
+      payload: { task: "fix", cwd: "/allowed/repo" },
     });
 
     expect(postResult).toHaveBeenCalledWith("t4", "lt-1",
@@ -190,8 +197,8 @@ describe("daemon.processTask (forwarding)", () => {
 
     await processTask({
       id: "t5",
-      capability: "octowiz.advise",
-      payload: { type: "prompt", sessionId: "s1" },
+      capability: "octowiz.dispatch",
+      payload: { task: "fix", cwd: "/allowed/repo" },
     });
 
     expect(postResult).toHaveBeenCalledWith("t5", "lt-1",
@@ -261,13 +268,13 @@ describe("daemon.processTask (forwarding)", () => {
 
     await processTask({
       id: "t9",
-      capability: "octowiz.advise",
-      payload: { type: "prompt", sessionId: "s1", capability: "octowiz.dispatch" },
+      capability: "octowiz.dispatch",
+      payload: { task: "fix", cwd: "/allowed/repo", capability: "octowiz.manage_agents" },
     });
 
     const inner = JSON.parse(requests[0].params.message.parts[0].text);
     // The forwarded event must use the trusted outer capability
-    expect(inner.capability).toBe("octowiz.advise");
+    expect(inner.capability).toBe("octowiz.dispatch");
     server.close();
   });
 });
@@ -291,13 +298,13 @@ describe("daemon._forwardToA2A", () => {
 
   it("resolves with parsed artifact on success", async () => {
     const { server, port } = await mockA2AServer(
-      makeA2AResponse({ level: "advise", type: "branch-drift", message: "commit soon" })
+      makeA2AResponse({ status: "completed", output: "done" })
     );
     process.env.OCTOWIZ_A2A_URL = `http://127.0.0.1:${port}`;
 
-    const result = await _forwardToA2A("octowiz.advise", { type: "prompt" });
-    expect(result.level).toBe("advise");
-    expect(result.type).toBe("branch-drift");
+    const result = await _forwardToA2A("octowiz.dispatch", { task: "fix", cwd: "/allowed/repo" });
+    expect(result.status).toBe("completed");
+    expect(result.output).toBe("done");
     server.close();
   });
 
@@ -305,7 +312,7 @@ describe("daemon._forwardToA2A", () => {
     const { server, port } = await mockA2AServer("Unauthorized", 401);
     process.env.OCTOWIZ_A2A_URL = `http://127.0.0.1:${port}`;
 
-    await expect(_forwardToA2A("octowiz.advise", {})).rejects.toThrow(/HTTP 401/);
+    await expect(_forwardToA2A("octowiz.dispatch", {})).rejects.toThrow(/HTTP 401/);
     server.close();
   });
 });
