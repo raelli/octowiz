@@ -48,7 +48,9 @@ function _forwardToA2A(capability, payload) {
 
     // The inner event text must include `capability` so Python dispatch.py can
     // route it, plus all payload fields (task, cwd, operation, sessionId, ...).
-    const innerEvent = { capability, ...payload };
+    // capability is placed last so a payload.capability field from an untrusted
+    // queue task cannot override the validated outer capability (P2 security fix).
+    const innerEvent = { ...payload, capability };
 
     const rpcBody = JSON.stringify({
       jsonrpc: "2.0",
@@ -134,6 +136,13 @@ async function processTask(task) {
     // Normalize: Python capabilities use "error" for failures; queue needs
     // "completed" vs "error".
     const queueStatus = normalized.status === "error" ? "error" : "completed";
+    // Normalize session identifier: Python returns session_id (snake_case) but
+    // the agent card and queue consumers expect sessionId (camelCase). Alias it
+    // so both keys are present; callers that already adapted to session_id still
+    // work, and old callers using sessionId are unbroken (P1 fix).
+    if (normalized.session_id && !normalized.sessionId) {
+      normalized.sessionId = normalized.session_id;
+    }
     await postResult(id, leaseToken, { ...normalized, status: queueStatus });
   } catch (err) {
     console.error(`[octowiz] forward to A2A server failed for ${capability}:`, err.message);

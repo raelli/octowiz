@@ -231,6 +231,45 @@ describe("daemon.processTask (forwarding)", () => {
     expect(inner.cwd).toBe("/allowed/repo");
     server.close();
   });
+
+  it("[P1] aliases session_id to sessionId in dispatch result for queue consumers", async () => {
+    // Python handle_dispatch returns session_id (snake_case); agent card and
+    // manage_agents consumers expect sessionId (camelCase). Both must be present.
+    const { server, port } = await mockA2AServer(
+      makeA2AResponse({ status: "completed", session_id: "sess-abc123" })
+    );
+    process.env.OCTOWIZ_A2A_URL = `http://127.0.0.1:${port}`;
+
+    await processTask({
+      id: "t8",
+      capability: "octowiz.dispatch",
+      payload: { task: "fix", cwd: "/allowed/repo" },
+    });
+
+    expect(postResult).toHaveBeenCalledWith("t8", "lt-1",
+      expect.objectContaining({ session_id: "sess-abc123", sessionId: "sess-abc123" }));
+    server.close();
+  });
+
+  it("[P2] outer capability overrides any capability field inside payload", async () => {
+    // A task whose payload.capability differs from the queue capability must
+    // route using the validated outer value, not the untrusted payload field.
+    const { server, port, requests } = await mockA2AServer(
+      makeA2AResponse({ status: "completed" })
+    );
+    process.env.OCTOWIZ_A2A_URL = `http://127.0.0.1:${port}`;
+
+    await processTask({
+      id: "t9",
+      capability: "octowiz.advise",
+      payload: { type: "prompt", sessionId: "s1", capability: "octowiz.dispatch" },
+    });
+
+    const inner = JSON.parse(requests[0].params.message.parts[0].text);
+    // The forwarded event must use the trusted outer capability
+    expect(inner.capability).toBe("octowiz.advise");
+    server.close();
+  });
 });
 
 // ── _forwardToA2A unit test ────────────────────────────────────────────────
