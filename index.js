@@ -1,24 +1,12 @@
-const { subscribe, updateTask } = require("./src/a2a-client");
+"use strict";
 const { version } = require("./package.json");
 const daemon = require("./src/daemon");
 
-if (!process.env.PTY_SESSION_ID) {
-  process.env.PTY_SESSION_ID = `cc-${Date.now()}-${process.pid}`;
-}
-
-async function processMonitoringEvent(task) {
-  console.log(`[AELLI A2A] Task received: ${task.id} — ${task.messages?.[0]?.parts?.[0]?.text?.slice(0, 60)}`);
-  await updateTask(task.id, "working");
-  await updateTask(task.id, "completed", {
-    name: "aelli-response",
-    parts: [{ kind: "text", text: "AELLI received the task." }],
-  });
-}
-
+// Daemon only — start once out-of-band (node index.js or make start).
+// Per-session push subscriptions run via hooks/scripts/session-subscriber.js.
 async function start() {
-  subscribe(processMonitoringEvent);
   daemon.start();
-  console.log(`[octowiz v${version}] ready (sessionId=${process.env.PTY_SESSION_ID})`);
+  console.log(`[octowiz v${version}] daemon ready`);
   console.log("plugin-ready");
   setInterval(() => {}, 60_000);
 }

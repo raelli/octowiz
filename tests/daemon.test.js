@@ -51,3 +51,19 @@ describe("daemon.processTask", () => {
     expect(postResult).toHaveBeenCalledWith("t3", "lt-3", expect.objectContaining({ status: "error" }));
   });
 });
+
+it("index.js does not call subscribe() — daemon only", async () => {
+  jest.resetModules();
+  const mockSubscribe = jest.fn();
+  jest.mock("../src/a2a-client", () => ({
+    subscribe: mockSubscribe,
+    updateTask: jest.fn(),
+  }));
+  jest.mock("../src/daemon", () => ({ start: jest.fn() }));
+  jest.useFakeTimers({ doNotFake: ["setImmediate"] });
+  require("../index");
+  // Give the async start() a tick to run
+  await new Promise((r) => setImmediate(r));
+  expect(mockSubscribe).not.toHaveBeenCalled();
+  jest.useRealTimers();
+});
