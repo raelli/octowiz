@@ -44,7 +44,9 @@ async function handleStart(input) {
 
   const ctx = captureContext(sessionId, cwd);
   const payload = buildSessionStart(ctx);
-  await post("session-start", payload, { sync: true, timeoutMs: 500 });
+  await post("session-start", payload, { sync: true, timeoutMs: 500 }).catch((e) =>
+    appendLog(`[start] session-start post failed: ${e?.message ?? e}`)
+  );
 
   spawnSubscriber(sessionId);
 }

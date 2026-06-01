@@ -105,4 +105,12 @@ describe("hooks/scripts/start.js — subscriber spawn", () => {
       "1234"
     );
   });
+
+  it("spawns subscriber even when post() rejects", async () => {
+    const { post: mockPost } = require("../src/a2a-client");
+    mockPost.mockRejectedValueOnce(new Error("AELLI unreachable"));
+    const { handleStart } = require("../hooks/scripts/start");
+    await handleStart({ session_id: "s1", cwd: "/repo" });
+    expect(spawnMock).toHaveBeenCalled();
+  });
 });
