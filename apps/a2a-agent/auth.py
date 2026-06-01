@@ -15,17 +15,17 @@ async def auth_middleware(request: Request, call_next):
 
     secret = os.environ.get("OCTOWIZ_INBOUND_SECRET")
     if not secret:
+        # P1: generic body — do not disclose env var name to the caller.
         return JSONResponse(
             status_code=401,
-            content={"error": "OCTOWIZ_INBOUND_SECRET not configured"},
+            content={"error": "Unauthorized"},
         )
 
     inbound = request.headers.get("x-octowiz-secret", "")
     try:
-        ok = (
-            len(inbound) == len(secret)
-            and hmac.compare_digest(inbound.encode(), secret.encode())
-        )
+        # P1: rely solely on hmac.compare_digest; removed len() pre-check that
+        # leaked the secret length.
+        ok = hmac.compare_digest(inbound.encode(), secret.encode())
     except Exception:
         ok = False
 

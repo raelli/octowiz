@@ -5,6 +5,7 @@ import time
 from typing import Any, Dict, Optional
 
 import session_owners
+from path_guard import validate_cwd
 
 _DEFAULT_POLL_INTERVAL = float(os.environ.get("OCTOWIZ_DISPATCH_POLL_INTERVAL", "5"))
 _DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "300"))
@@ -32,6 +33,12 @@ async def handle_dispatch(
     if task.startswith("-"):
         return {"status": "error", "message": "task must not start with '-'"}
 
+    # P1: validate cwd against OCTOWIZ_ALLOWED_ROOTS before dispatching.
+    try:
+        cwd = validate_cwd(cwd)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}
+
     if provider is None:
         provider = _make_provider()
     if poll_interval is None:
@@ -54,20 +61,32 @@ async def handle_dispatch(
     while time.monotonic() < deadline:
         await asyncio.sleep(poll_interval)
 
-        session = provider.get_status(session_id)
+        # P1: run blocking provider calls in a thread to avoid blocking the event loop.
+        session = await asyncio.to_thread(provider.get_status, session_id)
         if session is None:
             continue
 
         if session.needs_input:
-            output = provider.get_logs(session_id)
+            try:
+                output = await asyncio.to_thread(provider.get_logs, session_id)
+            except Exception:
+                output = ""
             return {"status": "needs-input", "session_id": session_id, "output": output}
 
         if session.status == "stopped":
-            output = provider.get_logs(session_id)
+            try:
+                output = await asyncio.to_thread(provider.get_logs, session_id)
+            except Exception:
+                output = ""
+            session_owners.deregister(session_id)
             return {"status": "completed", "session_id": session_id, "output": output}
 
         if session.status == "error":
-            output = provider.get_logs(session_id)
+            try:
+                output = await asyncio.to_thread(provider.get_logs, session_id)
+            except Exception:
+                output = ""
+            session_owners.deregister(session_id)
             return {"status": "error", "session_id": session_id, "output": output}
 
     return {

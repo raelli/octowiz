@@ -30,6 +30,15 @@ _STOPPED_SESSION = json.dumps([{
     "createdAt": "2026-06-01T00:00:00Z",
 }])
 
+_NEEDS_INPUT_SESSION = json.dumps([{
+    "id": "bg-xyz",
+    "status": "running",
+    "branch": "main",
+    "repoRoot": "/repo",
+    "needsInput": True,
+    "createdAt": "2026-06-01T00:00:00Z",
+}])
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -122,8 +131,34 @@ class TestBannerToHandleDispatchRoundTrip(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertIn("session", result["message"].lower())
 
-    def test_successful_dispatch_registers_owner(self):
-        """Successful dispatch registers the principal with session_owners."""
+    def test_successful_dispatch_registers_owner_while_active(self):
+        """Successful dispatch registers the principal; ownership persists until terminal state.
+
+        P1 fix: a completed session deregisters the owner. This test uses needs-input
+        (non-terminal) so the ownership record is still live after handle_dispatch returns.
+        """
+        from capabilities.dispatch import handle_dispatch
+        from providers.claude_agent_view.provider import ClaudeAgentViewProvider
+        import providers.claude_agent_view.provider as prov_mod
+
+        fake = self._make_fake_run_claude(
+            banner="backgrounded · bg-xyz feat/auth-work",
+            agents_json=_NEEDS_INPUT_SESSION,
+        )
+        with patch.object(prov_mod, "_run_claude", fake):
+            provider = ClaudeAgentViewProvider()
+            result = _run(handle_dispatch(
+                {"task": "run build", "cwd": "/repo", "_principal": "p-abc"},
+                provider=provider, **_FAST,
+            ))
+
+        self.assertEqual(result["status"], "needs-input")
+        # Non-terminal outcome: owner is still registered.
+        self.assertTrue(session_owners.check("bg-xyz", "p-abc"))
+        self.assertFalse(session_owners.check("bg-xyz", "other"))
+
+    def test_completed_dispatch_deregisters_owner(self):
+        """P1: a completed session removes ownership to prevent registry growth."""
         from capabilities.dispatch import handle_dispatch
         from providers.claude_agent_view.provider import ClaudeAgentViewProvider
         import providers.claude_agent_view.provider as prov_mod
@@ -139,8 +174,8 @@ class TestBannerToHandleDispatchRoundTrip(unittest.TestCase):
                 provider=provider, **_FAST,
             ))
 
-        self.assertTrue(session_owners.check("bg-xyz", "p-abc"))
-        self.assertFalse(session_owners.check("bg-xyz", "other"))
+        # Completed session: ownership is removed.
+        self.assertFalse(session_owners.check("bg-xyz", "p-abc"))
 
 
 if __name__ == "__main__":

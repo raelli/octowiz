@@ -66,10 +66,16 @@ class TestAuthWithNoSecretEnvVar(unittest.TestCase):
         os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
 
     def test_request_blocked_when_secret_not_configured(self):
-        """Fail-closed: every POST request is rejected when the secret is unset."""
+        """Fail-closed: every POST request is rejected when the secret is unset.
+
+        P1 fix: the response body must NOT disclose the env var name to callers.
+        """
         resp = self.client.post("/a2a/octowiz", json=MINIMAL_BODY)
         self.assertEqual(resp.status_code, 401)
-        self.assertIn("OCTOWIZ_INBOUND_SECRET", resp.json()["error"])
+        # Generic response — must not leak the env var name.
+        self.assertNotIn("OCTOWIZ_INBOUND_SECRET", resp.json()["error"])
+        # Should be a generic unauthorized message.
+        self.assertEqual(resp.json()["error"], "Unauthorized")
 
     def test_card_endpoint_accessible_when_secret_not_configured(self):
         resp = self.client.get("/a2a/octowiz/.well-known/agent.json")

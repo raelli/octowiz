@@ -199,6 +199,30 @@ class TestDispatchValidation(unittest.TestCase):
         self.assertEqual(result["session_id"], "s1")
         self.assertIn("timeout", result["message"].lower())
 
+    def test_relative_cwd_returns_error(self):
+        """P1: relative cwd must be rejected before dispatch."""
+        from capabilities.dispatch import handle_dispatch
+        provider = _MockProvider(status_sequence=[_Session("s1", "stopped")])
+        result = _run(handle_dispatch(
+            {"task": "add tests", "cwd": "relative/path"},
+            provider=provider, **_FAST,
+        ))
+        self.assertEqual(result["status"], "error")
+        self.assertIn("absolute", result["message"])
+
+    def test_allowed_roots_blocks_outside_cwd(self):
+        """P1: cwd outside OCTOWIZ_ALLOWED_ROOTS must be rejected."""
+        import unittest.mock
+        from capabilities.dispatch import handle_dispatch
+        provider = _MockProvider(status_sequence=[_Session("s1", "stopped")])
+        with unittest.mock.patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/allowed"}):
+            result = _run(handle_dispatch(
+                {"task": "add tests", "cwd": "/other/path"},
+                provider=provider, **_FAST,
+            ))
+        self.assertEqual(result["status"], "error")
+        self.assertIn("allowed root", result["message"])
+
 
 class TestDispatchOwnershipRegistration(unittest.TestCase):
 
@@ -210,19 +234,53 @@ class TestDispatchOwnershipRegistration(unittest.TestCase):
         import session_owners
         session_owners.clear()
 
-    def test_successful_dispatch_registers_session_owner(self):
+    def test_successful_dispatch_registers_session_owner_while_running(self):
+        """P1: ownership is registered while a session is still alive (needs-input)."""
         import session_owners
         from capabilities.dispatch import handle_dispatch
         provider = _MockProvider(
             session_id="reg-s1",
-            status_sequence=[_Session("reg-s1", "stopped")],
+            status_sequence=[
+                _Session("reg-s1", "running"),
+                _Session("reg-s1", "running", needs_input=True),
+            ],
+        )
+        result = _run(handle_dispatch(
+            {"task": "add tests", "cwd": "/repo", "_principal": "p-abc"},
+            provider=provider, **_FAST,
+        ))
+        self.assertEqual(result["status"], "needs-input")
+        # Session is still alive (needs-input does not deregister).
+        self.assertTrue(session_owners.check("reg-s1", "p-abc"))
+        self.assertFalse(session_owners.check("reg-s1", "other-principal"))
+
+    def test_completed_session_deregisters_owner(self):
+        """P1: ownership is removed after a session completes to avoid registry growth."""
+        import session_owners
+        from capabilities.dispatch import handle_dispatch
+        provider = _MockProvider(
+            session_id="reg-s2",
+            status_sequence=[_Session("reg-s2", "stopped")],
         )
         _run(handle_dispatch(
             {"task": "add tests", "cwd": "/repo", "_principal": "p-abc"},
             provider=provider, **_FAST,
         ))
-        self.assertTrue(session_owners.check("reg-s1", "p-abc"))
-        self.assertFalse(session_owners.check("reg-s1", "other-principal"))
+        self.assertFalse(session_owners.check("reg-s2", "p-abc"))
+
+    def test_error_session_deregisters_owner(self):
+        """P1: ownership is removed after a session terminates with error."""
+        import session_owners
+        from capabilities.dispatch import handle_dispatch
+        provider = _MockProvider(
+            session_id="reg-s3",
+            status_sequence=[_Session("reg-s3", "error")],
+        )
+        _run(handle_dispatch(
+            {"task": "add tests", "cwd": "/repo", "_principal": "p-abc"},
+            provider=provider, **_FAST,
+        ))
+        self.assertFalse(session_owners.check("reg-s3", "p-abc"))
 
     def test_failed_dispatch_does_not_register_ownership(self):
         import session_owners

@@ -116,6 +116,17 @@ def main() -> int:
     if not url:
         return 0
 
+    # P1: warn on cleartext HTTP (not localhost/127.0.0.1) — secret sent in plaintext.
+    # Warning goes to stderr to avoid corrupting the stdout JSON channel.
+    if url.startswith("http://") and not any(
+        url.startswith(f"http://{h}") for h in ("localhost", "127.0.0.1")
+    ):
+        print(
+            "[octowiz] WARNING: OCTOWIZ_A2A_URL uses plain HTTP; "
+            "the inbound secret will be sent in cleartext. Use HTTPS for non-local deployments.",
+            file=sys.stderr,
+        )
+
     try:
         data = json.load(sys.stdin)
     except Exception:

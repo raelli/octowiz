@@ -18,6 +18,11 @@ def register(session_id: str, principal: str) -> None:
     _owners[session_id] = principal
 
 
+def deregister(session_id: str) -> None:
+    """Remove ownership record for session_id (no-op if not present)."""
+    _owners.pop(session_id, None)
+
+
 def check(session_id: str, principal: str) -> bool:
     """Return True if principal owns session_id. Returns False for unregistered sessions."""
     owner = _owners.get(session_id)
