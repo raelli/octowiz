@@ -1,7 +1,11 @@
+const fs = require("fs");
+
 describe("daemon.processTask", () => {
   let processTask, claimTask, postResult, handleDispatch;
+  let realpathSyncSpy;
 
   beforeEach(() => {
+    realpathSyncSpy = jest.spyOn(fs, "realpathSync").mockImplementation((p) => p);
     jest.resetModules();
     jest.mock("../src/task-queue-client");
     jest.mock("../src/capabilities/dispatch");
@@ -17,7 +21,10 @@ describe("daemon.processTask", () => {
     handleDispatch.mockResolvedValue({ status: "completed", output: "done" });
   });
 
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => {
+    jest.clearAllMocks();
+    realpathSyncSpy.mockRestore();
+  });
 
   it("claims task and posts result for octowiz.dispatch", async () => {
     await processTask({ id: "t1", capability: "octowiz.dispatch", payload: { task: "fix", cwd: "/allowed/repo" } });

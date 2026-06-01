@@ -1,4 +1,5 @@
 const path = require("path");
+const fs = require("fs");
 
 function checkStartup() {
   const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || "";
@@ -15,11 +16,21 @@ function checkStartup() {
 
 function validateCwd(cwd) {
   if (!cwd || typeof cwd !== "string") throw new Error("cwd is required");
-  const resolved = path.resolve(cwd);
+  let resolved;
+  try {
+    resolved = fs.realpathSync(cwd);
+  } catch {
+    throw new Error(`cwd "${cwd}" does not exist`);
+  }
   const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || "";
   const roots = raw.split(":").map((r) => r.trim()).filter(Boolean);
   const allowed = roots.some((root) => {
-    const resolvedRoot = path.resolve(root);
+    let resolvedRoot;
+    try {
+      resolvedRoot = fs.realpathSync(root);
+    } catch {
+      return false;
+    }
     return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
   });
   if (!allowed) {

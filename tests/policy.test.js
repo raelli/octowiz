@@ -1,15 +1,22 @@
 const path = require("path");
+const fs = require("fs");
 
 describe("policy", () => {
   let checkStartup, validateCwd;
+  let realpathSyncSpy;
   const EXIT_SPY = jest.spyOn(process, "exit").mockImplementation(() => { throw new Error("process.exit"); });
 
   beforeEach(() => {
     jest.resetModules();
     delete process.env.OCTOWIZ_ALLOWED_ROOTS;
+    // Default: identity (no symlinks in test paths)
+    realpathSyncSpy = jest.spyOn(fs, "realpathSync").mockImplementation((p) => p);
   });
 
-  afterEach(() => EXIT_SPY.mockClear());
+  afterEach(() => {
+    EXIT_SPY.mockClear();
+    realpathSyncSpy.mockRestore();
+  });
 
   describe("checkStartup", () => {
     it("exits when OCTOWIZ_ALLOWED_ROOTS is not set", () => {
@@ -39,7 +46,7 @@ describe("policy", () => {
 
     it("accepts a path under an allowed root", () => {
       const result = validateCwd("/allowed/root/project");
-      expect(result).toBe(path.resolve("/allowed/root/project"));
+      expect(result).toBe("/allowed/root/project");
     });
 
     it("accepts the allowed root itself", () => {
@@ -60,6 +67,27 @@ describe("policy", () => {
 
     it("throws when cwd is not a string", () => {
       expect(() => validateCwd(null)).toThrow("cwd is required");
+    });
+
+    it("rejects a cwd that is a symlink resolving outside allowed roots", () => {
+      realpathSyncSpy.mockImplementation((p) => {
+        if (p === "/allowed/root/link") return "/outside/secret";
+        return p;
+      });
+      expect(() => validateCwd("/allowed/root/link")).toThrow(/not.*allowed/i);
+    });
+
+    it("throws when cwd does not exist", () => {
+      realpathSyncSpy.mockImplementation(() => { throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); });
+      expect(() => validateCwd("/allowed/root/ghost")).toThrow(/does not exist/);
+    });
+
+    it("skips a configured root that does not exist", () => {
+      realpathSyncSpy.mockImplementation((p) => {
+        if (p === "/other/root") throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+        return p;
+      });
+      expect(() => validateCwd("/allowed/root/project")).not.toThrow();
     });
   });
 });
