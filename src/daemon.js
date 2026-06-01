@@ -39,7 +39,7 @@ const KNOWN_CAPABILITIES = new Set([
  * Throws on network errors or non-200 HTTP responses so processTask can catch
  * and postResult with an error.
  */
-function _forwardToA2A(capability, payload, principal) {
+function _forwardToA2A(capability, payload) {
   return new Promise((resolve, reject) => {
     const baseUrl = _a2aBaseUrl();
     const url = new URL(baseUrl + "/a2a/octowiz");
@@ -48,8 +48,6 @@ function _forwardToA2A(capability, payload, principal) {
 
     // The inner event text must include `capability` so Python dispatch.py can
     // route it, plus all payload fields (task, cwd, operation, sessionId, ...).
-    // _principal is passed via the x-octowiz-principal header (authoritative);
-    // it is NOT included here to avoid implying the body copy matters.
     const innerEvent = { capability, ...payload };
 
     const rpcBody = JSON.stringify({
@@ -72,11 +70,6 @@ function _forwardToA2A(capability, payload, principal) {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(rpcBody),
         "x-octowiz-secret": OCTOWIZ_SECRET,
-        // Pass the pre-resolved principal so Python uses it for ownership checks
-        // rather than re-deriving from the secret hash. Python's _handle() uses
-        // this header when present and falls back to _principal_from() otherwise,
-        // so bridge.py direct callers are unaffected.
-        "x-octowiz-principal": principal,
       },
     };
 
@@ -110,7 +103,7 @@ function _forwardToA2A(capability, payload, principal) {
 }
 
 async function processTask(task) {
-  const { id, capability, payload = {}, principal = "" } = task;
+  const { id, capability, payload = {} } = task;
 
   const claim = await claimTask(id);
   if (!claim.ok) {
@@ -136,7 +129,7 @@ async function processTask(task) {
   }
 
   try {
-    const artifact = await _forwardToA2A(capability, payload, principal);
+    const artifact = await _forwardToA2A(capability, payload);
     const normalized = artifact || { status: "completed" };
     // Normalize: Python capabilities use "error" for failures; queue needs
     // "completed" vs "error".
