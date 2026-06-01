@@ -61,32 +61,35 @@ async def handle_dispatch(
     while time.monotonic() < deadline:
         await asyncio.sleep(poll_interval)
 
-        # P1: run blocking provider calls in a thread to avoid blocking the event loop.
-        session = await asyncio.to_thread(provider.get_status, session_id)
+        # Run blocking provider calls in a thread to avoid blocking the event loop.
+        # Use get_running_loop().run_in_executor instead of asyncio.to_thread for
+        # Python 3.8 compatibility (asyncio.to_thread requires Python 3.9+).
+        _loop = asyncio.get_running_loop()
+        session = await _loop.run_in_executor(None, provider.get_status, session_id)
         if session is None:
             continue
 
         if session.needs_input:
             try:
-                output = await asyncio.to_thread(provider.get_logs, session_id)
+                output = await _loop.run_in_executor(None, provider.get_logs, session_id)
             except Exception:
                 output = ""
             return {"status": "needs-input", "session_id": session_id, "output": output}
 
         if session.status == "stopped":
             try:
-                output = await asyncio.to_thread(provider.get_logs, session_id)
+                output = await _loop.run_in_executor(None, provider.get_logs, session_id)
             except Exception:
                 output = ""
-            session_owners.deregister(session_id)
+            # Keep ownership so caller can still run manage_agents logs/rm (issue #55).
             return {"status": "completed", "session_id": session_id, "output": output}
 
         if session.status == "error":
             try:
-                output = await asyncio.to_thread(provider.get_logs, session_id)
+                output = await _loop.run_in_executor(None, provider.get_logs, session_id)
             except Exception:
                 output = ""
-            session_owners.deregister(session_id)
+            # Keep ownership so caller can still run manage_agents logs/rm (issue #55).
             return {"status": "error", "session_id": session_id, "output": output}
 
     return {

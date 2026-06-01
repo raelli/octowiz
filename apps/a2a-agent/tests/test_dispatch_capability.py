@@ -254,8 +254,8 @@ class TestDispatchOwnershipRegistration(unittest.TestCase):
         self.assertTrue(session_owners.check("reg-s1", "p-abc"))
         self.assertFalse(session_owners.check("reg-s1", "other-principal"))
 
-    def test_completed_session_deregisters_owner(self):
-        """P1: ownership is removed after a session completes to avoid registry growth."""
+    def test_completed_session_retains_ownership_for_cleanup(self):
+        """Ownership is kept after completion so caller can still run manage_agents logs/rm (issue #55)."""
         import session_owners
         from capabilities.dispatch import handle_dispatch
         provider = _MockProvider(
@@ -266,10 +266,10 @@ class TestDispatchOwnershipRegistration(unittest.TestCase):
             {"task": "add tests", "cwd": "/repo", "_principal": "p-abc"},
             provider=provider, **_FAST,
         ))
-        self.assertFalse(session_owners.check("reg-s2", "p-abc"))
+        self.assertTrue(session_owners.check("reg-s2", "p-abc"))
 
-    def test_error_session_deregisters_owner(self):
-        """P1: ownership is removed after a session terminates with error."""
+    def test_error_session_retains_ownership_for_cleanup(self):
+        """Ownership is kept after error so caller can still run manage_agents logs/rm (issue #55)."""
         import session_owners
         from capabilities.dispatch import handle_dispatch
         provider = _MockProvider(
@@ -280,7 +280,7 @@ class TestDispatchOwnershipRegistration(unittest.TestCase):
             {"task": "add tests", "cwd": "/repo", "_principal": "p-abc"},
             provider=provider, **_FAST,
         ))
-        self.assertFalse(session_owners.check("reg-s3", "p-abc"))
+        self.assertTrue(session_owners.check("reg-s3", "p-abc"))
 
     def test_failed_dispatch_does_not_register_ownership(self):
         import session_owners

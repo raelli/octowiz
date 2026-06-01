@@ -157,8 +157,8 @@ class TestBannerToHandleDispatchRoundTrip(unittest.TestCase):
         self.assertTrue(session_owners.check("bg-xyz", "p-abc"))
         self.assertFalse(session_owners.check("bg-xyz", "other"))
 
-    def test_completed_dispatch_deregisters_owner(self):
-        """P1: a completed session removes ownership to prevent registry growth."""
+    def test_completed_dispatch_retains_ownership_for_cleanup(self):
+        """Completed session keeps ownership so caller can run manage_agents logs/rm (issue #55)."""
         from capabilities.dispatch import handle_dispatch
         from providers.claude_agent_view.provider import ClaudeAgentViewProvider
         import providers.claude_agent_view.provider as prov_mod
@@ -174,8 +174,8 @@ class TestBannerToHandleDispatchRoundTrip(unittest.TestCase):
                 provider=provider, **_FAST,
             ))
 
-        # Completed session: ownership is removed.
-        self.assertFalse(session_owners.check("bg-xyz", "p-abc"))
+        # Completed session: ownership is retained until the caller runs rm.
+        self.assertTrue(session_owners.check("bg-xyz", "p-abc"))
 
 
 if __name__ == "__main__":
