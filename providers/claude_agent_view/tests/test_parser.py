@@ -127,6 +127,30 @@ class TestParseSessionsRealCliFormat(unittest.TestCase):
         self.assertEqual(sessions[0].id, "bg-abc")
         self.assertEqual(sessions[0].repo, "/repo")
 
+    def test_idle_session_is_ready_for_review(self):
+        """idle is the real CLI terminal state — must set ready_for_review=True."""
+        from providers.claude_agent_view.parser import parse_sessions
+        sessions = parse_sessions(self.REAL_SESSION)
+        self.assertEqual(sessions[0].status, "idle")
+        self.assertTrue(sessions[0].ready_for_review)
+
+    def test_stopped_session_is_ready_for_review(self):
+        from providers.claude_agent_view.parser import parse_sessions
+        fixture = json.dumps([{"id": "s1", "status": "stopped", "needsInput": False}])
+        sessions = parse_sessions(fixture)
+        self.assertTrue(sessions[0].ready_for_review)
+
+    def test_needs_input_session_is_not_ready_for_review(self):
+        from providers.claude_agent_view.parser import parse_sessions
+        fixture = json.dumps([{"id": "s1", "status": "idle", "needsInput": True}])
+        sessions = parse_sessions(fixture)
+        self.assertFalse(sessions[0].ready_for_review)
+
+    def test_running_session_is_not_ready_for_review(self):
+        from providers.claude_agent_view.parser import parse_sessions
+        sessions = parse_sessions(self.REAL_BUSY_SESSION)
+        self.assertFalse(sessions[0].ready_for_review)
+
 
 if __name__ == "__main__":
     unittest.main()

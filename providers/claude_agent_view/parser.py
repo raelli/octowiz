@@ -5,6 +5,7 @@ import json
 from typing import List
 
 from .session import AgentSession
+from .status import is_terminal
 
 _STATUS_MAP = {
     "running": "running",
@@ -39,7 +40,7 @@ def _parse_one(item: dict) -> AgentSession:
     raw_status = item.get("status", "")
     status = _STATUS_MAP.get(raw_status, raw_status)
     needs_input = bool(item.get("needsInput", False))
-    ready_for_review = status == "stopped" and not needs_input
+    ready_for_review = is_terminal(status) and not needs_input
     return AgentSession(
         id=session_id,
         status=status,
