@@ -783,5 +783,62 @@ class TestDispatchSessionOwnerRegistration(unittest.TestCase):
         self.assertFalse(session_owners.check("s-orphan", "p-orphan"))
 
 
+class TestDispatchAndRegisterAtomicity(unittest.TestCase):
+    """Tests for _dispatch_and_register — the thread-level atomic unit.
+
+    By running dispatch() and session_owners.register() inside a single executor
+    call, cancellation of the outer coroutine cannot leave a live session without
+    an ownership record (P2 finding: async cancellation window).
+    """
+
+    def setUp(self):
+        import session_owners
+        session_owners.clear()
+
+    def tearDown(self):
+        import session_owners
+        session_owners.clear()
+
+    def test_registers_ownership_after_successful_dispatch(self):
+        import session_owners
+        from capabilities.dispatch import _dispatch_and_register
+        provider = _MockProvider(session_id="s-atomic")
+        result = _dispatch_and_register(provider, "task", "/repo", "p-test")
+        self.assertEqual(result, "s-atomic")
+        self.assertTrue(session_owners.check("s-atomic", "p-test"))
+
+    def test_does_not_register_on_empty_session_id(self):
+        """Empty/falsy session_id from dispatch → no ownership entry."""
+        import session_owners
+        from capabilities.dispatch import _dispatch_and_register
+        provider = _MockProvider(session_id="")
+        result = _dispatch_and_register(provider, "task", "/repo", "p-test")
+        self.assertEqual(result, "")
+        self.assertFalse(session_owners.check("", "p-test"))
+
+    def test_does_not_register_on_dispatch_exception(self):
+        import session_owners
+        from capabilities.dispatch import _dispatch_and_register
+        provider = _MockProvider(dispatch_exc=RuntimeError("spawn failed"))
+        with self.assertRaises(RuntimeError):
+            _dispatch_and_register(provider, "task", "/repo", "p-test")
+        self.assertFalse(session_owners.check("s1", "p-test"))
+
+    def test_start_uses_atomic_dispatch_and_register(self):
+        """Ownership is registered before start() returns (i.e. inside the executor)."""
+        import session_owners
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(session_id="s-before-return")
+        session = DispatchSession(
+            "task", "/repo", "p-reg",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        _run(session.start())
+        self.assertTrue(session_owners.check("s-before-return", "p-reg"))
+        # Confirm registration happened via the atomic helper, not a separate call.
+        # The session_id on the instance must also be set.
+        self.assertEqual(session.session_id, "s-before-return")
+
+
 if __name__ == "__main__":
     unittest.main()

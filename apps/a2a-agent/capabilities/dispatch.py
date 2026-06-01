@@ -25,6 +25,20 @@ def _make_provider():
     return ClaudeAgentViewProvider()
 
 
+def _dispatch_and_register(provider: Any, task: str, cwd: str, principal: str) -> str:
+    """Dispatch a session and register ownership in a single thread.
+
+    Running both steps atomically (from the event loop's perspective) prevents
+    a cancellation window between the executor await and session_owners.register():
+    if the coroutine is cancelled mid-await, this thread still completes and the
+    session is tracked, so manage_agents log/stop/rm calls are not rejected.
+    """
+    session_id = provider.dispatch(task, cwd)
+    if session_id:
+        session_owners.register(session_id, principal)
+    return session_id
+
+
 class DispatchSessionState(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
@@ -83,14 +97,13 @@ class DispatchSession:
         """
         _loop = asyncio.get_running_loop()
         session_id = await _loop.run_in_executor(
-            None, self._provider.dispatch, self.task, self.cwd
+            None, _dispatch_and_register,
+            self._provider, self.task, self.cwd, self.principal,
         )
         if not session_id:
             raise RuntimeError("no session ID returned")
 
         self.session_id = session_id
-        # Register owner after session ID is known.
-        session_owners.register(session_id, self.principal)
         self.state = DispatchSessionState.RUNNING
 
     async def poll(self) -> DispatchSessionState:
