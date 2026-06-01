@@ -1,7 +1,7 @@
 # aelli-cc-plugin → octowiz Migration Design
 
 **Date:** 2026-06-01  
-**Status:** Approved  
+**Status:** Revised (adversarial review 2026-06-01)  
 **Scope:** Full integration of aelli-cc-plugin functionality into octowiz; deprecation of aelli-cc-plugin
 
 ---
@@ -72,12 +72,9 @@ aelli-cc-plugin: removed.
 - Posts to AELLI fire-and-forget
 - Exits 0 always
 
-**`stop.js`**
-- Reads `session_id` from stdin
-- Posts `session-end` event with `sync: true, timeoutMs: 500` (best-effort)
-- Exits 0 always
-
 ### `hooks/hooks.json` changes
+
+**Phase 1 hooks.json** — Stop hook is intentionally absent. aelli-cc-plugin's Stop hook remains the sole `session-end` emitter until Phase 3 removes that plugin. Shipping both simultaneously would cause duplicate `session-end` events for every session close.
 
 ```json
 {
@@ -92,9 +89,6 @@ aelli-cc-plugin: removed.
     ],
     "UserPromptSubmit": [
       { "command": "node \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/report-event.js\"", "timeout": 10 }
-    ],
-    "Stop": [
-      { "command": "node \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/stop.js\"", "timeout": 10 }
     ]
   }
 }
@@ -102,10 +96,23 @@ aelli-cc-plugin: removed.
 
 bridge.py removed from all hooks. Python dependency eliminated.
 
+`stop.js` is written in this phase (tested in isolation) but **not wired into hooks.json until Phase 3**.
+
+### Observability requirements
+
+The original bridge.py failure mode was silent: events were lost with no trace. This must not be recreated.
+
+**Startup guard** — `start.js` checks `AELLI_LITELLM_BASE` and `AELLI_AUTH_TOKEN` at startup. If either is absent, it appends a warning to `~/.cache/aelli-cc/aelli-cc.log` and exits 0. No events are silently discarded due to misconfiguration without a log entry.
+
+**Failure logging** — all `post()` calls wrap their `.catch()` to append failures to `aelli-cc.log` with timestamp, event type, and error message. This applies to both fire-and-forget and sync calls.
+
+**Lifecycle events use sync with timeout** — `session-start` and `session-end` (once wired in Phase 3) use `sync: true, timeoutMs: 500`. On timeout or network failure, the error is logged (not silently dropped). `report-event.js` (file/prompt events) remains fire-and-forget — high-frequency, non-critical.
+
 ### Tests
 - Unit tests for each script: mock `src/a2a-client`, feed stdin fixtures, assert correct `post()` call
 - Bad/empty stdin → exits 0 (no crash)
-- Missing env vars → exits 0 with warning
+- Missing `AELLI_LITELLM_BASE` → exits 0 and appends warning to log
+- `post()` failure → appends to log, does not throw or exit non-zero
 
 ---
 
@@ -113,6 +120,12 @@ bridge.py removed from all hooks. Python dependency eliminated.
 
 ### Problem
 `index.js` currently calls both `subscribe()` (push, per-session) and `daemon.start()` (pull, singleton). Spawning `index.js` per-session from a hook would cause daemon subscription collisions: `TaskQueue.subscribe(principal, deliver)` is last-writer-wins — all sessions share the same `AELLI_AUTH_TOKEN` principal, so only the most-recently-spawned session would receive delivered tasks.
+
+### Env var consolidation (prerequisite)
+
+`src/a2a-client.js` currently reads `AELLI_API_BASE` for `subscribe()` and `updateTask()`. The daemon uses `AELLI_BASE_URL`. These are two names for the same server — the divergence is historical. Before Phase 2 ships, `src/a2a-client.js` must be updated to use `AELLI_BASE_URL` as the canonical var, with `AELLI_API_BASE` accepted as a fallback alias for backward compatibility. This unifies the env var surface and makes it safe to eventually drop `AELLI_API_BASE`.
+
+`AELLI_API_BASE` must **not** be removed from `~/.claude/settings.json` until this refactor is confirmed deployed.
 
 ### Solution: separate entry points
 
@@ -158,12 +171,13 @@ Before or alongside posting `session-end`:
 - README: document daemon setup (`make start` / `node index.js`) and required env vars
 
 ### Required env vars (documented)
-| Var | Purpose |
-|-----|---------|
-| `AELLI_BASE_URL` | AELLI server URL (daemon task-queue subscriber) |
-| `AELLI_LITELLM_BASE` | LiteLLM base for event forwarding (hooks) |
-| `AELLI_AUTH_TOKEN` | Auth token for both daemon and hooks |
-| `OCTOWIZ_ALLOWED_ROOTS` | Allowed cwd roots (daemon policy gate) |
+| Var | Purpose | Notes |
+|-----|---------|-------|
+| `AELLI_BASE_URL` | AELLI server URL — daemon task-queue + session subscriber | Canonical after Phase 2 refactor |
+| `AELLI_LITELLM_BASE` | LiteLLM base for hook event forwarding | Required for hooks; startup guard warns if absent |
+| `AELLI_AUTH_TOKEN` | Auth token for daemon, hooks, and subscriber | |
+| `OCTOWIZ_ALLOWED_ROOTS` | Allowed cwd roots (daemon policy gate) | |
+| `AELLI_API_BASE` | Legacy alias for `AELLI_BASE_URL` | Accepted as fallback; remove only after Phase 2 ships and is confirmed working |
 
 ### Pre-publish smoke test
 1. Install octowiz from local path
@@ -173,11 +187,22 @@ Before or alongside posting `session-end`:
 5. Verify push task from AELLI delivered to CC session
 6. Close CC session → verify `session-end` event
 
+### Stop hook wired in Phase 3
+
+`stop.js` (written in Phase 1, tested in isolation) is added to `hooks/hooks.json` in this phase only, simultaneously with removing aelli-cc-plugin. This is the atomic handoff: the old plugin's Stop hook goes away at the exact moment the new one activates, so `session-end` is never emitted twice.
+
+Phase 3 `hooks/hooks.json` adds:
+```json
+"Stop": [
+  { "command": "node \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/stop.js\"", "timeout": 10 }
+]
+```
+
 ### Transition
-Remove aelli-cc-plugin immediately after confirming octowiz 0.5.0 is installed and the smoke test passes. There may be one double-fire of session-start during the restart between removing the old plugin and the first new session — acceptable.
+Remove aelli-cc-plugin and publish octowiz 0.5.0 in the same operation (plugin update + removal). The only acceptable double-fire window is a single session restart during the swap — not every session close between Phase 1 and Phase 3.
 
 **Cleanup after removal:**
-- `AELLI_API_BASE` env var no longer needed (was aelli-cc-plugin's old API base)
+- Confirm `AELLI_BASE_URL` is set and working before removing `AELLI_API_BASE` from `~/.claude/settings.json`
 - Archive `raelli/aelli-cc-plugin` repo
 
 ---
