@@ -117,6 +117,26 @@ class TestDispatch(unittest.TestCase):
             session_id = ClaudeAgentViewProvider().dispatch("echo-task", "/tmp")
             self.assertEqual(session_id, full_uuid)
 
+    def test_dispatch_exact_match_preferred_over_prefix_collision(self):
+        """Exact session ID must win over a different session whose ID merely starts with it."""
+        from providers.claude_agent_view.provider import ClaudeAgentViewProvider
+        # 'bg-xyz-old' appears first and starts with 'bg-xyz' — must NOT be returned.
+        sessions_json = json.dumps([
+            {"id": "bg-xyz-old", "status": "idle", "branch": "main",
+             "repoRoot": "/repo", "needsInput": False, "createdAt": "2026-05-29T00:00:00Z"},
+            {"id": "bg-xyz", "status": "running", "branch": "main",
+             "repoRoot": "/repo", "needsInput": False, "createdAt": "2026-05-30T00:00:00Z"},
+        ])
+        def fake(args, cwd=None):
+            if args[:2] == ["--bg", "--"]:
+                return "backgrounded · bg-xyz task-name"
+            if args == ["agents", "--json"]:
+                return sessions_json
+            return ""
+        with patch("providers.claude_agent_view.provider._run_claude", side_effect=fake):
+            session_id = ClaudeAgentViewProvider().dispatch("task", "/repo")
+        self.assertEqual(session_id, "bg-xyz")
+
     def test_dispatch_falls_back_to_short_id_when_resolution_fails(self):
         """If the session does not appear in agents --json within retries, return short id."""
         from providers.claude_agent_view.provider import ClaudeAgentViewProvider

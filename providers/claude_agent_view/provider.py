@@ -44,13 +44,21 @@ def _resolve_full_session_id(
     The claude --bg banner emits only the UUID prefix (e.g. 'e5694b8e') while
     claude agents --json returns the full UUID. We retry briefly to bridge the
     gap between session start and it appearing in the agent list.
+
+    Exact match is checked before prefix match so that a session whose ID merely
+    starts with short_id (e.g. 'bg-xyz-old') is not returned ahead of an exact
+    match ('bg-xyz') that appears later in the list.
     """
     for _ in range(retries):
-        for s in provider.list_sessions():
-            if s.id == short_id or s.id.startswith(short_id):
+        sessions = provider.list_sessions()
+        for s in sessions:
+            if s.id == short_id:
+                return s.id
+        for s in sessions:
+            if s.id.startswith(short_id):
                 return s.id
         time.sleep(delay)
-    return short_id  # fall back; get_status prefix-match will still work
+    return short_id  # fall back; get_status exact-then-prefix will still work
 
 
 class ClaudeAgentViewProvider:
@@ -80,9 +88,14 @@ class ClaudeAgentViewProvider:
 
     def get_status(self, run_id: str) -> Optional[AgentSession]:
         """Return the session for run_id, or None if not found."""
-        for s in self.list_sessions():
-            # Prefix match handles cases where run_id was resolved from a short banner ID.
-            if s.id == run_id or s.id.startswith(run_id):
+        sessions = self.list_sessions()
+        # Exact match first — avoids returning a prefix-collision session.
+        for s in sessions:
+            if s.id == run_id:
+                return s
+        # Prefix fallback for short IDs that weren't resolved at dispatch time.
+        for s in sessions:
+            if s.id.startswith(run_id):
                 return s
         return None
 
