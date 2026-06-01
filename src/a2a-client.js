@@ -4,7 +4,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const API_BASE = process.env.AELLI_API_BASE || "http://localhost:3001/api";
+const API_BASE = process.env.AELLI_BASE_URL || process.env.AELLI_API_BASE || "http://localhost:3001/api";
 const SESSION_ID = process.env.PTY_SESSION_ID || "";
 const AUTH_TOKEN = process.env.AELLI_AUTH_TOKEN || "";
 

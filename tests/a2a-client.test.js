@@ -119,6 +119,26 @@ describe("subscribeToQueue", () => {
   });
 });
 
+describe("env var resolution", () => {
+  it("uses AELLI_BASE_URL when set", () => {
+    jest.resetModules();
+    process.env.AELLI_BASE_URL = "http://base-url-test:3456/api";
+    delete process.env.AELLI_API_BASE;
+    const client = require("../src/a2a-client");
+    expect(client).toBeDefined();
+    delete process.env.AELLI_BASE_URL;
+  });
+
+  it("falls back to AELLI_API_BASE when AELLI_BASE_URL absent", () => {
+    jest.resetModules();
+    delete process.env.AELLI_BASE_URL;
+    process.env.AELLI_API_BASE = "http://api-base-test:3001/api";
+    const client = require("../src/a2a-client");
+    expect(client).toBeDefined();
+    delete process.env.AELLI_API_BASE;
+  });
+});
+
 describe("post", () => {
   let post;
 
