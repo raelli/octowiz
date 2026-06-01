@@ -1,5 +1,5 @@
 {
-  "description": "Octowiz Bridge hooks — upgrade check + passive event forwarding to A2A agent",
+  "description": "Octowiz hooks — session lifecycle and event forwarding to AELLI",
   "hooks": {
     "SessionStart": [
       {
@@ -12,7 +12,7 @@
           },
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/apps/claude_code_bridge/bridge.py\"",
+            "command": "node \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/start.js\"",
             "timeout": 10
           }
         ]
@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/apps/claude_code_bridge/bridge.py\"",
+            "command": "node \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/report-event.js\"",
             "timeout": 10
           }
         ]
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/apps/claude_code_bridge/bridge.py\"",
+            "command": "node \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/report-event.js\"",
             "timeout": 10
           }
         ]
