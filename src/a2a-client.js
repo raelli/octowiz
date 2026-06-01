@@ -228,7 +228,9 @@ async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
   };
 
   if (!sync) {
-    fetch(url, init).catch(() => {});
+    fetch(url, init).catch((err) =>
+      appendLog(`[post:${eventType}] fire-and-forget error: ${err?.message ?? err}`)
+    );
     return null;
   }
 
