@@ -200,6 +200,29 @@ Install these three plugins from the marketplace:
 
 All three are required. `/octowiz` routes to skills from the other two — if either is missing the coordinator will fail mid-flow.
 
+## Daemon setup
+
+The octowiz daemon handles agent capabilities (dispatch, advise, manage-agents). It runs as a singleton service — start it once per machine, not per Claude Code session.
+
+**Required env vars:**
+
+| Var | Purpose |
+|-----|---------|
+| `AELLI_BASE_URL` | AELLI server URL (e.g. `http://localhost:3456`) |
+| `AELLI_LITELLM_BASE` | LiteLLM base URL for event forwarding hooks |
+| `AELLI_AUTH_TOKEN` | Shared auth token (daemon + hooks) |
+| `OCTOWIZ_ALLOWED_ROOTS` | Comma-separated allowed cwd roots (e.g. `/Users/you/projects`) |
+
+**Start the daemon:**
+
+```bash
+make start
+# or
+node index.js
+```
+
+The Claude Code hooks (SessionStart, PostToolUse, UserPromptSubmit, Stop) run automatically when the plugin is installed. They do not start or stop the daemon.
+
 **Per-repo alternative:** add a `.env` file (gitignored) if you prefer project-scoped keys:
 
 ```bash
