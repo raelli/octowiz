@@ -366,5 +366,375 @@ class TestDispatchRouting(unittest.TestCase):
         mock_h.assert_called_once()
 
 
+class TestDispatchSessionStateMachine(unittest.TestCase):
+    """Test DispatchSession state transitions directly."""
+
+    def setUp(self):
+        import session_owners
+        session_owners.clear()
+
+    def tearDown(self):
+        import session_owners
+        session_owners.clear()
+
+    def _make_session(self, provider, poll_interval=0.001, timeout=5.0):
+        from capabilities.dispatch import DispatchSession
+        return DispatchSession(
+            "add tests",
+            "/repo",
+            "p-test",
+            provider=provider,
+            poll_interval=poll_interval,
+            timeout=timeout,
+        )
+
+    def test_initial_state_is_pending(self):
+        from capabilities.dispatch import DispatchSession, DispatchSessionState
+        provider = _MockProvider(status_sequence=[])
+        session = DispatchSession(
+            "task", "/repo", "p1",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        self.assertEqual(session.state, DispatchSessionState.PENDING)
+
+    def test_start_transitions_pending_to_running(self):
+        from capabilities.dispatch import DispatchSessionState
+        provider = _MockProvider(status_sequence=[_Session("s1", "running")])
+        session = self._make_session(provider)
+        _run(session.start())
+        self.assertEqual(session.state, DispatchSessionState.RUNNING)
+        self.assertEqual(session.session_id, "s1")
+
+    def test_poll_returns_needs_input_when_session_awaits_input(self):
+        from capabilities.dispatch import DispatchSessionState
+        provider = _MockProvider(
+            session_id="s1",
+            status_sequence=[_Session("s1", "running", needs_input=True)],
+        )
+        session = self._make_session(provider)
+        _run(session.start())
+        state = _run(session.poll())
+        self.assertEqual(state, DispatchSessionState.NEEDS_INPUT)
+
+    def test_poll_returns_done_when_terminal_status(self):
+        from capabilities.dispatch import DispatchSessionState
+        provider = _MockProvider(
+            session_id="s1",
+            status_sequence=[_Session("s1", "stopped")],
+        )
+        session = self._make_session(provider)
+        _run(session.start())
+        state = _run(session.poll())
+        self.assertEqual(state, DispatchSessionState.DONE)
+
+    def test_poll_returns_done_when_error_status(self):
+        from capabilities.dispatch import DispatchSessionState
+        provider = _MockProvider(
+            session_id="s1",
+            status_sequence=[_Session("s1", "error")],
+        )
+        session = self._make_session(provider)
+        _run(session.start())
+        state = _run(session.poll())
+        self.assertEqual(state, DispatchSessionState.DONE)
+
+    def test_poll_returns_running_when_session_not_visible_yet(self):
+        from capabilities.dispatch import DispatchSessionState
+        provider = _MockProvider(
+            session_id="s1",
+            status_sequence=[None, _Session("s1", "stopped")],
+        )
+        session = self._make_session(provider)
+        _run(session.start())
+        # First poll: session not in supervisor yet
+        state = _run(session.poll())
+        self.assertEqual(state, DispatchSessionState.RUNNING)
+
+    def test_run_drives_to_done_completed(self):
+        from capabilities.dispatch import DispatchSessionState
+        provider = _MockProvider(
+            session_id="s1",
+            status_sequence=[_Session("s1", "stopped")],
+        )
+        session = self._make_session(provider)
+        _run(session.start())
+        result = _run(session.run())
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(session.state, DispatchSessionState.DONE)
+
+    def test_run_drives_to_done_error(self):
+        from capabilities.dispatch import DispatchSessionState
+        provider = _MockProvider(
+            session_id="s1",
+            status_sequence=[_Session("s1", "error")],
+            log_output="crash log",
+        )
+        session = self._make_session(provider)
+        _run(session.start())
+        result = _run(session.run())
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["output"], "crash log")
+        self.assertEqual(session.state, DispatchSessionState.DONE)
+
+    def test_run_drives_to_needs_input(self):
+        from capabilities.dispatch import DispatchSessionState
+        provider = _MockProvider(
+            session_id="s1",
+            status_sequence=[_Session("s1", "running", needs_input=True)],
+        )
+        session = self._make_session(provider)
+        _run(session.start())
+        result = _run(session.run())
+        self.assertEqual(result["status"], "needs-input")
+        self.assertEqual(session.state, DispatchSessionState.NEEDS_INPUT)
+
+    def test_run_times_out_as_timed_out_state(self):
+        from capabilities.dispatch import DispatchSessionState
+        provider = _MockProvider(
+            session_id="s1",
+            status_sequence=[_Session("s1", "running")] * 100,
+        )
+        session = self._make_session(provider, timeout=0.005)
+        _run(session.start())
+        result = _run(session.run())
+        self.assertEqual(result["status"], "error")
+        self.assertIn("timeout", result["message"].lower())
+        self.assertEqual(session.state, DispatchSessionState.TIMED_OUT)
+
+
+class TestDispatchSessionOrphaned(unittest.TestCase):
+    """Test ORPHANED state: lease expired before terminal state."""
+
+    def setUp(self):
+        import session_owners
+        session_owners.clear()
+
+    def tearDown(self):
+        import session_owners
+        session_owners.clear()
+
+    def test_mark_orphaned_returns_error_artifact(self):
+        from capabilities.dispatch import DispatchSession, DispatchSessionState
+        provider = _MockProvider(
+            session_id="s-orphan",
+            status_sequence=[_Session("s-orphan", "running")],
+        )
+        session = DispatchSession(
+            "long task", "/repo", "p1",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        _run(session.start())
+        result = session.mark_orphaned()
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "dispatch timed out (orphaned)")
+        self.assertEqual(session.state, DispatchSessionState.ORPHANED)
+
+    def test_mark_orphaned_logs_session_id(self):
+        import logging
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(
+            session_id="s-orphan-log",
+            status_sequence=[_Session("s-orphan-log", "running")],
+        )
+        session = DispatchSession(
+            "long task", "/repo", "p1",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        _run(session.start())
+
+        with self.assertLogs("capabilities.dispatch", level=logging.WARNING) as cm:
+            session.mark_orphaned()
+
+        self.assertTrue(
+            any("s-orphan-log" in line and "orphaned" in line for line in cm.output),
+            msg=f"Expected orphan log with session id in: {cm.output}",
+        )
+
+    def test_mark_orphaned_deregisters_ownership(self):
+        import session_owners
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(
+            session_id="s-orphan-dereg",
+            status_sequence=[_Session("s-orphan-dereg", "running")],
+        )
+        session = DispatchSession(
+            "task", "/repo", "p-owner",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        _run(session.start())
+        # After start, owner should be registered.
+        self.assertTrue(session_owners.check("s-orphan-dereg", "p-owner"))
+        # After orphan, owner should be deregistered.
+        session.mark_orphaned()
+        self.assertFalse(session_owners.check("s-orphan-dereg", "p-owner"))
+
+    def test_completed_and_error_sessions_retain_ownership_after_run(self):
+        """Ownership is retained for completed/error to allow manage_agents cleanup."""
+        import session_owners
+        from capabilities.dispatch import DispatchSession
+
+        for status, label in [("stopped", "s-completed"), ("error", "s-error")]:
+            with self.subTest(status=status):
+                session_owners.clear()
+                provider = _MockProvider(
+                    session_id=label,
+                    status_sequence=[_Session(label, status)],
+                )
+                session = DispatchSession(
+                    "task", "/repo", "p-owner",
+                    provider=provider, poll_interval=0.001, timeout=5.0,
+                )
+                _run(session.start())
+                _run(session.run())
+                self.assertTrue(
+                    session_owners.check(label, "p-owner"),
+                    msg=f"Ownership should be retained after {status}",
+                )
+
+
+class TestDispatchSessionPollFetchesOnce(unittest.TestCase):
+    """Test that poll() fetches output exactly once per call."""
+
+    def setUp(self):
+        import session_owners
+        session_owners.clear()
+
+    def tearDown(self):
+        import session_owners
+        session_owners.clear()
+
+    def test_poll_fetches_logs_exactly_once_per_call(self):
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(
+            session_id="s1",
+            status_sequence=[
+                _Session("s1", "running"),
+                _Session("s1", "stopped"),
+            ],
+        )
+        session = DispatchSession(
+            "task", "/repo", "p1",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        _run(session.start())
+
+        # First poll tick — session still running, one get_logs call expected.
+        _run(session.poll())
+        self.assertEqual(len(provider.logs_calls), 1, "First poll should fetch logs exactly once")
+
+        # Second poll tick — session stopped, one more get_logs call expected.
+        _run(session.poll())
+        self.assertEqual(len(provider.logs_calls), 2, "Second poll should fetch logs exactly once more")
+
+    def test_poll_does_not_fetch_logs_when_session_not_visible(self):
+        """When session is None (not yet in supervisor), no get_logs call is made."""
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(
+            session_id="s1",
+            status_sequence=[None, _Session("s1", "stopped")],
+        )
+        session = DispatchSession(
+            "task", "/repo", "p1",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        _run(session.start())
+
+        # First poll — session not visible, no logs fetch.
+        _run(session.poll())
+        self.assertEqual(len(provider.logs_calls), 0, "No logs should be fetched when session is not visible")
+
+        # Second poll — session visible and terminal, one logs fetch.
+        _run(session.poll())
+        self.assertEqual(len(provider.logs_calls), 1, "Logs should be fetched once when session becomes visible")
+
+
+class TestDispatchSessionOwnerRegistration(unittest.TestCase):
+    """Test that owner registration/deregistration is correctly bracketed."""
+
+    def setUp(self):
+        import session_owners
+        session_owners.clear()
+
+    def tearDown(self):
+        import session_owners
+        session_owners.clear()
+
+    def test_owner_registered_after_start(self):
+        import session_owners
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(
+            session_id="s-reg",
+            status_sequence=[_Session("s-reg", "running")],
+        )
+        session = DispatchSession(
+            "task", "/repo", "p-reg",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        # Before start — not registered.
+        self.assertFalse(session_owners.check("s-reg", "p-reg"))
+        _run(session.start())
+        # After start — registered.
+        self.assertTrue(session_owners.check("s-reg", "p-reg"))
+
+    def test_owner_not_registered_before_start(self):
+        import session_owners
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(session_id="s-noreg", status_sequence=[])
+        session = DispatchSession(
+            "task", "/repo", "p-noreg",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        self.assertFalse(session_owners.check("s-noreg", "p-noreg"))
+
+    def test_owner_retained_after_completed_run(self):
+        """Ownership stays registered after run() completes (issue #55)."""
+        import session_owners
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(
+            session_id="s-retain",
+            status_sequence=[_Session("s-retain", "stopped")],
+        )
+        session = DispatchSession(
+            "task", "/repo", "p-retain",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        _run(session.start())
+        _run(session.run())
+        self.assertTrue(session_owners.check("s-retain", "p-retain"))
+
+    def test_owner_retained_after_needs_input(self):
+        """Ownership stays registered after needs-input (issue #55)."""
+        import session_owners
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(
+            session_id="s-ni",
+            status_sequence=[_Session("s-ni", "running", needs_input=True)],
+        )
+        session = DispatchSession(
+            "task", "/repo", "p-ni",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        _run(session.start())
+        _run(session.run())
+        self.assertTrue(session_owners.check("s-ni", "p-ni"))
+
+    def test_owner_deregistered_after_orphan(self):
+        """Ownership is removed when session is marked orphaned."""
+        import session_owners
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(
+            session_id="s-orphan",
+            status_sequence=[_Session("s-orphan", "running")],
+        )
+        session = DispatchSession(
+            "task", "/repo", "p-orphan",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+        )
+        _run(session.start())
+        self.assertTrue(session_owners.check("s-orphan", "p-orphan"))
+        session.mark_orphaned()
+        self.assertFalse(session_owners.check("s-orphan", "p-orphan"))
+
+
 if __name__ == "__main__":
     unittest.main()
