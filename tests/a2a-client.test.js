@@ -221,13 +221,14 @@ describe("post", () => {
     const fs = require("fs");
     const appendSpy = jest.spyOn(fs, "appendFileSync").mockImplementation(() => {});
     global.fetch = jest.fn().mockRejectedValue(new Error("network down"));
-    ({ post } = require("../src/a2a-client"));
+    const { post } = require("../src/a2a-client");
     await post("session-start", { sessionId: "s1" }, { sync: false });
-    await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => setImmediate(r));
     expect(appendSpy).toHaveBeenCalledWith(
       expect.stringContaining("aelli-cc.log"),
       expect.stringContaining("session-start")
     );
     appendSpy.mockRestore();
+    delete global.fetch;
   });
 });
