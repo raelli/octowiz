@@ -16,8 +16,6 @@ _SECRET = "test-secret"
 def _fresh_client():
     os.environ["OCTOWIZ_INBOUND_SECRET"] = _SECRET
     import importlib
-    import packages.advisor.state as _state_mod
-    importlib.reload(_state_mod)
     import packages.advisor.policy as _policy_mod
     importlib.reload(_policy_mod)
     import capabilities.advise as _adv_mod

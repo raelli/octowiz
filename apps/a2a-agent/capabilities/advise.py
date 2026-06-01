@@ -3,16 +3,17 @@ from typing import Dict, List, Optional
 
 from packages.advisor.policy import InvocationPolicy
 from packages.advisor.rules import RulesAdvisor
-from packages.advisor.state import store
+from packages.advisor.state import SessionStore
 
+_store = SessionStore()
 _advisor = RulesAdvisor()
 _policy = InvocationPolicy()
 
 
 async def handle_advise(event: Dict) -> Optional[Dict]:
-    store.record_event(event)
-    session = store.get_session(event.get("sessionId"))
-    results = await _advisor.advise_all(event, session, {"store": store})
+    _store.record_event(event)
+    session = _store.get_session(event.get("sessionId"))
+    results = await _advisor.advise_all(event, session, {"store": _store})
     decision = _policy.decide(results)
     if decision is None:
         return None
