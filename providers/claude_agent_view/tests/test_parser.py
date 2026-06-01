@@ -72,5 +72,61 @@ class TestParseSessions(unittest.TestCase):
         self.assertEqual(sessions[0].status, "some_future_status")
 
 
+class TestParseSessionsRealCliFormat(unittest.TestCase):
+    """Tests using the real `claude agents --json` field names (sessionId, cwd, startedAt)."""
+
+    REAL_SESSION = json.dumps([{
+        "pid": 12345,
+        "cwd": "/projects/myapp",
+        "kind": "background",
+        "startedAt": 1780281968489,
+        "sessionId": "e5694b8e-934e-4818-aeff-747298d771d3",
+        "name": "refactor auth",
+        "status": "idle",
+    }])
+
+    REAL_BUSY_SESSION = json.dumps([{
+        "sessionId": "abcd1234-0000-0000-0000-000000000000",
+        "status": "busy",
+        "cwd": "/repo",
+        "startedAt": 1780000000000,
+    }])
+
+    def test_parses_real_cli_session_id(self):
+        from providers.claude_agent_view.parser import parse_sessions
+        sessions = parse_sessions(self.REAL_SESSION)
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(sessions[0].id, "e5694b8e-934e-4818-aeff-747298d771d3")
+
+    def test_parses_idle_status(self):
+        from providers.claude_agent_view.parser import parse_sessions
+        sessions = parse_sessions(self.REAL_SESSION)
+        self.assertEqual(sessions[0].status, "idle")
+
+    def test_parses_busy_status_as_running(self):
+        from providers.claude_agent_view.parser import parse_sessions
+        sessions = parse_sessions(self.REAL_BUSY_SESSION)
+        self.assertEqual(sessions[0].status, "running")
+
+    def test_parses_cwd_as_repo(self):
+        from providers.claude_agent_view.parser import parse_sessions
+        sessions = parse_sessions(self.REAL_SESSION)
+        self.assertEqual(sessions[0].repo, "/projects/myapp")
+
+    def test_parses_started_at_as_created_at(self):
+        from providers.claude_agent_view.parser import parse_sessions
+        sessions = parse_sessions(self.REAL_SESSION)
+        self.assertEqual(sessions[0].created_at, "1780281968489")
+
+    def test_legacy_id_field_still_works(self):
+        """Mocked tests use 'id' not 'sessionId' — both must work."""
+        from providers.claude_agent_view.parser import parse_sessions
+        legacy = json.dumps([{"id": "bg-abc", "status": "running", "repoRoot": "/repo",
+                               "needsInput": False, "createdAt": "2026-05-30T08:00:00Z"}])
+        sessions = parse_sessions(legacy)
+        self.assertEqual(sessions[0].id, "bg-abc")
+        self.assertEqual(sessions[0].repo, "/repo")
+
+
 if __name__ == "__main__":
     unittest.main()
