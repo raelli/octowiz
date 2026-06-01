@@ -503,7 +503,14 @@ class TestDispatchSessionStateMachine(unittest.TestCase):
 
 
 class TestDispatchSessionOrphaned(unittest.TestCase):
-    """Test ORPHANED state: lease expired before terminal state."""
+    """Test ORPHANED state: session never observed by supervisor before deadline.
+
+    The discriminator between TIMED_OUT and ORPHANED:
+    - ORPHANED: get_status always returned None (supervisor never saw the session).
+      This indicates the A2A server restarted mid-poll and the lease is held but
+      the session is lost. mark_orphaned() is called from run().
+    - TIMED_OUT: session was observed at least once but did not complete in time.
+    """
 
     def setUp(self):
         import session_owners
@@ -513,11 +520,89 @@ class TestDispatchSessionOrphaned(unittest.TestCase):
         import session_owners
         session_owners.clear()
 
-    def test_mark_orphaned_returns_error_artifact(self):
+    def test_run_orphans_when_session_never_observed(self):
+        """ORPHANED: session is dispatched but supervisor never returns a non-None status."""
         from capabilities.dispatch import DispatchSession, DispatchSessionState
+        # Provider always returns None from get_status — session never observable.
         provider = _MockProvider(
             session_id="s-orphan",
-            status_sequence=[_Session("s-orphan", "running")],
+            status_sequence=[],  # StopIteration → None from _MockProvider.get_status
+        )
+        session = DispatchSession(
+            "long task", "/repo", "p1",
+            provider=provider, poll_interval=0.001, timeout=0.005,
+        )
+        _run(session.start())
+        result = _run(session.run())
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "dispatch timed out (orphaned)")
+        self.assertEqual(session.state, DispatchSessionState.ORPHANED)
+
+    def test_run_orphan_logs_session_id(self):
+        """ORPHANED run logs the session id with 'orphaned' in the message."""
+        import logging
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(
+            session_id="s-orphan-log",
+            status_sequence=[],
+        )
+        session = DispatchSession(
+            "long task", "/repo", "p1",
+            provider=provider, poll_interval=0.001, timeout=0.005,
+        )
+        _run(session.start())
+
+        with self.assertLogs("capabilities.dispatch", level=logging.WARNING) as cm:
+            _run(session.run())
+
+        self.assertTrue(
+            any("s-orphan-log" in line and "orphaned" in line for line in cm.output),
+            msg=f"Expected orphan log with session id in: {cm.output}",
+        )
+
+    def test_run_orphan_deregisters_ownership(self):
+        """ORPHANED: owner deregistered because session is unrecoverable."""
+        import session_owners
+        from capabilities.dispatch import DispatchSession
+        provider = _MockProvider(
+            session_id="s-orphan-dereg",
+            status_sequence=[],
+        )
+        session = DispatchSession(
+            "task", "/repo", "p-owner",
+            provider=provider, poll_interval=0.001, timeout=0.005,
+        )
+        _run(session.start())
+        # After start, owner should be registered.
+        self.assertTrue(session_owners.check("s-orphan-dereg", "p-owner"))
+        # After orphaned run, owner should be deregistered.
+        _run(session.run())
+        self.assertFalse(session_owners.check("s-orphan-dereg", "p-owner"))
+
+    def test_timed_out_when_observed_but_did_not_complete(self):
+        """TIMED_OUT: session was seen at least once but ran past deadline."""
+        from capabilities.dispatch import DispatchSession, DispatchSessionState
+        provider = _MockProvider(
+            session_id="s-timeout",
+            status_sequence=[_Session("s-timeout", "running")] * 100,
+        )
+        session = DispatchSession(
+            "task", "/repo", "p1",
+            provider=provider, poll_interval=0.001, timeout=0.005,
+        )
+        _run(session.start())
+        result = _run(session.run())
+        self.assertEqual(result["status"], "error")
+        self.assertIn("timeout", result["message"].lower())
+        self.assertNotEqual(result["message"], "dispatch timed out (orphaned)")
+        self.assertEqual(session.state, DispatchSessionState.TIMED_OUT)
+
+    def test_mark_orphaned_returns_error_artifact(self):
+        """mark_orphaned() helper returns the correct artifact directly."""
+        from capabilities.dispatch import DispatchSession, DispatchSessionState
+        provider = _MockProvider(
+            session_id="s-orphan-direct",
+            status_sequence=[_Session("s-orphan-direct", "running")],
         )
         session = DispatchSession(
             "long task", "/repo", "p1",
@@ -528,45 +613,6 @@ class TestDispatchSessionOrphaned(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["message"], "dispatch timed out (orphaned)")
         self.assertEqual(session.state, DispatchSessionState.ORPHANED)
-
-    def test_mark_orphaned_logs_session_id(self):
-        import logging
-        from capabilities.dispatch import DispatchSession
-        provider = _MockProvider(
-            session_id="s-orphan-log",
-            status_sequence=[_Session("s-orphan-log", "running")],
-        )
-        session = DispatchSession(
-            "long task", "/repo", "p1",
-            provider=provider, poll_interval=0.001, timeout=5.0,
-        )
-        _run(session.start())
-
-        with self.assertLogs("capabilities.dispatch", level=logging.WARNING) as cm:
-            session.mark_orphaned()
-
-        self.assertTrue(
-            any("s-orphan-log" in line and "orphaned" in line for line in cm.output),
-            msg=f"Expected orphan log with session id in: {cm.output}",
-        )
-
-    def test_mark_orphaned_deregisters_ownership(self):
-        import session_owners
-        from capabilities.dispatch import DispatchSession
-        provider = _MockProvider(
-            session_id="s-orphan-dereg",
-            status_sequence=[_Session("s-orphan-dereg", "running")],
-        )
-        session = DispatchSession(
-            "task", "/repo", "p-owner",
-            provider=provider, poll_interval=0.001, timeout=5.0,
-        )
-        _run(session.start())
-        # After start, owner should be registered.
-        self.assertTrue(session_owners.check("s-orphan-dereg", "p-owner"))
-        # After orphan, owner should be deregistered.
-        session.mark_orphaned()
-        self.assertFalse(session_owners.check("s-orphan-dereg", "p-owner"))
 
     def test_completed_and_error_sessions_retain_ownership_after_run(self):
         """Ownership is retained for completed/error to allow manage_agents cleanup."""
@@ -719,20 +765,21 @@ class TestDispatchSessionOwnerRegistration(unittest.TestCase):
         self.assertTrue(session_owners.check("s-ni", "p-ni"))
 
     def test_owner_deregistered_after_orphan(self):
-        """Ownership is removed when session is marked orphaned."""
+        """Ownership is removed when run() reaches the ORPHANED state."""
         import session_owners
         from capabilities.dispatch import DispatchSession
+        # Never-visible session → ORPHANED via run().
         provider = _MockProvider(
             session_id="s-orphan",
-            status_sequence=[_Session("s-orphan", "running")],
+            status_sequence=[],
         )
         session = DispatchSession(
             "task", "/repo", "p-orphan",
-            provider=provider, poll_interval=0.001, timeout=5.0,
+            provider=provider, poll_interval=0.001, timeout=0.005,
         )
         _run(session.start())
         self.assertTrue(session_owners.check("s-orphan", "p-orphan"))
-        session.mark_orphaned()
+        _run(session.run())
         self.assertFalse(session_owners.check("s-orphan", "p-orphan"))
 
 

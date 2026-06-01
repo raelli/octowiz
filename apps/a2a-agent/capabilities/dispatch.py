@@ -68,6 +68,13 @@ class DispatchSession:
         self._output: str = ""
         self._error_message: Optional[str] = None
         self._is_session_error: bool = False
+        # Tracks whether get_status has ever returned a non-None session object.
+        # A session that was never observed when the deadline elapses is ORPHANED
+        # (the lease was held but the supervisor never acknowledged the session —
+        # indicating the server restarted or the session was lost before it could
+        # be picked up). A session that was observed at least once but did not
+        # reach a terminal state within the deadline is TIMED_OUT.
+        self._ever_observed: bool = False
 
     async def start(self) -> None:
         """Start the Claude CLI session. Transitions PENDING -> RUNNING.
@@ -102,6 +109,9 @@ class DispatchSession:
         if session is None:
             # Session not yet visible in the supervisor — stay RUNNING.
             return DispatchSessionState.RUNNING
+
+        # Mark that we have successfully observed a real session object at least once.
+        self._ever_observed = True
 
         # Fetch output exactly once per poll tick.
         try:
@@ -162,7 +172,15 @@ class DispatchSession:
                     "output": self._output,
                 }
 
-        # Deadline elapsed — TIMED_OUT. Retain ownership for caller cleanup.
+        # Deadline elapsed. If the session was never observed by the supervisor
+        # (get_status always returned None), the lease is held but the session is
+        # lost — this is the ORPHANED state (e.g., server restarted mid-poll).
+        # If the session was observed at least once, it simply ran too long: TIMED_OUT.
+        if not self._ever_observed:
+            return self.mark_orphaned()
+
+        # TIMED_OUT — session was running but did not complete within the deadline.
+        # Retain ownership for caller cleanup.
         self.state = DispatchSessionState.TIMED_OUT
         return {
             "status": "error",
