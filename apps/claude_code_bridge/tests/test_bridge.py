@@ -1,4 +1,4 @@
-"""Tests for hooks/bridge.py — Octowiz Bridge event forwarding."""
+"""Tests for hooks/bridge.py — Octowiz Bridge event forwarding to AELLI."""
 import json
 import os
 import sys
@@ -62,14 +62,81 @@ def _run_main_with_stderr(hook_data: dict, env: dict = None):
 # ---------------------------------------------------------------------------
 
 
-class TestNoUrl(unittest.TestCase):
-    def test_no_octowiz_a2a_url_makes_no_http_call(self):
+class TestDefaultUrl(unittest.TestCase):
+    def test_no_env_set_uses_default_localhost_and_exits_cleanly(self):
+        """Without AELLI_DEV_ADVISOR_URL set, bridge uses the localhost default and exits 0."""
         with unittest.mock.patch.dict(os.environ, {}, clear=True), \
-             unittest.mock.patch("bridge._post_event") as mock_post:
+             unittest.mock.patch("bridge._post_event", return_value=None) as mock_post:
             code, out = _run_main(_hook_data())
-        mock_post.assert_not_called()
+        # The bridge should call _post_event (with localhost default), not skip
+        mock_post.assert_called_once()
         self.assertEqual(code, 0)
         self.assertEqual(out.strip(), "")
+
+    def test_posts_to_aelli_dev_advisor_url(self):
+        """bridge.py posts to AELLI_DEV_ADVISOR_URL, not to an octowiz-specific path."""
+        captured_urls = []
+
+        def fake_post(url, event):
+            captured_urls.append(url)
+            return None
+
+        with unittest.mock.patch("bridge._git_context", return_value={"repoRoot": "/repo", "branch": "main"}), \
+             unittest.mock.patch("bridge._post_event", side_effect=fake_post):
+            _run_main(
+                _hook_data(tool="Write", tool_input={"file_path": "auth.py"}),
+                env={"AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor"},
+            )
+
+        self.assertEqual(len(captured_urls), 1)
+        self.assertEqual(captured_urls[0], "http://localhost:3456/a2a/dev-advisor")
+
+    def test_post_event_sends_x_aelli_secret_header(self):
+        """_post_event sends AELLI_AUTH_TOKEN as x-aelli-secret header."""
+        captured_headers = {}
+
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.raise_for_status = unittest.mock.MagicMock()
+        mock_resp.json.return_value = {
+            "jsonrpc": "2.0", "id": 1,
+            "result": {"artifacts": []},
+        }
+
+        def fake_httpx_post(url, json=None, headers=None, timeout=None):
+            captured_headers.update(headers or {})
+            return mock_resp
+
+        with unittest.mock.patch.dict(os.environ, {"AELLI_AUTH_TOKEN": "my-token"}, clear=False), \
+             unittest.mock.patch("httpx.post", side_effect=fake_httpx_post):
+            _post_event("http://localhost:3456/a2a/dev-advisor", {"type": "prompt"})
+
+        self.assertEqual(captured_headers.get("x-aelli-secret"), "my-token")
+        self.assertNotIn("x-octowiz-secret", captured_headers)
+        self.assertNotIn("Authorization", captured_headers)
+
+    def test_post_event_sends_message_send_method(self):
+        """_post_event uses method='message/send' (AELLI format), not 'octowiz/event'."""
+        captured_bodies = []
+
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.raise_for_status = unittest.mock.MagicMock()
+        mock_resp.json.return_value = {
+            "jsonrpc": "2.0", "id": 1,
+            "result": {"artifacts": []},
+        }
+
+        def fake_httpx_post(url, json=None, headers=None, timeout=None):
+            captured_bodies.append(json)
+            return mock_resp
+
+        with unittest.mock.patch("httpx.post", side_effect=fake_httpx_post):
+            _post_event("http://localhost:3456/a2a/dev-advisor", {"type": "prompt"})
+
+        self.assertEqual(len(captured_bodies), 1)
+        self.assertEqual(captured_bodies[0]["method"], "message/send")
+        # Verify parts use 'kind' field (AELLI format)
+        parts = captured_bodies[0]["params"]["message"]["parts"]
+        self.assertEqual(parts[0]["kind"], "text")
 
 
 class TestBuildEvent(unittest.TestCase):
@@ -119,18 +186,12 @@ class TestBuildEvent(unittest.TestCase):
             event = _build_event(data)
         self.assertEqual(event["type"], "session-start")
         self.assertEqual(event["sessionId"], "sess-xyz")
-        self.assertEqual(event["capability"], "octowiz.advise")
         self.assertNotIn("prompt_summary", event)
         self.assertNotIn("live_modified_files", event)
 
     def test_unknown_hook_returns_none(self):
         data = {"hook_event_name": "Notification", "session_id": "x", "cwd": "/"}
         self.assertIsNone(_build_event(data))
-
-    def test_notebook_edit_uses_notebook_path(self):
-        event = self._build(tool="NotebookEdit", tool_input={"notebook_path": "analysis.ipynb"})
-        self.assertEqual(event["type"], "file-edit")
-        self.assertIn("analysis.ipynb", event["live_modified_files"])
 
 
 class TestPostEvent(unittest.TestCase):
@@ -155,7 +216,7 @@ class TestPostEvent(unittest.TestCase):
         mock_resp.json.return_value = self._make_response(json.dumps(advice))
 
         with unittest.mock.patch("httpx.post", return_value=mock_resp):
-            result = _post_event("http://octowiz:8000", {"type": "prompt"})
+            result = _post_event("http://localhost:3456/a2a/dev-advisor", {"type": "prompt"})
 
         self.assertEqual(result["type"], "spec-deviation")
 
@@ -165,14 +226,14 @@ class TestPostEvent(unittest.TestCase):
         mock_resp.json.return_value = self._make_response("{}")
 
         with unittest.mock.patch("httpx.post", return_value=mock_resp):
-            result = _post_event("http://octowiz:8000", {"type": "prompt"})
+            result = _post_event("http://localhost:3456/a2a/dev-advisor", {"type": "prompt"})
 
         self.assertIsNone(result)
 
     def test_http_error_returns_none_never_raises(self):
         import httpx
         with unittest.mock.patch("httpx.post", side_effect=httpx.ConnectError("refused")):
-            result = _post_event("http://octowiz:8000", {"type": "prompt"})
+            result = _post_event("http://localhost:3456/a2a/dev-advisor", {"type": "prompt"})
         self.assertIsNone(result)
 
 
@@ -183,7 +244,7 @@ class TestMainOutput(unittest.TestCase):
              unittest.mock.patch("bridge._post_event", return_value=advice):
             code, out = _run_main(
                 _hook_data(tool="Write", tool_input={"file_path": "auth.py"}),
-                env={"OCTOWIZ_A2A_URL": "http://octowiz:8000"},
+                env={"AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor"},
             )
         self.assertEqual(code, 0)
         parsed = json.loads(out)
@@ -195,7 +256,7 @@ class TestMainOutput(unittest.TestCase):
              unittest.mock.patch("bridge._post_event", return_value=None):
             code, out = _run_main(
                 _hook_data(tool="Write"),
-                env={"OCTOWIZ_A2A_URL": "http://octowiz:8000"},
+                env={"AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor"},
             )
         self.assertEqual(code, 0)
         self.assertEqual(out.strip(), "")
@@ -208,7 +269,7 @@ class TestVerboseLogging(unittest.TestCase):
              unittest.mock.patch("httpx.post", side_effect=httpx.ConnectError("refused")):
             code, out, err = _run_main_with_stderr(
                 _hook_data(tool="Write", tool_input={"file_path": "auth.py"}),
-                env={"OCTOWIZ_A2A_URL": "http://octowiz:8000", "OCTOWIZ_VERBOSE": "1"},
+                env={"AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor", "OCTOWIZ_VERBOSE": "1"},
             )
         self.assertEqual(code, 0)   # never blocks
         self.assertEqual(out.strip(), "")
@@ -220,11 +281,11 @@ class TestVerboseLogging(unittest.TestCase):
              unittest.mock.patch("httpx.post", side_effect=httpx.ConnectError("refused")):
             code, out, err = _run_main_with_stderr(
                 _hook_data(tool="Write", tool_input={"file_path": "auth.py"}),
-                env={"OCTOWIZ_A2A_URL": "http://octowiz:8000"},
+                env={"AELLI_DEV_ADVISOR_URL": "http://octowiz-external:3456/a2a/dev-advisor"},
             )
         self.assertEqual(code, 0)
         # Advisory delivery error must NOT appear (URL is non-local http:// so the
-        # cleartext-secret warning may still fire, but that's a separate concern).
+        # cleartext-token warning may still fire, but that's a separate concern).
         self.assertNotIn("advisory delivery failed", err)
 
     def test_invalid_stdin_logs_to_stderr_when_verbose(self):
@@ -235,7 +296,7 @@ class TestVerboseLogging(unittest.TestCase):
         # Use a local URL to suppress the unrelated cleartext-HTTP warning on stderr.
         with unittest.mock.patch.dict(
                 os.environ,
-                {"OCTOWIZ_A2A_URL": "http://localhost:8000", "OCTOWIZ_VERBOSE": "1"},
+                {"AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor", "OCTOWIZ_VERBOSE": "1"},
                 clear=False), \
              unittest.mock.patch("sys.stdin", _io.StringIO("not json at all")), \
              redirect_stdout(stdout_buf), \

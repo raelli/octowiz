@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/report-event.js\"",
+            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/apps/claude_code_bridge/bridge.py\"",
             "timeout": 10
           }
         ]
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/report-event.js\"",
+            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/apps/claude_code_bridge/bridge.py\"",
             "timeout": 10
           }
         ]
