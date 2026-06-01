@@ -80,3 +80,72 @@ class TestAuthWithNoSecretEnvVar(unittest.TestCase):
     def test_card_endpoint_accessible_when_secret_not_configured(self):
         resp = self.client.get("/a2a/octowiz/.well-known/agent.json")
         self.assertEqual(resp.status_code, 200)
+
+
+class TestPrincipalIsAlwaysDerivedServerSide(unittest.TestCase):
+    """Principal is always derived server-side from the authenticated secret via
+    _principal_from(). No client-supplied header can override this — doing so
+    would let any holder of the shared secret impersonate another principal and
+    hijack session ownership.
+    """
+
+    def setUp(self):
+        self.secret = "test-secret-abc"
+        os.environ["OCTOWIZ_INBOUND_SECRET"] = self.secret
+        import importlib
+        import main as m
+        importlib.reload(m)
+        self.client = TestClient(m.app)
+
+    def tearDown(self):
+        os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
+
+    def test_x_octowiz_principal_header_is_ignored(self):
+        """Sending x-octowiz-principal does not override the server-derived principal.
+        Authentication is still enforced; the header is silently ignored."""
+        body = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "params": {"message": {"parts": [{"text": '{"type": "ping", "capability": "octowiz.advise"}'}]}},
+        }
+        resp = self.client.post(
+            "/a2a/octowiz",
+            json=body,
+            headers={
+                "x-octowiz-secret": self.secret,
+                "x-octowiz-principal": "attacker-chosen-principal",
+            },
+        )
+        # Request succeeds (auth passes) but the spoofed header is not honoured.
+        self.assertEqual(resp.status_code, 200)
+
+    def test_principal_derived_from_secret_when_no_header(self):
+        """Without x-octowiz-principal, principal is derived from _principal_from()."""
+        body = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "params": {"message": {"parts": [{"text": '{"type": "ping", "capability": "octowiz.advise"}'}]}},
+        }
+        resp = self.client.post(
+            "/a2a/octowiz",
+            json=body,
+            headers={"x-octowiz-secret": self.secret},
+        )
+        self.assertEqual(resp.status_code, 200)
+
+    def test_explicit_principal_does_not_bypass_auth(self):
+        """Sending x-octowiz-principal with the wrong secret still returns 401."""
+        body = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "params": {"message": {"parts": [{"text": '{"type": "ping"}'}]}},
+        }
+        resp = self.client.post(
+            "/a2a/octowiz",
+            json=body,
+            headers={
+                "x-octowiz-secret": "wrong-secret",
+                "x-octowiz-principal": "explicit-principal-123",
+            },
+        )
+        self.assertEqual(resp.status_code, 401)

@@ -32,6 +32,18 @@ class ConflictIndex:
         for sessions in self._idx[repo_root].values():
             sessions.discard(session_id)
 
+    def drop_session(self, session_id: str) -> None:
+        """Remove all traces of a session from the index (called on session-end)."""
+        self._branches.pop(session_id, None)
+        for repo_files in self._idx.values():
+            empty_files = []
+            for f, sessions in repo_files.items():
+                sessions.discard(session_id)
+                if not sessions:
+                    empty_files.append(f)
+            for f in empty_files:
+                del repo_files[f]
+
     def find_conflicts(self, repo_root: str, files: List[str], own_session_id: str) -> List[Dict]:
         result = []
         repo_idx = self._idx.get(repo_root, {})
@@ -47,9 +59,9 @@ class ConflictIndex:
 
 
 class SessionStore:
-    def __init__(self):
+    def __init__(self, conflicts: Optional["ConflictIndex"] = None):
         self._sessions: Dict[str, Session] = {}
-        self._conflicts = ConflictIndex()
+        self._conflicts: ConflictIndex = conflicts if conflicts is not None else ConflictIndex()
 
     def get_session(self, session_id: Optional[str]) -> Optional[Session]:
         if not session_id:
@@ -75,3 +87,40 @@ class SessionStore:
 
     def find_conflicts(self, repo_root: str, files: List[str], session_id: str) -> List[Dict]:
         return self._conflicts.find_conflicts(repo_root, files, session_id)
+
+
+class StoreRegistry:
+    """Registry of per-session SessionStore instances sharing one ConflictIndex.
+
+    The ConflictIndex must be shared across sessions so that cross-session
+    file-conflict detection works correctly. Only the per-session event lists
+    (BranchDrift, SpecDeviation) are isolated per session store.
+    """
+
+    def __init__(self):
+        self._stores: Dict[str, SessionStore] = {}
+        self._conflicts = ConflictIndex()  # shared across all sessions in this registry
+
+    def get(self, session_id: str) -> SessionStore:
+        """Return the store for session_id, creating one if needed."""
+        if session_id not in self._stores:
+            self._stores[session_id] = SessionStore(conflicts=self._conflicts)
+        return self._stores[session_id]
+
+    def drop(self, session_id: str) -> None:
+        """Remove the store for session_id and purge it from the conflict index."""
+        if session_id in self._stores:
+            del self._stores[session_id]
+        self._conflicts.drop_session(session_id)
+
+    def clear(self) -> None:
+        """Drop all stores and reset the conflict index (for testing)."""
+        self._stores.clear()
+        self._conflicts = ConflictIndex()
+
+    def __len__(self) -> int:
+        return len(self._stores)
+
+
+# Module-level default registry: one registry per process, stores are per-session.
+_registry = StoreRegistry()
