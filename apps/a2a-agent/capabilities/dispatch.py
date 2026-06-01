@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 import session_owners
 from path_guard import validate_cwd
+from providers.claude_agent_view.status import is_terminal, is_error
 
 _DEFAULT_POLL_INTERVAL = float(os.environ.get("OCTOWIZ_DISPATCH_POLL_INTERVAL", "5"))
 _DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "300"))
@@ -76,9 +77,7 @@ async def handle_dispatch(
                 output = ""
             return {"status": "needs-input", "session_id": session_id, "output": output}
 
-        # "idle" is the real terminal state emitted by `claude agents --json`.
-        # "stopped" is kept for backward compatibility with provider mocks in tests.
-        if session.status in ("stopped", "idle"):
+        if is_terminal(session.status):
             try:
                 output = await _loop.run_in_executor(None, provider.get_logs, session_id)
             except Exception:
@@ -86,7 +85,7 @@ async def handle_dispatch(
             # Keep ownership so caller can still run manage_agents logs/rm (issue #55).
             return {"status": "completed", "session_id": session_id, "output": output}
 
-        if session.status == "error":
+        if is_error(session.status):
             try:
                 output = await _loop.run_in_executor(None, provider.get_logs, session_id)
             except Exception:
