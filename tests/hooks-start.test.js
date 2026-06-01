@@ -84,33 +84,32 @@ describe("hooks/scripts/start.js — subscriber spawn", () => {
     delete process.env.AELLI_AUTH_TOKEN;
   });
 
-  it("spawns session-subscriber.js detached with correct PTY_SESSION_ID", async () => {
+  it("does not spawn session-subscriber.js (endpoint absent)", async () => {
     const { handleStart } = require("../hooks/scripts/start");
     await handleStart({ session_id: "s1", cwd: "/repo" });
-    expect(spawnMock).toHaveBeenCalledWith(
-      process.execPath,
-      [expect.stringContaining("session-subscriber.js")],
-      expect.objectContaining({
-        detached: true,
-        env: expect.objectContaining({ PTY_SESSION_ID: "s1" }),
-      })
+    const subscriberSpawn = spawnMock.mock.calls.find(
+      (args) => String(args[1]?.[0]).includes("session-subscriber.js")
     );
+    expect(subscriberSpawn).toBeUndefined();
   });
 
-  it("writes PID file to cache dir", async () => {
+  it("does not write PID file for subscriber (not spawned)", async () => {
     const { handleStart } = require("../hooks/scripts/start");
     await handleStart({ session_id: "s1", cwd: "/repo" });
-    expect(writeFileSyncMock).toHaveBeenCalledWith(
-      expect.stringContaining("s1.pid"),
-      "1234"
+    const pidWrite = writeFileSyncMock.mock.calls.find(
+      (args) => String(args[0]).includes("s1.pid")
     );
+    expect(pidWrite).toBeUndefined();
   });
 
-  it("spawns subscriber even when post() rejects", async () => {
+  it("does not spawn subscriber even when post() rejects", async () => {
     const { post: mockPost } = require("../src/a2a-client");
     mockPost.mockRejectedValueOnce(new Error("AELLI unreachable"));
     const { handleStart } = require("../hooks/scripts/start");
     await handleStart({ session_id: "s1", cwd: "/repo" });
-    expect(spawnMock).toHaveBeenCalled();
+    const subscriberSpawn = spawnMock.mock.calls.find(
+      (args) => String(args[1]?.[0]).includes("session-subscriber.js")
+    );
+    expect(subscriberSpawn).toBeUndefined();
   });
 });

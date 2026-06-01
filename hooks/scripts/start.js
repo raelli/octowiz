@@ -80,7 +80,8 @@ async function handleStart(input) {
     appendLog(`[start] session-start post failed: ${e?.message ?? e}`)
   );
 
-  spawnSubscriber(sessionId);
+  // spawnSubscriber disabled: AELLI has no /a2a/tasks/subscribe endpoint yet.
+  // Re-enable when per-session SSE push is wired (see src/session-subscriber.js).
 }
 
 if (require.main === module) {
