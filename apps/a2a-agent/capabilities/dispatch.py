@@ -76,7 +76,9 @@ async def handle_dispatch(
                 output = ""
             return {"status": "needs-input", "session_id": session_id, "output": output}
 
-        if session.status == "stopped":
+        # "idle" is the real terminal state emitted by `claude agents --json`.
+        # "stopped" is kept for backward compatibility with provider mocks in tests.
+        if session.status in ("stopped", "idle"):
             try:
                 output = await _loop.run_in_executor(None, provider.get_logs, session_id)
             except Exception:

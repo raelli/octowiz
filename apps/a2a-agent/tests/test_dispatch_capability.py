@@ -149,6 +149,49 @@ class TestDispatchHappyPaths(unittest.TestCase):
         self.assertEqual(provider.dispatched_cwd, "/projects/myapp")
 
 
+class TestDispatchIdleTerminalState(unittest.TestCase):
+    """Verify that the real claude CLI status 'idle' is treated as completed."""
+
+    def setUp(self):
+        import session_owners
+        session_owners.clear()
+
+    def tearDown(self):
+        import session_owners
+        session_owners.clear()
+
+    def test_idle_status_returns_completed(self):
+        from capabilities.dispatch import handle_dispatch
+        provider = _MockProvider(
+            session_id="s-idle",
+            status_sequence=[_Session("s-idle", "idle")],
+            log_output="task finished",
+        )
+        result = _run(handle_dispatch(
+            {"task": "echo hi", "cwd": "/repo"},
+            provider=provider, **_FAST,
+        ))
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["session_id"], "s-idle")
+        self.assertEqual(result["output"], "task finished")
+
+    def test_busy_status_keeps_polling(self):
+        from capabilities.dispatch import handle_dispatch
+        provider = _MockProvider(
+            session_id="s-busy",
+            status_sequence=[
+                _Session("s-busy", "busy"),
+                _Session("s-busy", "busy"),
+                _Session("s-busy", "idle"),
+            ],
+        )
+        result = _run(handle_dispatch(
+            {"task": "echo hi", "cwd": "/repo"},
+            provider=provider, **_FAST,
+        ))
+        self.assertEqual(result["status"], "completed")
+
+
 class TestDispatchValidation(unittest.TestCase):
 
     def test_missing_task_returns_error(self):
