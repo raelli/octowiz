@@ -75,6 +75,3 @@ class SessionStore:
 
     def find_conflicts(self, repo_root: str, files: List[str], session_id: str) -> List[Dict]:
         return self._conflicts.find_conflicts(repo_root, files, session_id)
-
-
-store = SessionStore()
