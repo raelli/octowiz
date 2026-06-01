@@ -66,7 +66,6 @@ class DispatchSession:
         self.session_id: Optional[str] = None
         self.state: DispatchSessionState = DispatchSessionState.PENDING
         self._output: str = ""
-        self._error_message: Optional[str] = None
         self._is_session_error: bool = False
         # Tracks whether get_status has ever returned a non-None session object.
         # A session that was never observed when the deadline elapses is ORPHANED
@@ -87,7 +86,7 @@ class DispatchSession:
             None, self._provider.dispatch, self.task, self.cwd
         )
         if not session_id:
-            raise RuntimeError("session failed to start: no session ID returned")
+            raise RuntimeError("no session ID returned")
 
         self.session_id = session_id
         # Register owner after session ID is known.
@@ -139,9 +138,10 @@ class DispatchSession:
     async def run(self) -> Dict:
         """Drive the session to a terminal state. Returns the result artifact.
 
-        Owner registration happens in start(); deregistration happens here
-        only for ORPHANED and TIMED_OUT states. DONE and NEEDS_INPUT retain
-        ownership so the caller can still invoke manage_agents logs/rm (issue #55).
+        Owner registration happens in start(); deregistration happens only
+        for ORPHANED (via mark_orphaned()). TIMED_OUT, DONE, and NEEDS_INPUT
+        all retain ownership so the caller can still invoke manage_agents
+        logs/rm (issue #55).
         """
         deadline = time.monotonic() + self._timeout
 
@@ -202,7 +202,7 @@ class DispatchSession:
         )
         if self.session_id:
             session_owners.deregister(self.session_id)
-        return {"status": "error", "message": "dispatch timed out (orphaned)"}
+        return {"status": "error", "session_id": self.session_id, "message": "dispatch timed out (orphaned)"}
 
 
 async def handle_dispatch(
