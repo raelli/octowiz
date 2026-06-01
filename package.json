@@ -1,6 +1,6 @@
 {
   "name": "octowiz",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "Octowiz — AELLI's coding agent: monitors Claude Code sessions and executes sandboxed tasks",
   "main": "index.js",
   "files": [
