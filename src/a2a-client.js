@@ -17,7 +17,7 @@ function isLocalhost(urlStr) {
 
 // AELLI_LITELLM_BASE: route through LiteLLM A2A gateway
 // AELLI_DEV_ADVISOR_URL: direct call to dev-advisor (local default)
-const LITELLM_BASE = process.env.AELLI_LITELLM_BASE || "";
+const LITELLM_BASE = (process.env.AELLI_LITELLM_BASE || "").replace(/\/+$/, "");
 const DEV_ADVISOR_URL =
   process.env.AELLI_DEV_ADVISOR_URL || "http://localhost:3456/a2a/dev-advisor";
 const ROUTER_URL = process.env.AELLI_ROUTER_URL
@@ -257,6 +257,11 @@ async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
 }
 
 // Synchronous routing decision — returns { router, tier, model, workflow } or null (fail-open).
+//
+// The router endpoint emits an SSE stream terminated by `data: [DONE]`.
+// We use parseSseEvents() for correct multi-line / CRLF handling, skip preamble
+// events whose data can't be parsed as JSON, skip the sentinel `[DONE]` line,
+// and return the first successfully parsed object (the routing decision).
 async function route(taskKind, data = {}, { timeoutMs = 2000 } = {}) {
   if (!ROUTER_URL) return null;
   const ctrl = new AbortController();
@@ -274,11 +279,17 @@ async function route(taskKind, data = {}, { timeoutMs = 2000 } = {}) {
         }) }] } },
       }),
     });
-    // Router returns SSE — parse first data event
     const text = await res.text();
-    const match = text.match(/^data: (.+)$/m);
-    if (!match) return null;
-    return JSON.parse(match[1]);
+    if (!text) return null;
+    // Ensure the buffer is terminated with a blank line so parseSseEvents emits
+    // the last event (router often sends a single event without a trailing \n\n).
+    const buf = text.endsWith("\n\n") ? text : text + "\n\n";
+    const { events } = parseSseEvents(buf);
+    for (const { data: raw } of events) {
+      if (!raw || raw === "[DONE]") continue;
+      try { return JSON.parse(raw); } catch { /* skip non-JSON / preamble lines */ }
+    }
+    return null;
   } catch (err) {
     appendLog(`[route:${taskKind}] fail-open: ${err?.message ?? err}`);
     return null;

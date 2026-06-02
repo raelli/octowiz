@@ -175,7 +175,8 @@ def _resolve_router_url() -> Optional[str]:
 
 
 def _route_event(task_kind: str, data: Dict) -> None:
-    """Fire-and-forget routing decision — logs result; never blocks or raises."""
+    """Bounded-blocking routing call — blocks up to timeout=2s, then returns silently (fail-open).
+    Logs the routing decision via OCTOWIZ_VERBOSE when available. Never raises."""
     url = _resolve_router_url()
     if not url:
         return

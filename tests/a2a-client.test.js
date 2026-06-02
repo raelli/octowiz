@@ -378,4 +378,65 @@ describe("route", () => {
     expect(inner.content).toBe("hello");
     expect(inner.fileCount).toBe(3);
   });
+
+  it("edge: returns null when response body is empty", async () => {
+    jest.resetModules();
+    process.env.AELLI_ROUTER_URL = "http://localhost:4001/a2a/aelli-router/message/send";
+    global.fetch = jest.fn().mockResolvedValue({ text: async () => "" });
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", {});
+    expect(result).toBeNull();
+  });
+
+  it("edge: skips [DONE] sentinel and returns null when it is the only data line", async () => {
+    jest.resetModules();
+    process.env.AELLI_ROUTER_URL = "http://localhost:4001/a2a/aelli-router/message/send";
+    global.fetch = jest.fn().mockResolvedValue({
+      text: async () => "data: [DONE]\n\n",
+    });
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", {});
+    expect(result).toBeNull();
+  });
+
+  it("edge: skips preamble event then returns decision from second data event", async () => {
+    jest.resetModules();
+    process.env.AELLI_ROUTER_URL = "http://localhost:4001/a2a/aelli-router/message/send";
+    const decision = { router: "aelli", tier: "standard", model: "gpt-4o", workflow: "default" };
+    global.fetch = jest.fn().mockResolvedValue({
+      // First event has non-JSON data (preamble); second carries the decision
+      text: async () => `event: ping\ndata: keepalive\n\ndata: ${JSON.stringify(decision)}\n\ndata: [DONE]\n\n`,
+    });
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", {});
+    expect(result).toEqual(decision);
+  });
+
+  it("edge: handles real [DONE] + decision pattern (decision before [DONE])", async () => {
+    jest.resetModules();
+    process.env.AELLI_ROUTER_URL = "http://localhost:4001/a2a/aelli-router/message/send";
+    const decision = { router: "aelli", tier: "fast", model: "gpt-4o-mini", workflow: "default" };
+    global.fetch = jest.fn().mockResolvedValue({
+      text: async () => `data: ${JSON.stringify(decision)}\n\ndata: [DONE]\n\n`,
+    });
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", {});
+    expect(result).toEqual(decision);
+  });
+
+  it("edge: LITELLM_BASE with trailing slash produces clean router URL", async () => {
+    jest.resetModules();
+    process.env.AELLI_LITELLM_BASE = "http://localhost:4000/";
+    delete process.env.AELLI_ROUTER_URL;
+    const decision = { router: "aelli", tier: "fast", model: "gpt-4o-mini", workflow: "default" };
+    global.fetch = jest.fn().mockResolvedValue({
+      text: async () => `data: ${JSON.stringify(decision)}\n\n`,
+    });
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", {});
+    expect(result).toEqual(decision);
+    const [url] = global.fetch.mock.calls[0];
+    // Must not contain a double-slash before /a2a/
+    expect(url).toBe("http://localhost:4000/a2a/aelli-router/message/send");
+  });
 });

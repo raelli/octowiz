@@ -390,6 +390,17 @@ class TestResolveRouterUrl(unittest.TestCase):
             result = _resolve_router_url()
         self.assertEqual(result, "http://explicit-router/route")
 
+    def test_litellm_base_with_trailing_slash_produces_clean_router_url(self):
+        """Trailing slash on LITELLM_BASE must not produce a double-slash in the derived URL."""
+        with unittest.mock.patch.dict(
+            os.environ,
+            {"AELLI_LITELLM_BASE": "http://localhost:4000/", "AELLI_ROUTER_URL": ""},
+            clear=False,
+        ):
+            result = _resolve_router_url()
+        self.assertEqual(result, "http://localhost:4000/a2a/aelli-router/message/send")
+        self.assertNotIn("//a2a", result)
+
 
 class TestRouteEvent(unittest.TestCase):
     def tearDown(self):
