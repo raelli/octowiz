@@ -163,6 +163,52 @@ def _resolve_advisor_url() -> str:
     return os.environ.get("AELLI_DEV_ADVISOR_URL", "http://localhost:3456/a2a/dev-advisor").rstrip("/")
 
 
+def _resolve_router_url() -> Optional[str]:
+    """Mirror ROUTER_URL resolution in src/a2a-client.js."""
+    router_url = os.environ.get("AELLI_ROUTER_URL", "").rstrip("/")
+    if router_url:
+        return router_url
+    litellm_base = os.environ.get("AELLI_LITELLM_BASE", "").rstrip("/")
+    if litellm_base:
+        return f"{litellm_base}/a2a/aelli-router/message/send"
+    return None
+
+
+def _route_event(task_kind: str, data: Dict) -> None:
+    """Fire-and-forget routing decision — logs result; never blocks or raises."""
+    url = _resolve_router_url()
+    if not url:
+        return
+    body = {
+        "jsonrpc": "2.0",
+        "method": "message/send",
+        "params": {
+            "message": {
+                "parts": [{"kind": "text", "text": json.dumps({"type": "route", "taskKind": task_kind, **data})}],
+            }
+        },
+    }
+    headers = {}
+    token = os.environ.get("AELLI_AUTH_TOKEN", "")
+    if token:
+        if os.environ.get("AELLI_LITELLM_BASE", ""):
+            headers["Authorization"] = f"Bearer {token}"
+        else:
+            headers["x-aelli-secret"] = token
+    try:
+        import httpx
+        resp = httpx.post(url, json=body, headers=headers, timeout=2)
+        resp.raise_for_status()
+        text = resp.text
+        import re
+        m = re.search(r"^data: (.+)$", text, re.MULTILINE)
+        if m:
+            decision = json.loads(m.group(1))
+            _verbose_log(f"[router] {json.dumps(decision)}")
+    except Exception as exc:
+        _verbose_log(f"[route:{task_kind}] fail-open: {exc}")
+
+
 def main() -> int:
     url = _resolve_advisor_url()
 
@@ -192,6 +238,13 @@ def main() -> int:
     event = _build_event(data)
     if event is None:
         return 0
+
+    # Fire routing decision alongside advisory for UserPromptSubmit events (fail-open).
+    if data.get("hook_event_name") == "UserPromptSubmit":
+        _route_event("feature", {
+            "content": event.get("prompt_summary", ""),
+            "fileCount": len(event.get("live_modified_files", [])),
+        })
 
     advice = _post_event(url, event)
     if advice:

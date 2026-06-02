@@ -252,3 +252,130 @@ describe("post", () => {
     delete global.fetch;
   });
 });
+
+describe("route", () => {
+  beforeEach(() => {
+    jest.resetModules();
+    delete process.env.AELLI_ROUTER_URL;
+    delete process.env.AELLI_LITELLM_BASE;
+    delete process.env.AELLI_AUTH_TOKEN;
+  });
+
+  afterEach(() => {
+    delete process.env.AELLI_ROUTER_URL;
+    delete process.env.AELLI_LITELLM_BASE;
+    delete process.env.AELLI_AUTH_TOKEN;
+    delete global.fetch;
+  });
+
+  it("fail-open: returns null when ROUTER_URL is not set (no AELLI_ROUTER_URL, no AELLI_LITELLM_BASE)", async () => {
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", { content: "hello" });
+    expect(result).toBeNull();
+  });
+
+  it("fail-open: returns null and does not call fetch when ROUTER_URL is unset", async () => {
+    global.fetch = jest.fn();
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", {});
+    expect(result).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("happy path: parses first SSE data line and returns parsed object", async () => {
+    jest.resetModules();
+    process.env.AELLI_ROUTER_URL = "http://localhost:4001/a2a/aelli-router/message/send";
+    const decision = { router: "aelli", tier: "standard", model: "gpt-4o", workflow: "default" };
+    global.fetch = jest.fn().mockResolvedValue({
+      text: async () => `data: ${JSON.stringify(decision)}\n\n`,
+    });
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", { content: "fix the bug" });
+    expect(result).toEqual(decision);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toBe("http://localhost:4001/a2a/aelli-router/message/send");
+    expect(init.method).toBe("POST");
+  });
+
+  it("happy path: uses LITELLM_BASE to derive ROUTER_URL when AELLI_ROUTER_URL not set", async () => {
+    jest.resetModules();
+    process.env.AELLI_LITELLM_BASE = "http://localhost:4000";
+    delete process.env.AELLI_ROUTER_URL;
+    const decision = { router: "aelli", tier: "fast", model: "gpt-4o-mini", workflow: "default" };
+    global.fetch = jest.fn().mockResolvedValue({
+      text: async () => `data: ${JSON.stringify(decision)}\n`,
+    });
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", {});
+    expect(result).toEqual(decision);
+    const [url] = global.fetch.mock.calls[0];
+    expect(url).toBe("http://localhost:4000/a2a/aelli-router/message/send");
+  });
+
+  it("happy path: returns null when SSE response has no data: line", async () => {
+    jest.resetModules();
+    process.env.AELLI_ROUTER_URL = "http://localhost:4001/a2a/aelli-router/message/send";
+    global.fetch = jest.fn().mockResolvedValue({
+      text: async () => "event: ping\n\n",
+    });
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", {});
+    expect(result).toBeNull();
+  });
+
+  it("fail-open: returns null on fetch error (ECONNREFUSED)", async () => {
+    jest.resetModules();
+    process.env.AELLI_ROUTER_URL = "http://localhost:4001/a2a/aelli-router/message/send";
+    global.fetch = jest.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", {}, { timeoutMs: 200 });
+    expect(result).toBeNull();
+  });
+
+  it("fail-open: returns null on timeout", async () => {
+    jest.resetModules();
+    process.env.AELLI_ROUTER_URL = "http://localhost:4001/a2a/aelli-router/message/send";
+    global.fetch = jest.fn().mockImplementation((_url, init) => new Promise((_, reject) => {
+      if (init?.signal) {
+        init.signal.addEventListener("abort", () =>
+          reject(new DOMException("Aborted", "AbortError"))
+        );
+      }
+    }));
+    const { route } = require("../src/a2a-client");
+    const result = await route("feature", {}, { timeoutMs: 50 });
+    expect(result).toBeNull();
+  }, 2000);
+
+  it("sends auth header when AELLI_AUTH_TOKEN + AELLI_LITELLM_BASE are set", async () => {
+    jest.resetModules();
+    process.env.AELLI_ROUTER_URL = "http://localhost:4001/a2a/aelli-router/message/send";
+    process.env.AELLI_AUTH_TOKEN = "my-token";
+    process.env.AELLI_LITELLM_BASE = "http://localhost:4000";
+    global.fetch = jest.fn().mockResolvedValue({
+      text: async () => 'data: {"tier":"fast"}\n',
+    });
+    const { route } = require("../src/a2a-client");
+    await route("feature", {});
+    const [, init] = global.fetch.mock.calls[0];
+    expect(init.headers["Authorization"]).toBe("Bearer my-token");
+  });
+
+  it("embeds taskKind and spread data inside the JSON-RPC body", async () => {
+    jest.resetModules();
+    process.env.AELLI_ROUTER_URL = "http://localhost:4001/a2a/aelli-router/message/send";
+    global.fetch = jest.fn().mockResolvedValue({
+      text: async () => 'data: {"tier":"standard"}\n',
+    });
+    const { route } = require("../src/a2a-client");
+    await route("feature", { content: "hello", fileCount: 3 });
+    const [, init] = global.fetch.mock.calls[0];
+    const rpc = JSON.parse(init.body);
+    const inner = JSON.parse(rpc.params.message.parts[0].text);
+    expect(inner.type).toBe("route");
+    expect(inner.taskKind).toBe("feature");
+    expect(inner.content).toBe("hello");
+    expect(inner.fileCount).toBe(3);
+  });
+});

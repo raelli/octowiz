@@ -20,6 +20,8 @@ function isLocalhost(urlStr) {
 const LITELLM_BASE = process.env.AELLI_LITELLM_BASE || "";
 const DEV_ADVISOR_URL =
   process.env.AELLI_DEV_ADVISOR_URL || "http://localhost:3456/a2a/dev-advisor";
+const ROUTER_URL = process.env.AELLI_ROUTER_URL
+  || (LITELLM_BASE ? `${LITELLM_BASE}/a2a/aelli-router/message/send` : null);
 
 // Warn when sending credentials over non-localhost plain HTTP
 if (AUTH_TOKEN) {
@@ -254,4 +256,35 @@ async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
   }
 }
 
-module.exports = { subscribe, subscribeToQueue, post, parseSseEvents, updateTask, _connectSSE };
+// Synchronous routing decision — returns { router, tier, model, workflow } or null (fail-open).
+async function route(taskKind, data = {}, { timeoutMs = 2000 } = {}) {
+  if (!ROUTER_URL) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(ROUTER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...makeAuthHeaders() },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'message/send',
+        params: { message: { parts: [{ kind: 'text', text: JSON.stringify({
+          type: 'route', taskKind, ...data
+        }) }] } },
+      }),
+    });
+    // Router returns SSE — parse first data event
+    const text = await res.text();
+    const match = text.match(/^data: (.+)$/m);
+    if (!match) return null;
+    return JSON.parse(match[1]);
+  } catch (err) {
+    appendLog(`[route:${taskKind}] fail-open: ${err?.message ?? err}`);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+module.exports = { subscribe, subscribeToQueue, post, route, parseSseEvents, updateTask, _connectSSE };

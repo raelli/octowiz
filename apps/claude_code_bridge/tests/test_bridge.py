@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from bridge import _build_event, _post_event, main
+from bridge import _build_event, _post_event, _resolve_router_url, _route_event, main
 
 
 def _hook_data(hook="PostToolUse", tool="Write", tool_input=None, **extra):
@@ -345,3 +345,140 @@ class TestVerboseLogging(unittest.TestCase):
             code = main()
         self.assertEqual(code, 0)
         self.assertIn("could not parse stdin", stderr_buf.getvalue())
+
+
+class TestResolveRouterUrl(unittest.TestCase):
+    def setUp(self):
+        # Ensure a clean env for each test
+        for key in ("AELLI_ROUTER_URL", "AELLI_LITELLM_BASE"):
+            os.environ.pop(key, None)
+
+    def tearDown(self):
+        for key in ("AELLI_ROUTER_URL", "AELLI_LITELLM_BASE"):
+            os.environ.pop(key, None)
+
+    def test_returns_none_when_no_env_set(self):
+        with unittest.mock.patch.dict(os.environ, {}, clear=True):
+            # Remove both keys explicitly
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("AELLI_ROUTER_URL", "AELLI_LITELLM_BASE")}
+            with unittest.mock.patch.dict(os.environ, env, clear=True):
+                result = _resolve_router_url()
+        self.assertIsNone(result)
+
+    def test_returns_aelli_router_url_directly_when_set(self):
+        with unittest.mock.patch.dict(os.environ, {"AELLI_ROUTER_URL": "http://router:5000/route"}, clear=False):
+            result = _resolve_router_url()
+        self.assertEqual(result, "http://router:5000/route")
+
+    def test_derives_router_url_from_litellm_base(self):
+        with unittest.mock.patch.dict(
+            os.environ,
+            {"AELLI_LITELLM_BASE": "http://localhost:4000", "AELLI_ROUTER_URL": ""},
+            clear=False,
+        ):
+            result = _resolve_router_url()
+        self.assertEqual(result, "http://localhost:4000/a2a/aelli-router/message/send")
+
+    def test_aelli_router_url_takes_precedence_over_litellm_base(self):
+        with unittest.mock.patch.dict(
+            os.environ,
+            {"AELLI_ROUTER_URL": "http://explicit-router/route",
+             "AELLI_LITELLM_BASE": "http://gateway:4000"},
+            clear=False,
+        ):
+            result = _resolve_router_url()
+        self.assertEqual(result, "http://explicit-router/route")
+
+
+class TestRouteEvent(unittest.TestCase):
+    def tearDown(self):
+        for key in ("AELLI_ROUTER_URL", "AELLI_LITELLM_BASE", "AELLI_AUTH_TOKEN"):
+            os.environ.pop(key, None)
+
+    def test_does_nothing_when_router_url_not_set(self):
+        """_route_event is a no-op when _resolve_router_url returns None — never raises."""
+        with unittest.mock.patch("bridge._resolve_router_url", return_value=None), \
+             unittest.mock.patch("httpx.post") as mock_post:
+            _route_event("feature", {"content": "hello", "fileCount": 0})
+        mock_post.assert_not_called()
+
+    def test_posts_to_router_url_when_set(self):
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.raise_for_status = unittest.mock.MagicMock()
+        mock_resp.text = 'data: {"router":"aelli","tier":"fast"}\n'
+
+        with unittest.mock.patch(
+            "bridge._resolve_router_url",
+            return_value="http://localhost:4000/a2a/aelli-router/message/send",
+        ), unittest.mock.patch("httpx.post", return_value=mock_resp) as mock_post:
+            _route_event("feature", {"content": "fix auth", "fileCount": 2})
+
+        mock_post.assert_called_once()
+        call_kwargs = mock_post.call_args
+        self.assertEqual(call_kwargs[0][0], "http://localhost:4000/a2a/aelli-router/message/send")
+
+    def test_embeds_task_kind_and_data_in_payload(self):
+        captured_bodies = []
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.raise_for_status = unittest.mock.MagicMock()
+        mock_resp.text = 'data: {"tier":"standard"}\n'
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            captured_bodies.append(json)
+            return mock_resp
+
+        with unittest.mock.patch(
+            "bridge._resolve_router_url",
+            return_value="http://localhost:4000/a2a/aelli-router/message/send",
+        ), unittest.mock.patch("httpx.post", side_effect=fake_post):
+            _route_event("feature", {"content": "hello", "fileCount": 3})
+
+        self.assertEqual(len(captured_bodies), 1)
+        inner = json.loads(captured_bodies[0]["params"]["message"]["parts"][0]["text"])
+        self.assertEqual(inner["type"], "route")
+        self.assertEqual(inner["taskKind"], "feature")
+        self.assertEqual(inner["content"], "hello")
+        self.assertEqual(inner["fileCount"], 3)
+
+    def test_fail_open_on_network_error(self):
+        """_route_event never raises on connection failure."""
+        import httpx
+        with unittest.mock.patch(
+            "bridge._resolve_router_url",
+            return_value="http://localhost:4000/a2a/aelli-router/message/send",
+        ), unittest.mock.patch("httpx.post", side_effect=httpx.ConnectError("refused")):
+            # Should not raise
+            _route_event("feature", {"content": "test", "fileCount": 0})
+
+    def test_route_called_for_user_prompt_submit_in_main(self):
+        """main() calls _route_event for UserPromptSubmit hooks."""
+        hook_data = {
+            "session_id": "sess-abc",
+            "cwd": "/repo",
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "refactor auth",
+        }
+        with unittest.mock.patch("bridge._git_context", return_value={"repoRoot": "/repo", "branch": "main"}), \
+             unittest.mock.patch("bridge._git_modified_files", return_value=["auth.py"]), \
+             unittest.mock.patch("bridge._post_event", return_value=None), \
+             unittest.mock.patch("bridge._route_event") as mock_route:
+            _run_main(hook_data, env={"AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor"})
+
+        mock_route.assert_called_once()
+        call_args = mock_route.call_args[0]
+        self.assertEqual(call_args[0], "feature")
+        self.assertIn("content", call_args[1])
+        self.assertIn("fileCount", call_args[1])
+
+    def test_route_not_called_for_post_tool_use_in_main(self):
+        """_route_event is NOT called for PostToolUse hooks."""
+        with unittest.mock.patch("bridge._git_context", return_value={"repoRoot": "/repo", "branch": "main"}), \
+             unittest.mock.patch("bridge._post_event", return_value=None), \
+             unittest.mock.patch("bridge._route_event") as mock_route:
+            _run_main(
+                _hook_data(tool="Write", tool_input={"file_path": "auth.py"}),
+                env={"AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor"},
+            )
+
+        mock_route.assert_not_called()
