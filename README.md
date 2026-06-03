@@ -31,7 +31,7 @@ The result is a context window that stays small and focused. A planner gets plan
           │  A2A  /a2a/octowiz
           ▼
         ┌──────────────────────────────────────┐
-        │     Octowiz A2A Agent  (server)      │  ← coming in Phase 2
+        │     Octowiz A2A Agent  (server)      │  ← Phase 2 (in design)
         │ ──────────────────────────────────── │
         │  octowiz.plan / review / advise      │
         │  reads Memory + Knowledge + Diary    │
@@ -233,7 +233,7 @@ LITELLM_API_KEY=sk-your-key
 
 ## Using /octowiz
 
-After importing memories and installing the marketplace and all three skills (octowiz,mattpo-skills,superpowers are mandatory the rest is optional), invoke the coordinator from any repo:
+After importing memories and installing the marketplace and all three skills (octowiz, mattpo-skills, superpowers are mandatory; the rest is optional), invoke the coordinator from any repo:
 
 ```
 /octowiz
@@ -247,6 +247,14 @@ The coordinator reads your project setup, fetches the relevant memories from Lit
 | B | Have a plan to stress-test | `grill-me` |
 | C | Ready to implement | `using-git-worktrees` + TDD |
 | D | Code done, need review | `zoom-out` + `requesting-code-review` |
+
+### Skills included in this plugin
+
+| Slash command | Purpose |
+|---|---|
+| `/octowiz` | Coordinator — reads project state, loads doctrine, routes A/B/C/D |
+| `/octowiz:octowiz-setup` | Environment setup wizard — detects gaps (plugins, LiteLLM, memory), fixes them interactively |
+| `/octowiz:octowiz-doctowiz` | Doctor — diagnoses the full octowiz + AELLI integration stack, monitors live activity, guides setup and upgrades |
 
 Run `/mattpocock-skills:setup-matt-pocock-skills` once per repo before first use — it wires up your issue tracker and domain docs so `to-prd`, `to-issues`, `triage`, and `diagnose` work correctly.
 
