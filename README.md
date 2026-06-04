@@ -253,7 +253,7 @@ The coordinator reads your project setup, fetches the relevant memories from Lit
 | Slash command | Purpose |
 |---|---|
 | `/octowiz` | Coordinator — reads project state, loads doctrine, routes A/B/C/D |
-| `/octowiz:octowiz-setup` | Environment setup wizard — detects gaps (plugins, LiteLLM, memory), fixes them interactively |
+| `/octowiz:setup` | Environment setup wizard — detects gaps (plugins, LiteLLM, memory), fixes them interactively |
 | `/octowiz:octowiz-doctowiz` | Doctor — diagnoses the full octowiz + AELLI integration stack, monitors live activity, guides setup and upgrades |
 
 Run `/mattpocock-skills:setup-matt-pocock-skills` once per repo before first use — it wires up your issue tracker and domain docs so `to-prd`, `to-issues`, `triage`, and `diagnose` work correctly.
