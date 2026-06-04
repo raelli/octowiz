@@ -24,8 +24,6 @@
 
 Most AI coding tools give agents either a giant system prompt or nothing. Octowiz takes a third path: doctrine lives in a memory store, agents fetch only what is relevant to their current phase, and the coordinator skill routes to purpose-built skill libraries rather than trying to be everything itself.
 
-> **Small context. No prompt soup.**
-
 ---
 
 ## Architecture
@@ -60,7 +58,7 @@ agent:{role}:memory:ai-coding-workflow        role-specific
 project:allspark:config:*                     import / namespacing
 ```
 
-`allspark` is the example namespace. Swap it for your own when forking — nobody wants to debug under someone else's project name.
+`allspark` is the example namespace. Replace it with your own project slug when forking.
 
 ---
 
