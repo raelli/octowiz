@@ -19,8 +19,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install claude CLI globally via pnpm (enabled through corepack).
+# PNPM_HOME must be set before a global install or pnpm exits with ERR_PNPM_NO_GLOBAL_BIN_DIR.
 # Installs the latest published version. For reproducible builds, pin by specifying
 # @anthropic-ai/claude-code@VERSION (e.g. @2.1.162) and update on each release.
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable pnpm && pnpm install -g @anthropic-ai/claude-code
 
 # Sanity-check: confirm the expected binaries are available.
