@@ -1,3 +1,21 @@
+// CANONICAL ENFORCEMENT POINT — OCTOWIZ_ALLOWED_ROOTS
+//
+// This file is the authoritative validator for cwd against OCTOWIZ_ALLOWED_ROOTS.
+// All cwd validation MUST pass validateCwd() here before a task is forwarded to
+// any downstream process (A2A agent, Python capability, etc.).
+//
+// daemon.js calls validateCwd() immediately on receipt of every task payload so
+// that bad paths are rejected inside the trusted Node.js process before they can
+// reach Python or any shell command.
+//
+// apps/a2a-agent/path_guard.py contains a secondary defence-in-depth check.
+// Those two validators MUST stay in sync.  If the logic here changes (separator
+// handling, realpath resolution, allowlist semantics), update path_guard.py as well.
+//
+// Known divergence (2026-06-04): path_guard.py does NOT call os.path.realpath()
+// on the individual roots, only on cwd.  This means symlinked roots work here but
+// would bypass the Python guard.  Reconciliation is tracked as a future task.
+
 const path = require("path");
 const fs = require("fs");
 

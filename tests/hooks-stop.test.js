@@ -1,11 +1,11 @@
 "use strict";
 const mockPost = jest.fn().mockResolvedValue(null);
-const mockGetContext = jest.fn().mockReturnValue({
+const mockGetStableContext = jest.fn().mockReturnValue({
   sessionId: "s1", repoRoot: "/repo", repo: "origin",
 });
 
 jest.mock("../src/a2a-client", () => ({ post: mockPost }));
-jest.mock("../src/git-context", () => ({ getContext: mockGetContext }));
+jest.mock("../src/git-context", () => ({ getStableContext: mockGetStableContext }));
 
 const { handleStop } = require("../hooks/scripts/stop");
 
@@ -25,8 +25,8 @@ describe("hooks/scripts/stop.js", () => {
     await expect(handleStop({})).resolves.not.toThrow();
   });
 
-  it("does not throw when getContext returns null", async () => {
-    mockGetContext.mockReturnValueOnce(null);
+  it("does not throw when getStableContext returns null", async () => {
+    mockGetStableContext.mockReturnValueOnce(null);
     await expect(handleStop({ session_id: "s1" })).resolves.not.toThrow();
   });
 
@@ -39,17 +39,17 @@ describe("hooks/scripts/stop.js", () => {
 });
 
 describe("hooks/scripts/stop.js — subscriber cleanup", () => {
-  let existsSyncMock, readFileSyncMock, unlinkSyncMock, killMock;
+  let existsSyncMock, unlinkSyncMock, killMock;
 
   beforeEach(() => {
     jest.resetModules();
     jest.mock("../src/a2a-client", () => ({ post: jest.fn().mockResolvedValue(null) }));
     jest.mock("../src/git-context", () => ({
-      getContext: jest.fn().mockReturnValue({ sessionId: "s1", repo: null, repoRoot: null }),
+      getStableContext: jest.fn().mockReturnValue({ sessionId: "s1", repo: null, repoRoot: null }),
     }));
     const fs = require("fs");
     existsSyncMock = jest.spyOn(fs, "existsSync").mockReturnValue(true);
-    readFileSyncMock = jest.spyOn(fs, "readFileSync").mockReturnValue("5678");
+    jest.spyOn(fs, "readFileSync").mockReturnValue("5678");
     unlinkSyncMock = jest.spyOn(fs, "unlinkSync").mockImplementation(() => {});
     killMock = jest.spyOn(process, "kill").mockImplementation(() => {});
   });

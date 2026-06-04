@@ -3,6 +3,7 @@ const https = require("https");
 const { subscribeToQueue } = require("./a2a-client");
 const { checkStartup, validateCwd } = require("./policy");
 const { claimTask, postResult } = require("./task-queue-client");
+const { normalizeA2AResponse } = require("./a2a-response");
 
 const QUEUE_URL = `${(process.env.AELLI_BASE_URL || "http://localhost:3456").replace(/\/$/, "")}/a2a/task-queue`;
 
@@ -160,17 +161,13 @@ async function processTask(task) {
 
   try {
     const artifact = await _forwardToA2A(capability, payload);
-    const normalized = artifact || { status: "completed" };
+    // normalizeA2AResponse handles null/undefined and adds camelCase aliases for
+    // any recognized snake_case fields (session_id → sessionId, etc.).
+    // The fallback status ensures a valid queue result when Python returns nothing.
+    const normalized = normalizeA2AResponse(artifact) || { status: "completed" };
     // Normalize: Python capabilities use "error" for failures; queue needs
     // "completed" vs "error".
     const queueStatus = normalized.status === "error" ? "error" : "completed";
-    // Normalize session identifier: Python returns session_id (snake_case) but
-    // the agent card and queue consumers expect sessionId (camelCase). Alias it
-    // so both keys are present; callers that already adapted to session_id still
-    // work, and old callers using sessionId are unbroken (P1 fix).
-    if (normalized.session_id && !normalized.sessionId) {
-      normalized.sessionId = normalized.session_id;
-    }
     await postResult(id, leaseToken, { ...normalized, status: queueStatus });
   } catch (err) {
     console.error(`[octowiz] forward to A2A server failed for ${capability}:`, err.message);
