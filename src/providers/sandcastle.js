@@ -7,7 +7,7 @@ function getSandcastle() {
     try {
       _sandcastle = require("@ai-hero/sandcastle");
     } catch {
-      throw new Error("@ai-hero/sandcastle not installed — run npm install");
+      throw new Error("@ai-hero/sandcastle not installed — run pnpm install");
     }
   }
   return _sandcastle;

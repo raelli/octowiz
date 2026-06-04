@@ -18,10 +18,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install claude CLI globally.
+# Install claude CLI globally via pnpm (enabled through corepack).
 # Installs the latest published version. For reproducible builds, pin by specifying
 # @anthropic-ai/claude-code@VERSION (e.g. @2.1.162) and update on each release.
-RUN npm install -g @anthropic-ai/claude-code
+RUN corepack enable pnpm && pnpm install -g @anthropic-ai/claude-code
 
 # Sanity-check: confirm the expected binaries are available.
 RUN git --version && node --version && claude --version
