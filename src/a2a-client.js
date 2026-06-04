@@ -23,6 +23,15 @@ const DEV_ADVISOR_URL =
 const ROUTER_URL = process.env.AELLI_ROUTER_URL
   || (LITELLM_BASE ? `${LITELLM_BASE}/a2a/aelli-router/message/send` : null);
 
+// Warn when AELLI_LITELLM_BASE is set but no auth token is configured
+if (LITELLM_BASE && !AUTH_TOKEN) {
+  console.warn(
+    "[AELLI A2A] Warning: AELLI_LITELLM_BASE is set but AELLI_AUTH_TOKEN is missing. " +
+    "All A2A calls through the LiteLLM gateway will get 401 Unauthorized. " +
+    "Set AELLI_AUTH_TOKEN to a valid LiteLLM API key."
+  );
+}
+
 // Warn when sending credentials over non-localhost plain HTTP
 if (AUTH_TOKEN) {
   const urlsToCheck = [
