@@ -13,12 +13,16 @@ _SAMPLE_MANIFEST = {
     "name": "IntegraHub",
     "plugins": [
         {"name": "superpowers", "version": "1.0.0", "category": "Coding",
+         "keywords": ["coding-agent", "skills"],
          "source": {"source": "github", "repo": "obra/superpowers"}},
         {"name": "mattpo-skills", "version": "2.3.1", "category": "Development",
+         "keywords": ["typescript"],
          "source": {"source": "github", "repo": "obra/mattpo-skills"}},
         {"name": "octowiz", "version": "0.9.0", "category": "Development",
+         "keywords": ["a2a", "agent"],
          "source": {"source": "github", "repo": "raelli/octowiz"}},
         {"name": "context7", "version": "1.5.0", "category": "Development",
+         "keywords": ["context", "mcp"],
          "source": {"source": "github", "repo": "upstash/context7-mcp"}},
     ],
 }
@@ -127,9 +131,10 @@ class TestSkillDiscovery(unittest.TestCase):
 
         result = discover_skills(_SAMPLE_MANIFEST, keyword="a2a")
 
-        # octowiz has "a2a" keyword — but our sample above doesn't have keywords
-        # so use the one that does exist
-        self.assertIsInstance(result, list)
+        names = [r["name"] for r in result]
+        self.assertIn("octowiz", names)
+        self.assertNotIn("superpowers", names)
+        self.assertNotIn("mattpo-skills", names)
 
     def test_discover_all_returns_all(self):
         from marketplace_client.resolver import discover_skills

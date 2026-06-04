@@ -207,6 +207,17 @@ class TestMarketplaceInfoCompatibility(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertFalse(result["checks"][0]["compatible"])
 
+    def test_compat_invalid_checks_type_returns_error(self):
+        from capabilities.marketplace_info import handle_marketplace_info
+
+        result = _run(handle_marketplace_info({
+            "operation": "compat",
+            "checks": "not-a-list",
+        }))
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("list", result["message"])
+
 
 class TestMarketplaceDispatch(unittest.TestCase):
     """dispatch routes octowiz.marketplace_info to the capability."""

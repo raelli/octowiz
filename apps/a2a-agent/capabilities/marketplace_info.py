@@ -8,18 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 from typing import Any, Dict, List, Optional
 
 import httpx
-
-# packages/ is one level above apps/
-_PACKAGES_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "packages",
-)
-if _PACKAGES_DIR not in sys.path:
-    sys.path.insert(0, _PACKAGES_DIR)
 
 from marketplace_client import manifest as _manifest
 from marketplace_client.resolver import (
@@ -47,7 +38,7 @@ async def handle_marketplace_info(event: Dict[str, Any]) -> Dict[str, Any]:
 
     operation = event.get("operation", "discover")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     try:
         if operation == "resolve":
@@ -102,6 +93,8 @@ def _handle_discover(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def _handle_compat(event: Dict[str, Any]) -> Dict[str, Any]:
     checks = event.get("checks", [])
+    if not isinstance(checks, list):
+        return {"status": "error", "message": "checks must be a list"}
     results = []
     for item in checks:
         name = item.get("name", "")
