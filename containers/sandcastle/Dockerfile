@@ -23,7 +23,7 @@ RUN apt-get update \
 # Installs the latest published version. For reproducible builds, pin by specifying
 # @anthropic-ai/claude-code@VERSION (e.g. @2.1.162) and update on each release.
 ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
+ENV PATH="$PNPM_HOME/bin:$PATH"
 RUN corepack enable pnpm && pnpm install -g @anthropic-ai/claude-code
 
 # Sanity-check: confirm the expected binaries are available.
