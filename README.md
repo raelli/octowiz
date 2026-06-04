@@ -343,3 +343,27 @@ node "$CLAUDE_PLUGIN_ROOT/apps/doctowiz/index.js"
 - The sandbox container image contains no credentials. Secrets are forwarded at container start time via name-only `--env VAR` flags — the value is read from the host environment by Docker/Podman and never enters `argv` or logs.
 - `OCTOWIZ_INBOUND_SECRET` is a shared secret used to verify inbound hook events from Claude Code.
 - The daemon enforces an allowlist on incoming task roots to prevent dispatching outside declared project paths.
+
+---
+
+## Attribution
+
+Sources this pack draws from:
+
+- **["Essential Skills for AI Coding from Planning to Production"](https://www.youtube.com/watch?v=-QFHIoCo-Ko)** — Matt Pocock's workshop at AI Engineer. The workflow doctrine in this pack is distilled from it.
+- [mattpocock/skills](https://github.com/mattpocock/skills) — Matt Pocock
+- [obra/superpowers](https://github.com/obra/superpowers) — Jesse Vincent / Prime Radiant
+
+The two skill libraries aren't bundled. Octowiz stores compact routing summaries that send agents to the right place when the current task calls for it.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
+
+<div align="center">
+
+—
+
+**[octowiz](https://github.com/raelli/octowiz)** &nbsp;·&nbsp; part of the **IntegraHub** engineering ecosystem &nbsp;·&nbsp; [ÆLLI ↗](https://github.com/raelli/aelli)
+
+</div>
