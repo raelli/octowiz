@@ -1,3 +1,5 @@
+// Sole handoff store. Re-introduce a factory (store.js) when a second adapter
+// (e.g. MemPalace) ships with a real implementation.
 const { execFileSync } = require("child_process");
 
 function defaultRunner(args) {

@@ -18,14 +18,14 @@ function killSubscriber(sessionId) {
 
 async function handleStop(input) {
   const { post } = require("../../src/a2a-client");
-  const { getContext } = require("../../src/git-context");
+  const { getStableContext } = require("../../src/git-context");
 
   const sessionId = input.session_id || "";
   if (!sessionId) return;
 
   killSubscriber(sessionId);
 
-  const ctx = getContext(sessionId);
+  const ctx = getStableContext(sessionId);
 
   // Notify AELLI — advisory history, telemetry, and MemPalace session-end cleanup
   await post(

@@ -1,3 +1,37 @@
+/**
+ * Git-context read model
+ * ======================
+ *
+ * Two shapes are produced by this module:
+ *
+ * @typedef {Object} SessionContext
+ * @property {string}      sessionId  - Claude Code session identifier.
+ * @property {string|null} repoRoot   - Absolute path to the git repo root (stable).
+ * @property {string|null} repo       - Remote origin URL, e.g. "git@github.com:org/repo.git" (stable).
+ * @property {string}      cwd        - Working directory at session start (stable).
+ *
+ * SessionContext fields are **stable**: they are captured exactly once at SessionStart,
+ * written to a JSON cache, and do not change for the lifetime of the session.
+ * Returned by: captureContext() (writes), getStableContext() (reads).
+ *
+ * @typedef {Object} LiveContext
+ * @property {string|null} branch        - Current git branch (changes during a session).
+ * @property {string[]}    modifiedFiles - Files with staged or unstaged changes (changes often).
+ *
+ * LiveContext fields are **live**: they are read fresh from git on every call and
+ * reflect the current working-tree state.
+ * Returned by: getLiveContext().
+ *
+ * getContext(sessionId) merges both shapes into a single object (SessionContext & LiveContext).
+ * Use it when you need all fields in one call (e.g. building a prompt event).
+ * Use getStableContext() when you only need repo metadata (e.g. session-end notification)
+ * to avoid unnecessary git subprocess calls.
+ *
+ * Note: apps/claude_code_bridge/bridge.py reads live context independently using its own
+ * subprocess calls (_git_context / _git_modified_files). If the two read paths should be
+ * unified, file a follow-up issue to replace bridge.py's git calls with an IPC/cache read.
+ */
+
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
@@ -71,17 +105,37 @@ function captureContext(sessionId, cwd) {
   return ctx;
 }
 
-// Read the cached stable fields and augment with live branch + modified files.
-// Safe to call on every hook event — git reads are fast and always current.
-function getContext(sessionId) {
-  let cached;
+// Read the cached SessionContext (stable fields only). No git subprocess is run.
+// Use when you only need repo metadata and want to avoid live git reads.
+function getStableContext(sessionId) {
   try {
-    cached = JSON.parse(
+    return JSON.parse(
       fs.readFileSync(path.join(CACHE_DIR, `git-context-${sessionId}.json`), "utf8")
     );
   } catch {
     return null;
   }
+}
+
+// Read the live git state (branch + modified files) for a session.
+// Always runs git subprocesses — reflects the current working-tree state.
+// Requires that captureContext() was called first so the repoRoot is cached.
+function getLiveContext(sessionId) {
+  const cached = getStableContext(sessionId);
+  if (!cached) return null;
+  const { repoRoot } = cached;
+  return {
+    branch: readBranch(repoRoot),
+    modifiedFiles: readModifiedFiles(repoRoot),
+  };
+}
+
+// Merge SessionContext and LiveContext into one object.
+// Convenience wrapper — safe to call on every hook event.
+// Prefer getStableContext() when only stable fields are needed.
+function getContext(sessionId) {
+  const cached = getStableContext(sessionId);
+  if (!cached) return null;
   const { repoRoot } = cached;
   return {
     ...cached,
@@ -90,4 +144,4 @@ function getContext(sessionId) {
   };
 }
 
-module.exports = { captureContext, getContext, parseGitStatus };
+module.exports = { captureContext, getStableContext, getLiveContext, getContext, parseGitStatus };
