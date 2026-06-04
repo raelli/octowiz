@@ -133,7 +133,86 @@ class TestBuildContainerCmd(unittest.TestCase):
         self.assertIn("feat/my-branch_v1.0", cmd)
 
     def test_no_subprocess_call_in_build(self):
-        """build_container_cmd is a pure function — must not invoke subprocess."""
+        """build_container_cmd is a pure function -- must not invoke subprocess."""
+        with patch("subprocess.run") as mock_run, patch("subprocess.Popen") as mock_popen:
+            self._build()
+        mock_run.assert_not_called()
+        mock_popen.assert_not_called()
+
+
+class TestEnvVarPassthrough(unittest.TestCase):
+    """Env var passthrough -- name-only form so secrets never appear in argv."""
+
+    def _build(self, **kwargs):
+        from providers.sandcastle.runner import build_container_cmd
+        defaults = dict(
+            container_provider="docker",
+            container_name="octowiz-abc123",
+            image="sandbox:latest",
+            cwd="/repo",
+            task="run tests",
+            branch=None,
+        )
+        defaults.update(kwargs)
+        return build_container_cmd(**defaults)
+
+    def test_anthropic_api_key_name_only_flag_present_no_branch(self):
+        """--env ANTHROPIC_API_KEY must appear in the no-branch command."""
+        cmd = self._build()
+        env_idx = [i for i, x in enumerate(cmd) if x == "--env"]
+        env_vars = [cmd[i + 1] for i in env_idx]
+        self.assertIn("ANTHROPIC_API_KEY", env_vars)
+
+    def test_anthropic_api_key_name_only_flag_present_with_branch(self):
+        """--env ANTHROPIC_API_KEY must appear in the with-branch command."""
+        cmd = self._build(branch="feat/my-branch")
+        env_idx = [i for i, x in enumerate(cmd) if x == "--env"]
+        env_vars = [cmd[i + 1] for i in env_idx]
+        self.assertIn("ANTHROPIC_API_KEY", env_vars)
+
+    def test_anthropic_base_url_name_only_flag_present(self):
+        """--env ANTHROPIC_BASE_URL must appear (for LiteLLM proxy support)."""
+        cmd = self._build()
+        env_idx = [i for i, x in enumerate(cmd) if x == "--env"]
+        env_vars = [cmd[i + 1] for i in env_idx]
+        self.assertIn("ANTHROPIC_BASE_URL", env_vars)
+
+    def test_aelli_auth_token_name_only_flag_present(self):
+        """--env AELLI_AUTH_TOKEN must appear (for AELLI advisory calls inside container)."""
+        cmd = self._build()
+        env_idx = [i for i, x in enumerate(cmd) if x == "--env"]
+        env_vars = [cmd[i + 1] for i in env_idx]
+        self.assertIn("AELLI_AUTH_TOKEN", env_vars)
+
+    def test_env_values_not_in_argv(self):
+        """Secret values must never appear in the command line (name-only form)."""
+        sentinel = "sk-ant-SUPERSECRET123"
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": sentinel}):
+            cmd = self._build()
+        self.assertNotIn(sentinel, cmd)
+        # Also make sure no element contains 'ANTHROPIC_API_KEY=...'
+        for arg in cmd:
+            self.assertFalse(arg.startswith("ANTHROPIC_API_KEY="),
+                             f"Found value-form env arg: {arg!r}")
+
+    def test_env_flags_appear_before_image(self):
+        """--env flags must come before the image name in the command."""
+        cmd = self._build(image="sandbox:latest")
+        image_idx = cmd.index("sandbox:latest")
+        env_indices = [i for i, x in enumerate(cmd) if x == "--env"]
+        self.assertTrue(all(i < image_idx for i in env_indices),
+                        f"Some --env flags appear after image. cmd={cmd}")
+
+    def test_cmd_identical_regardless_of_env_value(self):
+        """Command structure must be identical regardless of host env value (name-only)."""
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "key-aaa"}):
+            cmd_a = self._build()
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "key-bbb"}):
+            cmd_b = self._build()
+        self.assertEqual(cmd_a, cmd_b)
+
+    def test_no_subprocess_call_in_build_with_env_passthrough(self):
+        """build_container_cmd must remain a pure function after env passthrough added."""
         with patch("subprocess.run") as mock_run, patch("subprocess.Popen") as mock_popen:
             self._build()
         mock_run.assert_not_called()

@@ -33,6 +33,7 @@ help:
 	@echo "  make test-packages    Run packages/ tests only"
 	@echo "  make test-providers   Run providers/ tests only"
 	@echo "  make clean            Remove __pycache__ and .pyc files"
+	@echo "  make build-sandbox-image  Build sandbox Docker image (SANDBOX_IMAGE=... to override)"
 	@echo ""
 
 # ── Installation ─────────────────────────────────────────────────────────────
@@ -75,3 +76,17 @@ test-providers:
 clean:
 	find . -type d -name __pycache__ -not -path './.claude/*' -exec rm -rf {} + 2>/dev/null; true
 	find . -name '*.pyc' -not -path './.claude/*' -delete 2>/dev/null; true
+
+# ── Sandbox image ─────────────────────────────────────────────────────────────
+
+SANDBOX_IMAGE ?= ghcr.io/raelli/octowiz-sandbox:latest
+SANDBOX_DOCKERFILE := containers/sandcastle/Dockerfile
+
+.PHONY: build-sandbox-image
+
+build-sandbox-image:
+	docker build -t $(SANDBOX_IMAGE) -f $(SANDBOX_DOCKERFILE) containers/sandcastle/
+	@echo ""
+	@echo "  Built: $(SANDBOX_IMAGE)"
+	@echo "  Run 'docker push $(SANDBOX_IMAGE)' to publish (requires ghcr.io auth)."
+	@echo ""
