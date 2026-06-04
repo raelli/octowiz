@@ -17,6 +17,9 @@ from providers.claude_agent_view.status import is_terminal, is_error
 _DEFAULT_POLL_INTERVAL = float(os.environ.get("OCTOWIZ_DISPATCH_POLL_INTERVAL", "5"))
 _DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "300"))
 
+# Sentinel so callers can distinguish "create from env" (omitted) from "disabled" (None).
+_ENV = object()
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,6 +72,7 @@ class DispatchSession:
         provider: Any,
         poll_interval: float,
         timeout: float,
+        workflow_client: Any = None,
     ):
         self.task = task
         self.cwd = cwd
@@ -76,8 +80,10 @@ class DispatchSession:
         self._provider = provider
         self._poll_interval = poll_interval
         self._timeout = timeout
+        self._workflow_client = workflow_client
 
         self.session_id: Optional[str] = None
+        self._wf_run_id: Optional[str] = None
         self.state: DispatchSessionState = DispatchSessionState.PENDING
         self._output: str = ""
         self._is_session_error: bool = False
@@ -105,6 +111,21 @@ class DispatchSession:
 
         self.session_id = session_id
         self.state = DispatchSessionState.RUNNING
+
+        if self._workflow_client:
+            run = await self._workflow_client.create_run(
+                task=self.task,
+                cwd=self.cwd,
+                principal=self.principal,
+            )
+            if run:
+                self._wf_run_id = run["run_id"]
+                await self._workflow_client.transition(
+                    self._wf_run_id,
+                    "step.started",
+                    "dispatch",
+                    data={"claude_session_id": self.session_id},
+                )
 
     async def poll(self) -> DispatchSessionState:
         """Single poll tick. Fetches output exactly once, evaluates state.
@@ -163,6 +184,10 @@ class DispatchSession:
             current_state = await self.poll()
 
             if current_state == DispatchSessionState.NEEDS_INPUT:
+                if self._workflow_client and self._wf_run_id:
+                    await self._workflow_client.transition(
+                        self._wf_run_id, "hook.waiting", "needs-input",
+                    )
                 # Retain ownership — caller may still interact via manage_agents.
                 return {
                     "status": "needs-input",
@@ -172,12 +197,22 @@ class DispatchSession:
 
             if current_state == DispatchSessionState.DONE:
                 if self._is_session_error:
+                    if self._workflow_client and self._wf_run_id:
+                        await self._workflow_client.fail(
+                            self._wf_run_id,
+                            output={"session_id": self.session_id, "output": self._output},
+                        )
                     # Retain ownership — caller may still retrieve logs via manage_agents.
                     return {
                         "status": "error",
                         "session_id": self.session_id,
                         "output": self._output,
                     }
+                if self._workflow_client and self._wf_run_id:
+                    await self._workflow_client.complete(
+                        self._wf_run_id,
+                        output={"session_id": self.session_id, "output": self._output},
+                    )
                 # Retain ownership — caller may still run manage_agents logs/rm.
                 return {
                     "status": "completed",
@@ -190,11 +225,25 @@ class DispatchSession:
         # lost — this is the ORPHANED state (e.g., server restarted mid-poll).
         # If the session was observed at least once, it simply ran too long: TIMED_OUT.
         if not self._ever_observed:
+            if self._workflow_client and self._wf_run_id:
+                await self._workflow_client.transition(
+                    self._wf_run_id,
+                    "step.failed",
+                    "orphaned",
+                    data={"reason": "dispatch orphaned — server restart?"},
+                )
             return self.mark_orphaned()
 
         # TIMED_OUT — session was running but did not complete within the deadline.
         # Retain ownership for caller cleanup.
         self.state = DispatchSessionState.TIMED_OUT
+        if self._workflow_client and self._wf_run_id:
+            await self._workflow_client.transition(
+                self._wf_run_id,
+                "step.failed",
+                "timeout",
+                data={"reason": f"timeout after {self._timeout}s"},
+            )
         return {
             "status": "error",
             "session_id": self.session_id,
@@ -224,7 +273,15 @@ async def handle_dispatch(
     provider: Any = None,
     poll_interval: Optional[float] = None,
     timeout: Optional[float] = None,
+    workflow_client: Any = _ENV,
 ) -> Dict:
+    """Handle an octowiz.dispatch event.
+
+    workflow_client:
+        _ENV (default) — create from AELLI_LITELLM_BASE + AELLI_AUTH_TOKEN env vars.
+        None           — disable workflow tracking entirely (useful in tests).
+        <instance>     — use the provided client (useful in tests).
+    """
     task = event.get("task", "")
     cwd = event.get("cwd", "")
 
@@ -248,6 +305,10 @@ async def handle_dispatch(
     if timeout is None:
         timeout = _DEFAULT_TIMEOUT
 
+    if workflow_client is _ENV:
+        from workflow_run_client import _make_from_env
+        workflow_client = _make_from_env()
+
     principal = event.get("_principal", "")
 
     session = DispatchSession(
@@ -257,11 +318,15 @@ async def handle_dispatch(
         provider=provider,
         poll_interval=poll_interval,
         timeout=timeout,
+        workflow_client=workflow_client,
     )
 
     try:
-        await session.start()
-    except Exception as exc:
-        return {"status": "error", "message": f"failed to start session: {exc}"}
-
-    return await session.run()
+        try:
+            await session.start()
+        except Exception as exc:
+            return {"status": "error", "message": f"failed to start session: {exc}"}
+        return await session.run()
+    finally:
+        if workflow_client:
+            await workflow_client.close()

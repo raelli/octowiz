@@ -840,5 +840,169 @@ class TestDispatchAndRegisterAtomicity(unittest.TestCase):
         self.assertEqual(session.session_id, "s-before-return")
 
 
+_WF_MISSING = object()
+
+
+class _MockWorkflowClient:
+    """Records workflow run calls for assertion in tests. close() is a no-op."""
+
+    def __init__(self, run_id="wf-run-1", create_returns=_WF_MISSING):
+        self._run_id = run_id
+        self._create_returns = (
+            create_returns if create_returns is not _WF_MISSING
+            else {"run_id": run_id, "session_id": "wf-sess-1"}
+        )
+        self.created: list = []
+        self.transitions: list = []
+        self.completed: list = []
+        self.failed: list = []
+
+    async def create_run(self, *, task, cwd, principal):
+        self.created.append({"task": task, "cwd": cwd, "principal": principal})
+        return self._create_returns
+
+    async def transition(self, run_id, event_type, step_name, *, data=None):
+        self.transitions.append({
+            "run_id": run_id, "event_type": event_type,
+            "step_name": step_name, "data": data,
+        })
+
+    async def complete(self, run_id, *, output):
+        self.completed.append({"run_id": run_id, "output": output})
+
+    async def fail(self, run_id, *, output):
+        self.failed.append({"run_id": run_id, "output": output})
+
+    async def close(self):
+        pass
+
+
+class TestDispatchWorkflowIntegration(unittest.TestCase):
+    """DispatchSession wires create_run / transition / complete / fail correctly."""
+
+    def test_start_creates_run_and_emits_step_started(self):
+        from capabilities.dispatch import DispatchSession
+        wf = _MockWorkflowClient()
+        provider = _MockProvider(session_id="s-wf")
+        session = DispatchSession(
+            "add tests", "/repo", "p1",
+            provider=provider, poll_interval=0.001, timeout=5.0,
+            workflow_client=wf,
+        )
+        _run(session.start())
+
+        self.assertEqual(len(wf.created), 1)
+        self.assertEqual(wf.created[0]["task"], "add tests")
+        self.assertEqual(len(wf.transitions), 1)
+        t = wf.transitions[0]
+        self.assertEqual(t["event_type"], "step.started")
+        self.assertEqual(t["step_name"], "dispatch")
+        self.assertEqual(t["data"]["claude_session_id"], "s-wf")
+
+    def test_completed_session_calls_complete(self):
+        from capabilities.dispatch import handle_dispatch
+        wf = _MockWorkflowClient()
+        provider = _MockProvider(
+            status_sequence=[
+                _Session("s1", "running"),
+                _Session("s1", "stopped"),
+            ]
+        )
+        result = _run(handle_dispatch(
+            {"task": "fix bug", "cwd": "/repo"},
+            provider=provider, workflow_client=wf, **_FAST,
+        ))
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(len(wf.completed), 1)
+        self.assertEqual(wf.completed[0]["run_id"], "wf-run-1")
+        self.assertEqual(wf.completed[0]["output"]["session_id"], "s1")
+
+    def test_error_session_calls_fail(self):
+        from capabilities.dispatch import handle_dispatch
+        wf = _MockWorkflowClient()
+        provider = _MockProvider(
+            status_sequence=[
+                _Session("s1", "running"),
+                _Session("s1", "error"),
+            ]
+        )
+        result = _run(handle_dispatch(
+            {"task": "fix bug", "cwd": "/repo"},
+            provider=provider, workflow_client=wf, **_FAST,
+        ))
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(len(wf.failed), 1)
+        self.assertEqual(wf.failed[0]["run_id"], "wf-run-1")
+
+    def test_needs_input_emits_hook_waiting(self):
+        from capabilities.dispatch import handle_dispatch
+        wf = _MockWorkflowClient()
+        provider = _MockProvider(
+            status_sequence=[
+                _Session("s1", "running"),
+                _Session("s1", "running", needs_input=True),
+            ]
+        )
+        result = _run(handle_dispatch(
+            {"task": "do something", "cwd": "/repo"},
+            provider=provider, workflow_client=wf, **_FAST,
+        ))
+        self.assertEqual(result["status"], "needs-input")
+        hook_events = [t for t in wf.transitions if t["event_type"] == "hook.waiting"]
+        self.assertEqual(len(hook_events), 1)
+        self.assertEqual(hook_events[0]["step_name"], "needs-input")
+
+    def test_timeout_emits_step_failed_timeout(self):
+        from capabilities.dispatch import handle_dispatch
+        wf = _MockWorkflowClient()
+        provider = _MockProvider(
+            status_sequence=[
+                _Session("s1", "running"),
+                _Session("s1", "running"),
+                _Session("s1", "running"),
+            ]
+        )
+        result = _run(handle_dispatch(
+            {"task": "run forever", "cwd": "/repo"},
+            provider=provider, workflow_client=wf, **_INSTANT_TIMEOUT,
+        ))
+        self.assertEqual(result["status"], "error")
+        failed_evts = [t for t in wf.transitions if t["event_type"] == "step.failed"]
+        self.assertTrue(len(failed_evts) >= 1)
+        step_names = [e["step_name"] for e in failed_evts]
+        self.assertTrue("timeout" in step_names or "orphaned" in step_names)
+
+    def test_workflow_client_none_does_not_break_happy_path(self):
+        from capabilities.dispatch import handle_dispatch
+        provider = _MockProvider(
+            status_sequence=[
+                _Session("s1", "running"),
+                _Session("s1", "stopped"),
+            ]
+        )
+        result = _run(handle_dispatch(
+            {"task": "add tests", "cwd": "/repo"},
+            provider=provider, workflow_client=None, **_FAST,
+        ))
+        self.assertEqual(result["status"], "completed")
+
+    def test_create_run_returning_none_does_not_break_dispatch(self):
+        """If LiteLLM is down (create_run returns None), dispatch still completes."""
+        from capabilities.dispatch import handle_dispatch
+        wf = _MockWorkflowClient(create_returns=None)
+        provider = _MockProvider(
+            status_sequence=[
+                _Session("s1", "running"),
+                _Session("s1", "stopped"),
+            ]
+        )
+        result = _run(handle_dispatch(
+            {"task": "add tests", "cwd": "/repo"},
+            provider=provider, workflow_client=wf, **_FAST,
+        ))
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(len(wf.completed), 0)  # no run_id → no patch
+
+
 if __name__ == "__main__":
     unittest.main()
