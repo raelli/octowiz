@@ -82,7 +82,7 @@ All three SVGs use the same palette:
 
 | Element | Value |
 |---|---|
-| SVG background | transparent (renders on GitHub dark `#0d1117` and light) |
+| SVG background | `#0d1117` full-size `<rect rx="8"/>` — renders as a dark card on both GitHub themes |
 | Node fill | `#13111c` |
 | Node border (default) | `#4a3570` · `stroke-width="1"` |
 | Node border (focal) | `#7c3aed` · `stroke-width="2"` |
