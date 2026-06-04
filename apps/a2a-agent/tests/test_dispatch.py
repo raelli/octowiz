@@ -29,14 +29,14 @@ class TestDispatch(unittest.TestCase):
         os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
 
     def test_unknown_capability_returns_not_implemented(self):
-        resp = _post_event(self.client, {"capability": "octowiz.plan", "type": "ping"})
+        resp = _post_event(self.client, {"capability": "octowiz.does_not_exist", "type": "ping"})
         self.assertEqual(resp.status_code, 200)
         artifact = json.loads(resp.json()["result"]["artifacts"][0]["parts"][0]["text"])
         self.assertEqual(artifact["status"], "not_implemented")
-        self.assertEqual(artifact["capability"], "octowiz.plan")
+        self.assertEqual(artifact["capability"], "octowiz.does_not_exist")
 
     def test_dev_advisor_alias_returns_same_shape(self):
-        event = {"capability": "octowiz.plan", "type": "ping"}
+        event = {"capability": "octowiz.does_not_exist", "type": "ping"}
         r1 = _post_event(self.client, event, "/a2a/octowiz")
         r2 = _post_event(self.client, event, "/a2a/dev-advisor")
         self.assertEqual(r1.status_code, r2.status_code)
