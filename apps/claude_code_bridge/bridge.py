@@ -211,6 +211,15 @@ def _route_event(task_kind: str, data: Dict) -> None:
 
 
 def main() -> int:
+    # Warn when routing through LiteLLM but auth token is missing
+    if os.environ.get("AELLI_LITELLM_BASE", "") and not os.environ.get("AELLI_AUTH_TOKEN", ""):
+        print(
+            "[octowiz] Warning: AELLI_LITELLM_BASE is set but AELLI_AUTH_TOKEN is missing. "
+            "All A2A calls through the LiteLLM gateway will get 401 Unauthorized. "
+            "Set AELLI_AUTH_TOKEN to a valid LiteLLM API key.",
+            file=sys.stderr,
+        )
+
     url = _resolve_advisor_url()
 
     # Warn on cleartext HTTP to non-local endpoints — token sent in plaintext.
