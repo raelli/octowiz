@@ -16,6 +16,64 @@ description: >
 You are the entry point for the AI-assisted coding workflow. Read the project, fetch
 operating doctrine from IntegraHub memory, and route to the right installed skills.
 
+## Service pre-flight
+
+**Run this first — before everything else.**
+
+Check that the two required background services are running and that the current repo
+is within the daemon's allowed roots. Run all three checks in parallel:
+
+```bash
+# 1. Node daemon status
+launchctl list de.integrahub.octowiz-daemon 2>/dev/null
+
+# 2. Python A2A server status (port 8765)
+nc -z 127.0.0.1 8765 2>/dev/null && echo "a2a:up" || echo "a2a:down"
+
+# 3. Current repo allowed-roots check
+node -e "
+const roots = (process.env.OCTOWIZ_ALLOWED_ROOTS || '').split(':').filter(Boolean);
+const cwd = process.cwd();
+const ok = roots.some(r => cwd.startsWith(r));
+console.log(ok ? 'roots:ok' : 'roots:missing cwd=' + cwd);
+" 2>/dev/null || echo "roots:unknown"
+```
+
+### Interpreting results and fixing gaps
+
+**Node daemon not running** (launchctl output has `-` as PID or returns nothing):
+```bash
+launchctl load ~/Library/LaunchAgents/de.integrahub.octowiz-daemon.plist
+```
+Wait 3 seconds, then re-run the launchctl check to confirm PID is assigned.
+
+**Python A2A server down** (`a2a:down`):
+The server is normally auto-started by the CC session hook. Start it manually:
+```bash
+cd ~/Documents/octowiz/apps/a2a-agent
+python3 -m uvicorn main:app --host 127.0.0.1 --port 8765 &
+```
+Wait 2 seconds, then re-check with `nc -z 127.0.0.1 8765`.
+
+**Current repo not in allowed roots** (`roots:missing`):
+The daemon will reject tasks from this repo. Tell the user:
+
+> "This repo is not in `OCTOWIZ_ALLOWED_ROOTS`. Add its path to the launchd plist
+> and reload the daemon:
+> ```bash
+> # Open plist, add path to OCTOWIZ_ALLOWED_ROOTS, then:
+> launchctl unload ~/Library/LaunchAgents/de.integrahub.octowiz-daemon.plist
+> launchctl load  ~/Library/LaunchAgents/de.integrahub.octowiz-daemon.plist
+> ```
+> Plist is at: `~/Library/LaunchAgents/de.integrahub.octowiz-daemon.plist`"
+
+Do not proceed until the user confirms the plist has been updated and the daemon
+reloaded. Then re-run the roots check to verify.
+
+**All checks pass** — proceed immediately to the Auto-intercept check below.
+
+---
+
 ## Pre-flight: Auto-intercept check
 
 **Run this before anything else — before reading the project, before loading doctrine.**
