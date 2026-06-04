@@ -26,4 +26,7 @@ async def dispatch(event: Dict) -> Optional[Dict]:
     if capability == "octowiz.write_diary":
         from capabilities.write_diary import handle_write_diary
         return await handle_write_diary(event)
+    if capability == "octowiz.run_sandboxed":
+        from capabilities.run_sandboxed import handle_run_sandboxed
+        return await handle_run_sandboxed(event)
     return {"status": "not_implemented", "capability": capability}
