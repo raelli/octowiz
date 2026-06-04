@@ -29,4 +29,7 @@ async def dispatch(event: Dict) -> Optional[Dict]:
     if capability == "octowiz.run_sandboxed":
         from capabilities.run_sandboxed import handle_run_sandboxed
         return await handle_run_sandboxed(event)
+    if capability == "octowiz.marketplace_info":
+        from capabilities.marketplace_info import handle_marketplace_info
+        return await handle_marketplace_info(event)
     return {"status": "not_implemented", "capability": capability}

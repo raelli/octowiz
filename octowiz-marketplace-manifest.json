@@ -1,0 +1,103 @@
+{
+  "name": "octowiz",
+  "version": "0.9.0",
+  "description": "AELLI's coding alter-ego. Memory-backed A2A engineering agent for Claude Code.",
+  "source": {
+    "source": "github",
+    "repo": "raelli/octowiz"
+  },
+  "author": {
+    "name": "IntegraHub",
+    "email": "support@integrahub.de"
+  },
+  "homepage": "https://github.com/raelli/octowiz",
+  "license": "MIT",
+  "category": "Development",
+  "keywords": [
+    "claude-code",
+    "a2a",
+    "agent",
+    "memory",
+    "workflow",
+    "engineering",
+    "superpowers",
+    "integrahub"
+  ],
+  "skills": [
+    {
+      "name": "octowiz-workflow",
+      "path": "./skills/octowiz-workflow",
+      "version": "0.9.0",
+      "description": "Core Octowiz engineering workflow skill."
+    },
+    {
+      "name": "octowiz-setup",
+      "path": "./skills/octowiz-setup",
+      "version": "0.9.0",
+      "description": "Set up Octowiz in a project."
+    },
+    {
+      "name": "octowiz-doctowiz",
+      "path": "./skills/octowiz-doctowiz",
+      "version": "0.9.0",
+      "description": "Documentation generation skill."
+    }
+  ],
+  "providers": [
+    {
+      "name": "claude_agent_view",
+      "path": "./providers/claude_agent_view",
+      "version": "0.9.0",
+      "description": "Claude Code Agent View execution provider."
+    },
+    {
+      "name": "sandcastle",
+      "path": "./providers/sandcastle",
+      "version": "0.9.0",
+      "description": "Sandcastle isolated execution provider."
+    }
+  ],
+  "a2a": {
+    "endpoint": "/a2a/octowiz",
+    "compatibility_alias": "/a2a/dev-advisor",
+    "capabilities": [
+      "octowiz.observe",
+      "octowiz.plan",
+      "octowiz.review",
+      "octowiz.dispatch",
+      "octowiz.manage_agents",
+      "octowiz.run_sandboxed",
+      "octowiz.load_memory",
+      "octowiz.write_diary",
+      "octowiz.escalate_to_aelli",
+      "octowiz.marketplace_info"
+    ]
+  },
+  "dependencies": {
+    "skills": [
+      {
+        "name": "superpowers",
+        "marketplace": "integrahub",
+        "version_required": "1.0.0"
+      },
+      {
+        "name": "mattpo-skills",
+        "marketplace": "integrahub",
+        "version_required": "1.0.0"
+      }
+    ],
+    "mcps": [],
+    "providers": []
+  },
+  "marketplace_config": {
+    "url_env_var": "INTEGRAHUB_MARKETPLACE_URL",
+    "default_url": "https://llm.integrahub.de/claude-code/marketplace.json",
+    "cache_ttl_seconds": 3600
+  },
+  "lifecycle": {
+    "publish": "github release + marketplace.json update",
+    "install": "claude plugin install octowiz@integrahub",
+    "update": "claude plugin update octowiz@integrahub",
+    "rollback": "claude plugin install octowiz@integrahub@<version>"
+  }
+}
