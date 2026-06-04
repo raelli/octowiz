@@ -66,6 +66,32 @@ function makeAuthHeaders() {
     : { "x-aelli-secret": AUTH_TOKEN };
 }
 
+// Build a standard JSON-RPC POST init object (shared by post() and route()).
+// subscribeToQueue() intentionally uses x-aelli-secret directly and does not
+// go through this helper — it connects to octowiz's own inbound queue, not AELLI.
+function _jsonInit(body) {
+  return {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...makeAuthHeaders() },
+    body: typeof body === "string" ? body : JSON.stringify(body),
+  };
+}
+
+// Timeout-guarded fetch. Returns [Response, null] on success or [null, Error] on
+// abort / network failure. Caller reads the body; we do not consume it here.
+async function _abortFetch(url, init, timeoutMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: ctrl.signal });
+    return [res, null];
+  } catch (err) {
+    return [null, err];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Pure SSE framing parser. Takes the accumulated buffer string, returns
 // complete events and the leftover partial chunk.
 function parseSseEvents(buffer) {
@@ -225,7 +251,7 @@ async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
     ? `${LITELLM_BASE}/a2a/aelli-dev-advisor/message/send`
     : DEV_ADVISOR_URL;
 
-  const rpcBody = JSON.stringify({
+  const init = _jsonInit({
     jsonrpc: "2.0",
     method: "message/send",
     params: {
@@ -237,12 +263,6 @@ async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
     },
   });
 
-  const init = {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...makeAuthHeaders() },
-    body: rpcBody,
-  };
-
   if (!sync) {
     fetch(url, init).catch((err) =>
       appendLog(`[post:${eventType}] fire-and-forget error: ${err?.message ?? err}`)
@@ -250,18 +270,18 @@ async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
     return null;
   }
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const [res, err] = await _abortFetch(url, init, timeoutMs);
+  if (!res) {
+    appendLog(`[post:${eventType}] fail-open: ${err?.message ?? err}`);
+    return null;
+  }
   try {
-    const res = await fetch(url, { ...init, signal: ctrl.signal });
     const rpc = await res.json();
     const text = rpc?.result?.artifacts?.[0]?.parts?.[0]?.text;
     return text ? JSON.parse(text) : null;
   } catch (err) {
     appendLog(`[post:${eventType}] fail-open: ${err?.message ?? err}`);
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -273,21 +293,19 @@ async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
 // and return the first successfully parsed object (the routing decision).
 async function route(taskKind, data = {}, { timeoutMs = 2000 } = {}) {
   if (!ROUTER_URL) return null;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const init = _jsonInit({
+    jsonrpc: "2.0",
+    method: "message/send",
+    params: { message: { parts: [{ kind: "text", text: JSON.stringify({
+      type: "route", taskKind, ...data,
+    }) }] } },
+  });
+  const [res, err] = await _abortFetch(ROUTER_URL, init, timeoutMs);
+  if (!res) {
+    appendLog(`[route:${taskKind}] fail-open: ${err?.message ?? err}`);
+    return null;
+  }
   try {
-    const res = await fetch(ROUTER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...makeAuthHeaders() },
-      signal: ctrl.signal,
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'message/send',
-        params: { message: { parts: [{ kind: 'text', text: JSON.stringify({
-          type: 'route', taskKind, ...data
-        }) }] } },
-      }),
-    });
     const text = await res.text();
     if (!text) return null;
     // Ensure the buffer is terminated with a blank line so parseSseEvents emits
@@ -302,9 +320,7 @@ async function route(taskKind, data = {}, { timeoutMs = 2000 } = {}) {
   } catch (err) {
     appendLog(`[route:${taskKind}] fail-open: ${err?.message ?? err}`);
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
-module.exports = { subscribe, subscribeToQueue, post, route, parseSseEvents, updateTask, _connectSSE };
+module.exports = { subscribe, subscribeToQueue, post, route, parseSseEvents, updateTask };
