@@ -47,6 +47,9 @@ class _MockSandcastleProvider:
     def get_logs(self, run_id):
         return self._logs
 
+    def stop(self, run_id):
+        pass
+
 
 class TestRunSandboxedValidation(unittest.TestCase):
 
@@ -214,6 +217,59 @@ class TestRunSandboxedWaitTrue(unittest.TestCase):
                 provider=provider, **_FAST,
             ))
         self.assertEqual(provider.dispatched_provider, "podman")
+
+
+class TestRunSandboxedBranchValidation(unittest.TestCase):
+
+    def _call(self, event, **kwargs):
+        from capabilities.run_sandboxed import handle_run_sandboxed
+        return asyncio.run(handle_run_sandboxed(event, **kwargs))
+
+    def test_branch_starting_with_dash_returns_error(self):
+        with patch("shutil.which", return_value="/usr/bin/docker"):
+            result = self._call({"task": "run tests", "cwd": "/repo", "branch": "--evil"})
+        self.assertEqual(result["status"], "error")
+        self.assertIn("branch", result["message"])
+
+    def test_branch_with_spaces_returns_error(self):
+        with patch("shutil.which", return_value="/usr/bin/docker"):
+            result = self._call({"task": "run tests", "cwd": "/repo", "branch": "bad branch"})
+        self.assertEqual(result["status"], "error")
+        self.assertIn("branch", result["message"])
+
+    def test_valid_branch_passes_validation(self):
+        from capabilities.run_sandboxed import handle_run_sandboxed
+        provider = _MockSandcastleProvider(status_sequence=["completed"])
+        with patch("shutil.which", return_value="/usr/bin/docker"):
+            result = asyncio.run(handle_run_sandboxed(
+                {"task": "run tests", "cwd": "/repo", "branch": "feat/my-branch"},
+                provider=provider, **_FAST,
+            ))
+        self.assertNotEqual(result["status"], "error")
+
+
+class TestRunSandboxedTimeoutStopsContainer(unittest.TestCase):
+
+    def test_capability_timeout_stops_provider_container(self):
+        from capabilities.run_sandboxed import handle_run_sandboxed
+        provider = _MockSandcastleProvider(
+            run_id="sc-timeout",
+            status_sequence=["running"] * 200,
+        )
+        stopped_ids = []
+        original_stop = provider.get_status
+
+        class _TrackingProvider(_MockSandcastleProvider):
+            def stop(self, run_id):
+                stopped_ids.append(run_id)
+
+        tracking = _TrackingProvider(run_id="sc-timeout", status_sequence=["running"] * 200)
+        with patch("shutil.which", return_value="/usr/bin/docker"):
+            asyncio.run(handle_run_sandboxed(
+                {"task": "run tests", "cwd": "/repo"},
+                provider=tracking, **_INSTANT_TIMEOUT,
+            ))
+        self.assertIn("sc-timeout", stopped_ids)
 
 
 class TestRunSandboxedDispatchError(unittest.TestCase):

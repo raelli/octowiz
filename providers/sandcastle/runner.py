@@ -40,10 +40,11 @@ def build_container_cmd(
 
     if branch:
         # Positional-param form: branch → $1, task → $2. No shell interpolation.
+        # Branch is already validated above; no -- separator (that would treat it as a pathspec).
         cmd += [
             image,
             "sh", "-c",
-            'git checkout -- "$1" && claude --print -- "$2"',
+            'git checkout "$1" && claude --print -- "$2"',
             "--", branch, task,
         ]
     else:

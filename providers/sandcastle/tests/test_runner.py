@@ -60,6 +60,14 @@ class TestBuildContainerCmd(unittest.TestCase):
         script = cmd[cmd.index("-c") + 1]
         self.assertNotIn("feat/my-branch", script)
 
+    def test_with_branch_checkout_does_not_use_pathspec_separator(self):
+        """git checkout -- branch treats branch as a pathspec, not a ref — must not be present."""
+        cmd = self._build(branch="feat/my-branch")
+        script = cmd[cmd.index("-c") + 1]
+        # 'checkout --' would make git treat the branch as a pathspec, breaking checkout
+        self.assertNotIn("checkout --", script)
+        self.assertIn("checkout", script)
+
     def test_container_name_in_name_flag(self):
         cmd = self._build(container_name="octowiz-xyz")
         self.assertTrue(any("--name=octowiz-xyz" in arg for arg in cmd))

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 import time
 from typing import Any, Dict, Optional
@@ -14,6 +15,7 @@ _DEFAULT_POLL_INTERVAL = float(os.environ.get("OCTOWIZ_DISPATCH_POLL_INTERVAL", 
 _DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "300"))
 
 _VALID_CONTAINER_PROVIDERS = frozenset({"docker", "podman"})
+_BRANCH_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_./-]{0,127}$')
 
 
 def _make_provider():
@@ -44,6 +46,11 @@ async def handle_run_sandboxed(
         return {"status": "error", "message": f"unsupported container_provider: {container_provider!r}"}
     if not shutil.which(container_provider):
         return {"status": "error", "message": f"{container_provider} not available"}
+    if branch is not None:
+        if branch.startswith("-"):
+            return {"status": "error", "message": "branch must not start with '-'"}
+        if not _BRANCH_RE.fullmatch(branch):
+            return {"status": "error", "message": f"invalid branch name: {branch!r}"}
 
     try:
         cwd = validate_cwd(cwd)
@@ -75,4 +82,6 @@ async def handle_run_sandboxed(
             logs = await _loop.run_in_executor(None, provider.get_logs, run_id)
             return {"status": "ok", "run_id": run_id, "exit_status": status, "logs": logs}
 
+    # Stop the container before returning — don't orphan it.
+    await _loop.run_in_executor(None, provider.stop, run_id)
     return {"status": "error", "run_id": run_id, "message": f"timeout after {timeout}s"}
