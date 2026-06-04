@@ -97,6 +97,8 @@ def _handle_compat(event: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "error", "message": "checks must be a list"}
     results = []
     for item in checks:
+        if not isinstance(item, dict):
+            return {"status": "error", "message": f"each check must be a dict, got {type(item).__name__}"}
         name = item.get("name", "")
         required = item.get("required", "0.0.0")
         available = item.get("available", "0.0.0")

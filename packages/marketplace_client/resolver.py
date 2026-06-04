@@ -4,8 +4,9 @@ skill discovery, and artifact lifecycle.
 from __future__ import annotations
 
 import enum
+import re
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
 
 # ---------------------------------------------------------------------------
@@ -52,9 +53,11 @@ def resolve_dependencies(dependencies: List[str], manifest: dict) -> ResolutionR
     unresolved: List[str] = []
 
     for dep in dependencies:
-        entry = index.get(dep)
+        # Normalize: dep may be a plain string or a dict {"name": ..., "version": ...}
+        dep_name: str = dep["name"] if isinstance(dep, dict) else dep
+        entry = index.get(dep_name)
         if entry is None:
-            unresolved.append(dep)
+            unresolved.append(dep_name)
         else:
             resolved.append(ResolvedEntry(
                 name=entry["name"],
@@ -73,11 +76,17 @@ def resolve_dependencies(dependencies: List[str], manifest: dict) -> ResolutionR
 
 
 def _parse_version(v: str) -> tuple:
-    """Parse a semver-like string into a comparable tuple."""
+    """Parse a semver-like string into a comparable tuple.
+
+    Handles version strings with leading operators such as >=1.4, ~2.1.0, ^1.0,
+    <=3.0, <2.0, >0.5 by stripping non-digit prefix from each segment.
+    """
     parts = []
     for segment in v.strip().split(".")[:3]:
+        # Strip leading non-digit characters (operators like >=, ~, ^, <=, <, >)
+        clean = re.sub(r'^[^0-9]*', '', segment)
         try:
-            parts.append(int(segment))
+            parts.append(int(clean) if clean else 0)
         except ValueError:
             parts.append(0)
     while len(parts) < 3:
@@ -164,6 +173,10 @@ class ArtifactLifecycle:
         self.state: LifecycleState = LifecycleState.AVAILABLE
 
     def install(self) -> None:
+        if self.state != LifecycleState.AVAILABLE:
+            raise RuntimeError(
+                f"Cannot install '{self.name}': must be AVAILABLE (current: {self.state})"
+            )
         self.state = LifecycleState.INSTALLED
 
     def pin(self) -> None:

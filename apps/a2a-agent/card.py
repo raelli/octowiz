@@ -17,7 +17,7 @@ BASE_URL = os.environ.get("OCTOWIZ_BASE_URL", "http://octowiz:8000")
 
 AGENT_CARD = {
     "name": "Octowiz Engineering Agent",
-    "version": "0.1.0",
+    "version": "0.9.0",
     "description": "ÆLLI's coding alter-ego. Orchestrates engineering sessions, monitors risks, and manages execution providers.",
     "url": f"{BASE_URL}/a2a/octowiz",
     "capabilities": {

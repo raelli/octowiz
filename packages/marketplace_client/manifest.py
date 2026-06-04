@@ -36,9 +36,14 @@ def fetch_manifest() -> dict:
     Raises httpx.RequestError / httpx.HTTPStatusError on network failure.
     """
     url = _marketplace_url()
-    response = httpx.get(url)
+    response = httpx.get(url, timeout=10.0)
     response.raise_for_status()
-    return response.json()
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ValueError(
+            f"Marketplace returned non-JSON response from {url}: {exc}"
+        ) from exc
 
 
 def get_manifest(ttl_seconds: int = _DEFAULT_TTL) -> dict:
