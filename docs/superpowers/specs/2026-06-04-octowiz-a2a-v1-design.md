@@ -170,13 +170,17 @@ than errors.
 **Fallback when playbook is empty:**
 
 If `PgStore.get("agent:aelli:playbook:<scope>")` returns null or empty, `bundle-builder`
-calls the memory client to fetch the role-appropriate doctrine bundle:
+fetches the role-appropriate doctrine directly from **LiteLLM `/v1/memory`** via HTTP GET:
 
-- `octowiz.plan` → `agent:planner:memory:ai-coding-workflow`
-- `octowiz.review` → `agent:reviewer:memory:ai-coding-workflow`
+- `octowiz.plan` → `GET ${litellmBase}/v1/memory/agent%3Aplanner%3Amemory%3Aai-coding-workflow`
+- `octowiz.review` → `GET ${litellmBase}/v1/memory/agent%3Areviewer%3Amemory%3Aai-coding-workflow`
 
-This is the same key the octowiz-cache CLI serves. On a brand-new repo with no MemPalace
-history, callers still get a useful context package.
+Authorization: `Bearer ${litellmKey}`. These are the same keys `octowiz-cache` serves.
+
+**Important:** this is NOT the aelli memory service (`aelli-memory:3457`). That service holds
+`agent:aelli:*` keys (registry, system_state, playbook). The LiteLLM proxy holds the shared
+doctrine keys (`agent:planner:*`, `agent:reviewer:*`) imported by `import_litellm_memories.py`.
+`memoryClient` (aelli-memory:3457) is not used in this path.
 
 ### `src/skills/octowiz/operations.js`
 
@@ -214,12 +218,20 @@ The two operations differ in:
 ```js
 const { createOctowizSkill } = require('./octowiz');
 
-// inside createSkills({ pgStore, sessionLifecycle, memoryClient, litellmBase, litellmKey }):
+// inside createSkills({ pgStore, memPalaceStore, sessionLifecycle, litellmBase, litellmKey }):
 const octowiz = createOctowizSkill({
-  pgStore, sessionLifecycle, memoryClient, engineering, litellmBase, litellmKey
+  pgStore,          // playbook reads: agent:aelli:playbook:<scope>
+  memPalaceStore,   // review FULL: getExperiencesSinceCursor for experiences_summary
+  sessionLifecycle, // session snapshot (see open question below)
+  engineering,      // Qdrant query on FULL tier
+  litellmBase,      // doctrine fallback: GET /v1/memory/{key}
+  litellmKey,       // bearer token for LiteLLM fallback
 });
 return [...existing, octowiz];
 ```
+
+`memoryClient` (aelli-memory:3457) is **not** a dependency of this skill. Playbook reads come
+from PgStore; doctrine fallback goes directly to LiteLLM. Do not pass memoryClient here.
 
 Mounting is automatic — index.js iterates all returned skills. No other changes to index.js.
 
@@ -286,6 +298,31 @@ loop from accidentally unifying the two paths.
 - `octowiz.improve` — deferred; hourly cron owns improvement runs
 - Bridge modifications — octowiz-workflow skill continues using octowiz-cache; wiring to `/a2a/octowiz` is a follow-up PR
 - Streaming responses — both operations return synchronous JSON; SSE is not needed for context packaging
+
+---
+
+## Open questions (resolve during implementation)
+
+### Session snapshot resolution
+
+The spec reads "session snapshot from session-lifecycle (branch, recent_files, active_task,
+recent_events)." Two things to verify against the actual `session-lifecycle` code before
+building the snapshot read:
+
+1. **Does a read path exist?** `session-lifecycle` may only expose `handle(event)` and
+   `sweepExpired()` with no getter for current state. If so, the snapshot must either be
+   added to session-lifecycle or sourced differently (e.g. git commands at call time).
+
+2. **Top-down caller has no session.** When ÆLLI calls `/a2a/octowiz` there may be no
+   active Claude Code session for that scope, or there may be several. A scope string alone
+   cannot reliably resolve to one session's snapshot. Resolution options:
+   - Return snapshot as empty/null and let the caller accept a reduced bundle
+   - Require callers to pass `sessionId` alongside `scope`
+   - Derive branch/files from git at call time (no session needed)
+
+   Pick one before implementation starts. The recommended default: derive branch and
+   recent_files from git at call time (shell out to `git -C <repoRoot>`) and treat
+   session-lifecycle events as an optional enrichment when a matching session exists.
 
 ---
 
