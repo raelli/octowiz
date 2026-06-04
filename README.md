@@ -40,15 +40,15 @@ Most AI coding tools give agents either a giant system prompt or nothing. Octowi
 
 ### A2A agents
 
-All agents live in [raelli/aelli](https://github.com/raelli/aelli) and are exposed at `http://aelli:3456`.
+All agents live in [raelli/aelli](https://github.com/raelli/aelli) and are registered in LiteLLM as the gateway layer.
 
-| Agent | Endpoint | Description |
+| LiteLLM name | AELLI endpoint | Description |
 |---|---|---|
-| **AELLI Orchestrator** | `/a2a/aelli` | Routes natural language requests to specialist agents via tool_use |
-| **AELLI Router** | `/a2a/aelli-router` | Multi-router dispatch — coding vs Nemotron; runs generate/review/revise workflows |
-| **Octowiz Coding Agent** | `/a2a/octowiz` | Context packager for `octowiz.plan` and `octowiz.review`, scaled to model tier |
-| **Engineering Knowledge** | `/a2a/engineering` | Answers questions from indexed GitHub, Confluence, and Jira content |
-| **Dev Advisor** | `/a2a/dev-advisor` | Monitors cross-session file conflicts, branch drift, and spec deviations |
+| `aelli-orchestrator` | `/a2a/aelli` | Routes natural language requests to specialist agents via tool_use |
+| `aelli-router` | `/a2a/aelli-router` | Multi-router dispatch — coding vs Nemotron; runs generate/review/revise workflows |
+| `aelli-octowiz` | `/a2a/octowiz` | Context packager for `octowiz.plan` and `octowiz.review`, scaled to model tier |
+| `aelli-engineering` | `/a2a/engineering` | Answers questions from indexed GitHub, Confluence, and Jira content |
+| `aelli-dev-advisor` | `/a2a/dev-advisor` | Monitors cross-session file conflicts, branch drift, and spec deviations |
 
 ### Memory namespaces
 
