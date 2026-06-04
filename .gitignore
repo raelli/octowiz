@@ -13,3 +13,6 @@ docs/superpowers/plans/
 
 node_modules/
 .worktrees/
+
+# Visual brainstorming session files
+.superpowers/
