@@ -9,7 +9,7 @@ import time
 from typing import Any, Dict, Optional
 
 from path_guard import validate_cwd
-from providers.sandcastle.status import is_terminal
+from providers.sandcastle.status import is_error, is_terminal
 
 _DEFAULT_POLL_INTERVAL = float(os.environ.get("OCTOWIZ_DISPATCH_POLL_INTERVAL", "5"))
 _DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "300"))
@@ -17,10 +17,16 @@ _DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "300"))
 _VALID_CONTAINER_PROVIDERS = frozenset({"docker", "podman"})
 _BRANCH_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_./-]{0,127}$')
 
+# Singleton provider so wait=False run state persists across calls.
+_shared_provider: Optional[Any] = None
 
-def _make_provider():
-    from providers.sandcastle.provider import SandcastleProvider
-    return SandcastleProvider()
+
+def _get_provider() -> Any:
+    global _shared_provider
+    if _shared_provider is None:
+        from providers.sandcastle.provider import SandcastleProvider
+        _shared_provider = SandcastleProvider()
+    return _shared_provider
 
 
 async def handle_run_sandboxed(
@@ -58,7 +64,7 @@ async def handle_run_sandboxed(
         return {"status": "error", "message": str(exc)}
 
     if provider is None:
-        provider = _make_provider()
+        provider = _get_provider()
     if poll_interval is None:
         poll_interval = _DEFAULT_POLL_INTERVAL
     if timeout is None:
@@ -70,6 +76,15 @@ async def handle_run_sandboxed(
         return {"status": "error", "message": f"failed to start container: {exc}"}
 
     if not wait:
+        # Spawn a background watchdog to enforce SANDCASTLE_TIMEOUT on this unsupervised run.
+        watchdog_secs = float(os.environ.get("SANDCASTLE_TIMEOUT", "300"))
+
+        async def _watchdog(_run_id: str = run_id, _p: Any = provider, _t: float = watchdog_secs) -> None:
+            await asyncio.sleep(_t)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _p.stop, _run_id)
+
+        asyncio.create_task(_watchdog())
         return {"status": "dispatched", "run_id": run_id}
 
     _loop = asyncio.get_running_loop()
@@ -80,7 +95,8 @@ async def handle_run_sandboxed(
         status = await _loop.run_in_executor(None, provider.get_status, run_id)
         if is_terminal(status):
             logs = await _loop.run_in_executor(None, provider.get_logs, run_id)
-            return {"status": "ok", "run_id": run_id, "exit_status": status, "logs": logs}
+            top_status = "error" if is_error(status) else "ok"
+            return {"status": top_status, "run_id": run_id, "exit_status": status, "logs": logs}
 
     # Stop the container before returning — don't orphan it.
     await _loop.run_in_executor(None, provider.stop, run_id)

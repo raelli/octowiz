@@ -116,12 +116,32 @@ class TestRunSandboxedWaitFalse(unittest.TestCase):
                 {"task": "run tests", "cwd": "/repo", "wait": False},
                 provider=provider, **_FAST,
             ))
-        # get_status should not have been called
-        # (status_sequence is empty; if polled it would return "running" from default)
-        # We verify by checking no status advancement occurred
-        # Since status_sequence is exhausted and returns "running", absence of error is sufficient
-        # but we can check dispatched_task was set (dispatch was called)
         self.assertEqual(provider.dispatched_task, "run tests")
+
+    def test_wait_false_watchdog_stops_container_after_timeout(self):
+        """wait=False must spawn a background watchdog that calls provider.stop after SANDCASTLE_TIMEOUT."""
+        from capabilities.run_sandboxed import handle_run_sandboxed
+        stopped_ids = []
+
+        class _TrackingProvider(_MockSandcastleProvider):
+            def stop(self, run_id):
+                stopped_ids.append(run_id)
+
+        provider = _TrackingProvider(run_id="watchdog-1")
+
+        async def _scenario():
+            with patch("shutil.which", return_value="/usr/bin/docker"):
+                with patch.dict(os.environ, {"SANDCASTLE_TIMEOUT": "0.05"}):
+                    result = await handle_run_sandboxed(
+                        {"task": "run tests", "cwd": "/repo", "wait": False},
+                        provider=provider, **_FAST,
+                    )
+            await asyncio.sleep(0.12)  # wait for the 0.05s watchdog to fire
+            return result
+
+        result = asyncio.run(_scenario())
+        self.assertEqual(result["status"], "dispatched")
+        self.assertIn("watchdog-1", stopped_ids)
 
 
 class TestRunSandboxedWaitTrue(unittest.TestCase):
@@ -143,7 +163,7 @@ class TestRunSandboxedWaitTrue(unittest.TestCase):
         self.assertEqual(result["exit_status"], "completed")
         self.assertEqual(result["logs"], "all tests passed")
 
-    def test_wait_true_polls_until_error(self):
+    def test_wait_true_polls_until_error_returns_status_error(self):
         from capabilities.run_sandboxed import handle_run_sandboxed
         provider = _MockSandcastleProvider(
             run_id="sc-4",
@@ -155,11 +175,11 @@ class TestRunSandboxedWaitTrue(unittest.TestCase):
                 {"task": "run tests", "cwd": "/repo"},
                 provider=provider, **_FAST,
             ))
-        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["status"], "error")
         self.assertEqual(result["exit_status"], "error")
         self.assertEqual(result["logs"], "crash output")
 
-    def test_wait_true_polls_until_timed_out(self):
+    def test_wait_true_polls_until_timed_out_returns_status_error(self):
         from capabilities.run_sandboxed import handle_run_sandboxed
         provider = _MockSandcastleProvider(
             run_id="sc-5",
@@ -170,8 +190,23 @@ class TestRunSandboxedWaitTrue(unittest.TestCase):
                 {"task": "run tests", "cwd": "/repo"},
                 provider=provider, **_FAST,
             ))
-        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["status"], "error")
         self.assertEqual(result["exit_status"], "timed_out")
+
+    def test_wait_true_completed_still_returns_status_ok(self):
+        from capabilities.run_sandboxed import handle_run_sandboxed
+        provider = _MockSandcastleProvider(
+            run_id="sc-ok",
+            status_sequence=["completed"],
+            logs="all green",
+        )
+        with patch("shutil.which", return_value="/usr/bin/docker"):
+            result = _run(handle_run_sandboxed(
+                {"task": "run tests", "cwd": "/repo"},
+                provider=provider, **_FAST,
+            ))
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["exit_status"], "completed")
 
     def test_wait_true_capability_timeout_returns_error(self):
         from capabilities.run_sandboxed import handle_run_sandboxed
