@@ -5,7 +5,7 @@ const path = require("path");
 const CACHE_DIR = path.join(os.tmpdir(), `aelli-cc-test-${process.pid}`);
 process.env.AELLI_CACHE_DIR = CACHE_DIR;
 
-const { captureContext, getContext } = require("../src/git-context");
+const { captureContext, getContext, getStableContext, getLiveContext } = require("../src/git-context");
 
 afterAll(() => {
   fs.rmSync(CACHE_DIR, { recursive: true, force: true });
@@ -53,5 +53,35 @@ describe("captureContext / getContext", () => {
     const tmpFile = path.join(CACHE_DIR, "git-context-sess-atomic.json.tmp");
     expect(fs.existsSync(cacheFile)).toBe(true);
     expect(fs.existsSync(tmpFile)).toBe(false);
+  });
+});
+
+describe("getStableContext / getLiveContext", () => {
+  it("getStableContext returns only stable fields — no branch or modifiedFiles", () => {
+    captureContext("sess-stable", process.cwd());
+    const stable = getStableContext("sess-stable");
+    expect(stable).toMatchObject({ sessionId: "sess-stable" });
+    expect(stable.branch).toBeUndefined();
+    expect(stable.modifiedFiles).toBeUndefined();
+  });
+
+  it("getLiveContext returns branch and modifiedFiles without stable fields", () => {
+    captureContext("sess-live", process.cwd());
+    const live = getLiveContext("sess-live");
+    expect(typeof live.branch === "string" || live.branch === null).toBe(true);
+    expect(Array.isArray(live.modifiedFiles)).toBe(true);
+    expect(live.sessionId).toBeUndefined();
+  });
+
+  it("getLiveContext returns null when cache file does not exist", () => {
+    expect(getLiveContext("nonexistent-live")).toBeNull();
+  });
+
+  it("getContext delegates live reads to getLiveContext — no duplication", () => {
+    captureContext("sess-delegate", process.cwd());
+    const full = getContext("sess-delegate");
+    const live = getLiveContext("sess-delegate");
+    expect(full.branch).toBe(live.branch);
+    expect(full.modifiedFiles).toEqual(live.modifiedFiles);
   });
 });

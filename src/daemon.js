@@ -161,10 +161,9 @@ async function processTask(task) {
 
   try {
     const artifact = await _forwardToA2A(capability, payload);
-    // normalizeA2AResponse handles null/undefined and adds camelCase aliases for
-    // any recognized snake_case fields (session_id → sessionId, etc.).
-    // The fallback status ensures a valid queue result when Python returns nothing.
-    const normalized = normalizeA2AResponse(artifact) || { status: "completed" };
+    // normalizeA2AResponse handles null/undefined (returns {}) and adds camelCase
+    // aliases for any recognized snake_case fields (session_id → sessionId, etc.).
+    const normalized = normalizeA2AResponse(artifact);
     // Normalize: Python capabilities use "error" for failures; queue needs
     // "completed" vs "error".
     const queueStatus = normalized.status === "error" ? "error" : "completed";

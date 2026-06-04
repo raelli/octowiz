@@ -136,12 +136,7 @@ function getLiveContext(sessionId) {
 function getContext(sessionId) {
   const cached = getStableContext(sessionId);
   if (!cached) return null;
-  const { repoRoot } = cached;
-  return {
-    ...cached,
-    branch: readBranch(repoRoot),
-    modifiedFiles: readModifiedFiles(repoRoot),
-  };
+  return { ...cached, ...getLiveContext(sessionId) };
 }
 
 module.exports = { captureContext, getStableContext, getLiveContext, getContext, parseGitStatus };

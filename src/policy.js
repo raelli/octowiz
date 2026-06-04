@@ -12,9 +12,15 @@
 // Those two validators MUST stay in sync.  If the logic here changes (separator
 // handling, realpath resolution, allowlist semantics), update path_guard.py as well.
 //
-// Known divergence (2026-06-04): path_guard.py does NOT call os.path.realpath()
-// on the individual roots, only on cwd.  This means symlinked roots work here but
-// would bypass the Python guard.  Reconciliation is tracked as a future task.
+// Known divergences vs. path_guard.py (2026-06-04):
+//   1. Symlink resolution: path_guard.py does NOT call os.path.realpath() on the
+//      individual roots, only on cwd. Symlinked roots work here but bypass Python.
+//   2. Empty-allowlist semantics (security-relevant): an empty / unset
+//      OCTOWIZ_ALLOWED_ROOTS causes checkStartup() to exit the process (deny-all).
+//      path_guard.py treats the same condition as allow-all. If Python is ever
+//      invoked standalone without the Node daemon having validated ALLOWED_ROOTS,
+//      an unset env var will permit all paths.
+// Both divergences are tracked for reconciliation.
 
 const path = require("path");
 const fs = require("fs");
