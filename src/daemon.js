@@ -30,6 +30,7 @@ const KNOWN_CAPABILITIES = new Set([
   "octowiz.dispatch",
   "octowiz.manage_agents",
   "octowiz.observe",
+  "router.validation-request",
 ]);
 
 /**
@@ -136,6 +137,24 @@ async function processTask(task) {
     const { sessionId, advisory = {} } = payload;
     console.log(`[octowiz] advisory for session ${sessionId}: ${advisory.type} — ${advisory.message}`);
     await postResult(id, leaseToken, { status: "completed", advisory });
+    return;
+  }
+
+  // router.validation-request is handled locally: validate the draft and post
+  // the result back so AELLI's onTaskComplete callback resolves the gate.
+  // AELLI_VALIDATOR_PRINCIPAL must match the OCTOWIZ_INBOUND_SECRET value that
+  // this daemon uses when authenticating to AELLI's task queue.
+  if (capability === "router.validation-request") {
+    const { validateDraft } = require("./validation");
+    const { workflowTaskId, draft = "" } = payload;
+    const validation = validateDraft(draft);
+    await postResult(id, leaseToken, {
+      status: "completed",
+      workflowTaskId,
+      passed: validation.passed,
+      ...(validation.failureKind ? { failureKind: validation.failureKind } : {}),
+      ...(validation.output      ? { output: validation.output }           : {}),
+    });
     return;
   }
 

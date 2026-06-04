@@ -380,3 +380,80 @@ it("index.js does not call subscribe() — daemon only", async () => {
   expect(mockSubscribe).not.toHaveBeenCalled();
   jest.useRealTimers();
 });
+
+
+describe("daemon.processTask — router.validation-request", () => {
+  let processTask, claimTask, postResult;
+  let realpathSyncSpy;
+
+  beforeEach(() => {
+    realpathSyncSpy = jest.spyOn(fs, "realpathSync").mockImplementation((p) => p);
+    jest.resetModules();
+    jest.mock("../src/task-queue-client");
+    jest.unmock("../src/daemon");
+    process.env.OCTOWIZ_ALLOWED_ROOTS = "/allowed";
+    process.env.AELLI_BASE_URL = "http://localhost:3456";
+    process.env.OCTOWIZ_INBOUND_SECRET = "test-secret";
+    process.env.OCTOWIZ_DISPATCH_TIMEOUT = "1000";
+    ({ claimTask, postResult } = require("../src/task-queue-client"));
+    ({ processTask } = require("../src/daemon"));
+    claimTask.mockResolvedValue({ ok: true, leaseToken: "lt-val" });
+    postResult.mockResolvedValue();
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    realpathSyncSpy.mockRestore();
+    delete process.env.OCTOWIZ_DISPATCH_TIMEOUT;
+  });
+
+  it("passes valid JS draft — posts passed:true with workflowTaskId echoed", async () => {
+    await processTask({
+      id: "t-val-1",
+      capability: "router.validation-request",
+      payload: {
+        workflowTaskId: "wf-abc",
+        draft: "const x = 1;",
+        task: { content: "write something" },
+      },
+    });
+
+    expect(claimTask).toHaveBeenCalledWith("t-val-1");
+    expect(postResult).toHaveBeenCalledWith("t-val-1", "lt-val",
+      expect.objectContaining({ status: "completed", passed: true, workflowTaskId: "wf-abc" })
+    );
+  });
+
+  it("fails broken JS syntax — posts passed:false with failureKind:syntax-error", async () => {
+    await processTask({
+      id: "t-val-2",
+      capability: "router.validation-request",
+      payload: {
+        workflowTaskId: "wf-def",
+        draft: "function broken( {",
+        task: {},
+      },
+    });
+
+    expect(postResult).toHaveBeenCalledWith("t-val-2", "lt-val",
+      expect.objectContaining({
+        status:      "completed",
+        passed:      false,
+        failureKind: "syntax-error",
+        workflowTaskId: "wf-def",
+      })
+    );
+  });
+
+  it("fails empty draft — posts passed:false with failureKind:empty-draft", async () => {
+    await processTask({
+      id: "t-val-3",
+      capability: "router.validation-request",
+      payload: { workflowTaskId: "wf-ghi", draft: "", task: {} },
+    });
+
+    expect(postResult).toHaveBeenCalledWith("t-val-3", "lt-val",
+      expect.objectContaining({ passed: false, failureKind: "empty-draft" })
+    );
+  });
+});
