@@ -18,6 +18,7 @@ EXPECTED_CAPABILITIES = {
     "octowiz.load_memory",
     "octowiz.write_diary",
     "octowiz.escalate_to_aelli",
+    "octowiz.marketplace_info",
 }
 
 
@@ -29,7 +30,7 @@ class TestAgentCard(unittest.TestCase):
         resp = self.client.get("/a2a/octowiz/.well-known/agent.json")
         self.assertEqual(resp.status_code, 200)
 
-    def test_agent_card_lists_all_9_capabilities(self):
+    def test_agent_card_lists_all_10_capabilities(self):
         resp = self.client.get("/a2a/octowiz/.well-known/agent.json")
         card = resp.json()
         skill_ids = {s["id"] for s in card["skills"]}
