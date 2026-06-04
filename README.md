@@ -158,6 +158,7 @@ The Claude Code hooks (SessionStart, PostToolUse, UserPromptSubmit, Stop) fire a
 
 | Var | Purpose |
 |---|---|
+| `OCTOWIZ_ALLOWED_ROOTS` | **Required.** Colon-separated list of repo root paths the daemon is allowed to serve (e.g. `/Users/me/projects/myrepo`). The daemon exits on startup if this is unset or empty. |
 | `AELLI_BASE_URL` | AELLI server base URL |
 | `OCTOWIZ_A2A_URL` | Direct A2A server URL override |
 | `OCTOWIZ_A2A_PORT` | A2A server port (default: 8765) |
