@@ -34,10 +34,9 @@ Most AI coding tools give agents either a giant system prompt or nothing. Octowi
 
 | Name | What it is |
 |---|---|
-| **ÆLLI** | The orchestration brain. Delegates coding work to Octowiz via A2A. Makes strategic decisions Octowiz escalates up. |
-| **Octowiz Agent** | The A2A server (`/a2a/octowiz`). Handles reasoning, advisor rules, diary writing, and escalation to ÆLLI. Built separately — not in this repo. |
+| **ÆLLI** | The orchestration brain ([raelli/aelli](https://github.com/raelli/aelli)). Hosts multiple A2A skills, including `/a2a/octowiz`. Makes strategic decisions, delegates coding work to the Bridge, and escalates decisions back up the chain. |
 | **Octowiz Bridge** | This repo. The Claude Code plugin. Hooks into developer sessions, routes to skills, seeds project memory. Install name: `octowiz`. |
-| **Octowiz Advisor** | Capability inside the Agent. Detects spec drift, file conflicts, and branch deviations. |
+| **Octowiz Advisor** | The `/a2a/octowiz` skill inside ÆLLI. Detects spec drift, file conflicts, and branch deviations. Handles advisor rules, diary writing, and escalation. |
 | **LiteLLM** | Platform layer. Hosts the A2A Gateway, Memory API, and IntegraHub Marketplace. |
 
 ### Memory namespaces
