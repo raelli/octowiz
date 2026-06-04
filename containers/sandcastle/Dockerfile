@@ -19,7 +19,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install claude CLI globally.
-# Pin via npm install -g to get a reproducible package; update the tag to upgrade.
+# Installs the latest published version. For reproducible builds, pin by specifying
+# @anthropic-ai/claude-code@VERSION (e.g. @2.1.162) and update on each release.
 RUN npm install -g @anthropic-ai/claude-code
 
 # Sanity-check: confirm the expected binaries are available.
