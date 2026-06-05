@@ -27,8 +27,8 @@ function tag(str) {
 
 function fmt(args) { return [tag(args[0]), ...args.slice(1)]; }
 
-const log   = (...args) => console.log  (`${badge(args)} ${ts()}`, ...fmt(args));
-const info  = (...args) => console.log  (`${badge(args)} ${ts()}`, ...fmt(args));
+const log   = (...args) => console.error(`${badge(args)} ${ts()}`, ...fmt(args));
+const info  = (...args) => console.error(`${badge(args)} ${ts()}`, ...fmt(args));
 const warn  = (...args) => console.warn (`${badge(args)} ${ts()} ${YELLOW}warn${RESET}`, ...fmt(args));
 const error = (...args) => console.error(`${badge(args)} ${ts()} ${RED}err${RESET} `, ...fmt(args));
 
