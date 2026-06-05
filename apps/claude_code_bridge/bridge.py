@@ -7,6 +7,7 @@ POSTs to $AELLI_DEV_ADVISOR_URL (default http://localhost:3456/a2a/dev-advisor),
 and writes a systemMessage to stdout if the advisor returns advice.
 Exits 0 always — never blocks the developer.
 """
+import datetime
 import json
 import os
 import subprocess
@@ -14,11 +15,23 @@ import sys
 import uuid
 from typing import Dict, Optional
 
+_BOLD   = "\033[1m"
+_PURPLE = "\033[38;5;135m"
+_DIM    = "\033[2m"
+_RESET  = "\033[0m"
+_BADGE  = f"{_BOLD}{_PURPLE}--*{_RESET}"
+
+
+def _log(msg: str) -> None:
+    """Write a purple-badged message to stderr — always visible."""
+    ts = datetime.datetime.now().strftime("%H:%M:%S")
+    print(f"{_BADGE} {_DIM}{ts}{_RESET} {msg}", file=sys.stderr)
+
 
 def _verbose_log(msg: str) -> None:
-    """Write a diagnostic message to stderr when OCTOWIZ_VERBOSE is set."""
+    """Write a purple-badged diagnostic message to stderr when OCTOWIZ_VERBOSE is set."""
     if os.environ.get("OCTOWIZ_VERBOSE", "").lower() in ("1", "true", "yes"):
-        print(f"[octowiz] {msg}", file=sys.stderr)
+        _log(msg)
 
 
 TOOL_EVENT_MAP = {
@@ -213,11 +226,10 @@ def _route_event(task_kind: str, data: Dict) -> None:
 def main() -> int:
     # Warn when routing through LiteLLM but auth token is missing
     if os.environ.get("AELLI_LITELLM_BASE", "") and not os.environ.get("AELLI_AUTH_TOKEN", ""):
-        print(
+        _log(
             "[octowiz] Warning: AELLI_LITELLM_BASE is set but AELLI_AUTH_TOKEN is missing. "
             "All A2A calls through the LiteLLM gateway will get 401 Unauthorized. "
-            "Set AELLI_AUTH_TOKEN to a valid LiteLLM API key.",
-            file=sys.stderr,
+            "Set AELLI_AUTH_TOKEN to a valid LiteLLM API key."
         )
 
     url = _resolve_advisor_url()
@@ -231,10 +243,9 @@ def main() -> int:
         _parsed = _urlparse(url)
         _local_hosts = {"localhost", "127.0.0.1", "::1", "[::1]"}
         if _parsed.scheme == "http" and _parsed.hostname not in _local_hosts:
-            print(
+            _log(
                 "[octowiz] WARNING: AELLI_DEV_ADVISOR_URL uses plain HTTP; "
-                "the auth token will be sent in cleartext. Use HTTPS for non-local deployments.",
-                file=sys.stderr,
+                "the auth token will be sent in cleartext. Use HTTPS for non-local deployments."
             )
     except Exception:
         pass

@@ -6,6 +6,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 
 const net = require("net");
+const logger = require("../../src/logger");
 
 const CACHE_DIR = process.env.AELLI_CACHE_DIR || path.join(os.homedir(), ".cache", "aelli-cc");
 const LOG_FILE = path.join(CACHE_DIR, "aelli-cc.log");
@@ -68,7 +69,10 @@ async function handleStart(input) {
   const sessionId = input.session_id || `cc-${Date.now()}-${process.pid}`;
   const cwd = input.cwd || process.cwd();
 
+  logger.log("[start] session starting", sessionId);
+
   if (!process.env.AELLI_AUTH_TOKEN) {
+    logger.warn("[start] AELLI_AUTH_TOKEN not set — advisory delivery disabled");
     appendLog("[start] AELLI_AUTH_TOKEN not set — advisory delivery disabled");
   }
 
@@ -76,9 +80,10 @@ async function handleStart(input) {
 
   const ctx = captureContext(sessionId, cwd);
   const payload = buildSessionStart(ctx);
-  await post("session-start", payload, { sync: true, timeoutMs: 500 }).catch((e) =>
-    appendLog(`[start] session-start post failed: ${e?.message ?? e}`)
-  );
+  await post("session-start", payload, { sync: true, timeoutMs: 500 }).catch((e) => {
+    logger.error("[start] session-start post failed:", e?.message ?? e);
+    appendLog(`[start] session-start post failed: ${e?.message ?? e}`);
+  });
 
   // spawnSubscriber disabled: AELLI has no /a2a/tasks/subscribe endpoint yet.
   // Re-enable when per-session SSE push is wired (see src/session-subscriber.js).
@@ -91,6 +96,7 @@ if (require.main === module) {
     let input = {};
     try { input = JSON.parse(raw); } catch {}
     try { await handleStart(input); } catch (e) {
+      logger.error("[start] error:", e.message);
       appendLog(`[start] error: ${e.message}`);
     }
     process.exit(0);
