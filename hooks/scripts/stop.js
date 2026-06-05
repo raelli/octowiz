@@ -3,6 +3,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const logger = require("../../src/logger");
 
 const CACHE_DIR = process.env.AELLI_CACHE_DIR || path.join(os.homedir(), ".cache", "aelli-cc");
 
@@ -22,6 +23,8 @@ async function handleStop(input) {
 
   const sessionId = input.session_id || "";
   if (!sessionId) return;
+
+  logger.log("[stop] session ending", sessionId);
 
   killSubscriber(sessionId);
 
