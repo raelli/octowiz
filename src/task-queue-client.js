@@ -1,5 +1,6 @@
 const https = require("https");
 const http = require("http");
+const logger = require("./logger");
 
 const BASE = (process.env.AELLI_BASE_URL || "http://localhost:3456").replace(/\/$/, "");
 const SECRET = process.env.AELLI_AUTH_TOKEN || process.env.AELLI_INBOUND_SECRET || "";
@@ -51,7 +52,7 @@ async function postResult(taskId, leaseToken, result) {
       if (status >= 500 && retries > 0) continue; // retry on server error
       return;
     } catch (err) {
-      if (retries === 0) console.error(`[daemon] postResult failed after retries: ${err.message}`);
+      if (retries === 0) logger.error(`[daemon] postResult failed after retries: ${err.message}`);
     }
   }
 }

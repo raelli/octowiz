@@ -24,12 +24,13 @@
 
 const path = require("path");
 const fs = require("fs");
+const logger = require("./logger");
 
 function checkStartup() {
   const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || "";
   const roots = raw.split(":").map((r) => r.trim()).filter(Boolean);
   if (roots.length === 0) {
-    console.error(
+    logger.error(
       "[policy] Fatal: OCTOWIZ_ALLOWED_ROOTS is not set or empty.\n" +
       "  Set it to a colon-separated list of absolute paths the daemon is allowed to operate in.\n" +
       "  Example: export OCTOWIZ_ALLOWED_ROOTS=/Users/me/Documents/myproject"

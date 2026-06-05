@@ -1,5 +1,6 @@
 const http = require("http");
 const https = require("https");
+const logger = require("./logger");
 const { subscribeToQueue } = require("./a2a-client");
 const { checkStartup, validateCwd } = require("./policy");
 const { claimTask, postResult } = require("./task-queue-client");
@@ -136,7 +137,7 @@ async function processTask(task) {
   // Log the advisory and echo it back as the artifact.
   if (capability === "octowiz.observe") {
     const { sessionId, advisory = {} } = payload;
-    console.log(`[octowiz] advisory for session ${sessionId}: ${advisory.type} — ${advisory.message}`);
+    logger.log(`[octowiz] advisory for session ${sessionId}: ${advisory.type} — ${advisory.message}`);
     await postResult(id, leaseToken, { status: "completed", advisory });
     return;
   }
@@ -169,7 +170,7 @@ async function processTask(task) {
     const queueStatus = normalized.status === "error" ? "error" : "completed";
     await postResult(id, leaseToken, { ...normalized, status: queueStatus });
   } catch (err) {
-    console.error(`[octowiz] forward to A2A server failed for ${capability}:`, err.message);
+    logger.error(`[octowiz] forward to A2A server failed for ${capability}:`, err.message);
     await postResult(id, leaseToken, { status: "error", message: err.message });
   }
 }
@@ -177,7 +178,7 @@ async function processTask(task) {
 function start() {
   checkStartup();
   subscribeToQueue(QUEUE_URL, processTask);
-  console.log(`[octowiz] Subscribed to task queue at ${QUEUE_URL}`);
+  logger.log(`[octowiz] Subscribed to task queue at ${QUEUE_URL}`);
 }
 
 module.exports = { start, processTask, _forwardToA2A };

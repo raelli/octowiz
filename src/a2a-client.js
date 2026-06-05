@@ -1,6 +1,7 @@
 const http = require("http");
 const https = require("https");
 const fs = require("fs");
+const logger = require("./logger");
 const os = require("os");
 const path = require("path");
 
@@ -25,8 +26,8 @@ const ROUTER_URL = process.env.AELLI_ROUTER_URL
 
 // Warn when AELLI_LITELLM_BASE is set but no auth token is configured
 if (LITELLM_BASE && !AUTH_TOKEN) {
-  console.warn(
-    "[AELLI A2A] Warning: AELLI_LITELLM_BASE is set but AELLI_AUTH_TOKEN is missing. " +
+  logger.warn(
+    "[AELLI A2A] AELLI_LITELLM_BASE is set but AELLI_AUTH_TOKEN is missing. " +
     "All A2A calls through the LiteLLM gateway will get 401 Unauthorized. " +
     "Set AELLI_AUTH_TOKEN to a valid LiteLLM API key."
   );
@@ -41,8 +42,8 @@ if (AUTH_TOKEN) {
   ];
   for (const [name, url] of urlsToCheck) {
     if (!url.startsWith("https://") && !isLocalhost(url)) {
-      console.warn(
-        `[AELLI A2A] Warning: AELLI_AUTH_TOKEN is set but ${name} uses plain HTTP on a non-localhost address. Use HTTPS to protect your token.`
+      logger.warn(
+        `[AELLI A2A] AELLI_AUTH_TOKEN is set but ${name} uses plain HTTP on a non-localhost address. Use HTTPS to protect your token.`
       );
     }
   }
@@ -172,14 +173,14 @@ function _connectSSE(urlStr, headers, onEvent, reconnectMs = 3000, onConnected =
       }
     });
     res.on("end", () => {
-      console.warn(`[AELLI SSE] connection closed — reconnecting in ${reconnectMs / 1000}s`);
+      logger.warn(`[AELLI SSE] connection closed — reconnecting in ${reconnectMs / 1000}s`);
       setTimeout(() => _connectSSE(urlStr, headers, onEvent, reconnectMs), reconnectMs);
     });
   });
 
   req.setTimeout(60_000, () => req.destroy());
   req.on("error", (e) => {
-    console.error("[AELLI SSE] error:", e.message, `— reconnecting in ${reconnectMs / 1000 + 2}s`);
+    logger.error("[AELLI SSE] error:", e.message, `— reconnecting in ${reconnectMs / 1000 + 2}s`);
     setTimeout(() => _connectSSE(urlStr, headers, onEvent, reconnectMs + 2000), reconnectMs + 2000);
   });
   req.end();
@@ -190,7 +191,7 @@ function subscribe(onTask) {
     throw new TypeError("[AELLI A2A] subscribe() requires an onTask callback function");
   }
   if (!SESSION_ID) {
-    console.warn("[AELLI A2A] PTY_SESSION_ID not set — SSE subscription skipped");
+    logger.warn("[AELLI A2A] PTY_SESSION_ID not set — SSE subscription skipped");
     return;
   }
   _connectSSE(
@@ -201,15 +202,15 @@ function subscribe(onTask) {
         try {
           const task = JSON.parse(data);
           Promise.resolve(onTask(task)).catch((e) =>
-            console.error("[AELLI A2A] Task processing failed:", e.message)
+            logger.error("[AELLI A2A] Task processing failed:", e.message)
           );
         } catch (e) {
-          console.warn("[AELLI A2A] Parse error:", e.message);
+          logger.warn("[AELLI A2A] Parse error:", e.message);
         }
       }
     },
     3000,
-    () => console.log(`[AELLI A2A] SSE connected (sessionId=${SESSION_ID})`)
+    () => logger.log(`[AELLI A2A] SSE connected (sessionId=${SESSION_ID})`)
   );
 }
 
@@ -226,15 +227,15 @@ function subscribeToQueue(queueUrl, onTask) {
         try {
           const task = JSON.parse(data);
           Promise.resolve(onTask(task)).catch((e) =>
-            console.error("[octowiz] Task processing failed:", e.message)
+            logger.error("[octowiz] Task processing failed:", e.message)
           );
         } catch (e) {
-          console.warn("[octowiz] Parse error:", e.message);
+          logger.warn("[octowiz] Parse error:", e.message);
         }
       }
     },
     3000,
-    () => console.log(`[octowiz] Daemon subscribed to ${queueUrl}`)
+    () => logger.log(`[octowiz] Daemon subscribed to ${queueUrl}`)
   );
 }
 
