@@ -363,25 +363,6 @@ describe("A2A_TIMEOUT_MS computation", () => {
   });
 });
 
-// ── index.js smoke test ────────────────────────────────────────────────────
-
-it("index.js does not call subscribe() — daemon only", async () => {
-  jest.resetModules();
-  const mockSubscribe = jest.fn();
-  jest.mock("../src/a2a-client", () => ({
-    subscribe: mockSubscribe,
-    updateTask: jest.fn(),
-  }));
-  jest.mock("../src/daemon", () => ({ start: jest.fn() }));
-  jest.useFakeTimers({ doNotFake: ["setImmediate"] });
-  require("../index");
-  // Give the async start() a tick to run
-  await new Promise((r) => setImmediate(r));
-  expect(mockSubscribe).not.toHaveBeenCalled();
-  jest.useRealTimers();
-});
-
-
 describe("daemon.processTask — router.validation-request", () => {
   let processTask, claimTask, postResult;
   let realpathSyncSpy;

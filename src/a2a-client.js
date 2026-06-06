@@ -186,34 +186,6 @@ function _connectSSE(urlStr, headers, onEvent, reconnectMs = 3000, onConnected =
   req.end();
 }
 
-function subscribe(onTask) {
-  if (typeof onTask !== "function") {
-    throw new TypeError("[AELLI A2A] subscribe() requires an onTask callback function");
-  }
-  if (!SESSION_ID) {
-    logger.warn("[AELLI A2A] PTY_SESSION_ID not set — SSE subscription skipped");
-    return;
-  }
-  _connectSSE(
-    `${API_BASE}/a2a/tasks/subscribe?sessionId=${SESSION_ID}`,
-    makeAuthHeaders(),
-    (event, data) => {
-      if (event === "task-new" && data) {
-        try {
-          const task = JSON.parse(data);
-          Promise.resolve(onTask(task)).catch((e) =>
-            logger.error("[AELLI A2A] Task processing failed:", e.message)
-          );
-        } catch (e) {
-          logger.warn("[AELLI A2A] Parse error:", e.message);
-        }
-      }
-    },
-    3000,
-    () => logger.log(`[AELLI A2A] SSE connected (sessionId=${SESSION_ID})`)
-  );
-}
-
 function subscribeToQueue(queueUrl, onTask) {
   if (typeof onTask !== "function") {
     throw new TypeError("[octowiz] subscribeToQueue() requires an onTask callback");
@@ -324,4 +296,4 @@ async function route(taskKind, data = {}, { timeoutMs = 2000 } = {}) {
   }
 }
 
-module.exports = { subscribe, subscribeToQueue, post, route, parseSseEvents, updateTask };
+module.exports = { subscribeToQueue, post, route, parseSseEvents, updateTask };
