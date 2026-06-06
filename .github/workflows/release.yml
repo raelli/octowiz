@@ -68,3 +68,26 @@ with open('package.json', 'w') as f:
           git commit -m "chore: bump version to $NEW"
           git tag "v$NEW"
           git push origin main --tags
+
+      - name: Sync version to IntegraHub marketplace
+        env:
+          LITELLM_MASTER_KEY: ${{ secrets.LITELLM_MASTER_KEY }}
+        run: |
+          VERSION="${{ steps.bump.outputs.new_version }}"
+          curl -sf -X POST "https://llm.integrahub.de/claude-code/plugins" \
+            -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"name\": \"octowiz\",
+              \"source\": {\"source\": \"github\", \"repo\": \"raelli/octowiz\"},
+              \"version\": \"$VERSION\",
+              \"description\": \"A skill-backed memory stack for coding agents.\",
+              \"keywords\": [\"claude-code\", \"mattpocock\", \"superpowers\", \"antfu-skill\"],
+              \"category\": \"Development\"
+            }" | tee /tmp/result.json
+          STATUS=$(python3 -c "import json; print(json.load(open('/tmp/result.json')).get('status',''))")
+          if [ "$STATUS" != "success" ]; then
+            echo "Marketplace upsert failed" >&2
+            exit 1
+          fi
+          echo "Marketplace updated: octowiz $VERSION"

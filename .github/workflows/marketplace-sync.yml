@@ -1,5 +1,9 @@
 name: marketplace-sync
 
+# Safety net for manually pushed v* tags (e.g. hotfix tags pushed outside
+# the release workflow). The primary sync path is the final step in
+# release.yml, which fires in the same job and is not subject to the
+# GITHUB_TOKEN cross-workflow trigger restriction.
 on:
   push:
     tags:
@@ -12,8 +16,7 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
-          TAG="${GITHUB_REF_NAME}"        # e.g. v0.9.10
-          VERSION="${TAG#v}"              # strip leading v → 0.9.10
+          VERSION="${GITHUB_REF_NAME#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Upsert octowiz in IntegraHub marketplace
@@ -32,7 +35,7 @@ jobs:
               \"keywords\": [\"claude-code\", \"mattpocock\", \"superpowers\", \"antfu-skill\"],
               \"category\": \"Development\"
             }" | tee /tmp/result.json
-          STATUS=$(python3 -c "import json,sys; print(json.load(open('/tmp/result.json')).get('status',''))")
+          STATUS=$(python3 -c "import json; print(json.load(open('/tmp/result.json')).get('status',''))")
           if [ "$STATUS" != "success" ]; then
             echo "Marketplace upsert failed" >&2
             exit 1
