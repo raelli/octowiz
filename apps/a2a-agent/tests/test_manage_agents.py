@@ -10,6 +10,25 @@ _SECRET = "test-secret"
 
 import unittest
 
+# path_guard.validate_cwd checks OCTOWIZ_ALLOWED_ROOTS at call time.
+# These tests exercise manage_agents logic; path-guard logic is covered in
+# test_path_guard.py and in TestManageAgentsCwdValidation (which pops this
+# env var in its own setUp, so the module default does not interfere).
+_PREV_ALLOWED_ROOTS = None
+
+
+def setUpModule():
+    global _PREV_ALLOWED_ROOTS
+    _PREV_ALLOWED_ROOTS = os.environ.get("OCTOWIZ_ALLOWED_ROOTS")
+    os.environ["OCTOWIZ_ALLOWED_ROOTS"] = "/projects:/repo"
+
+
+def tearDownModule():
+    if _PREV_ALLOWED_ROOTS is None:
+        os.environ.pop("OCTOWIZ_ALLOWED_ROOTS", None)
+    else:
+        os.environ["OCTOWIZ_ALLOWED_ROOTS"] = _PREV_ALLOWED_ROOTS
+
 
 def _run(coro):
     return asyncio.run(coro)
