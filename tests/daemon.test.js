@@ -146,6 +146,27 @@ describe("daemon.processTask (forwarding)", () => {
     server.close();
   });
 
+  it.each([
+    "octowiz.load_memory",
+    "octowiz.escalate_to_aelli",
+    "octowiz.plan",
+    "octowiz.review",
+    "octowiz.write_diary",
+    "octowiz.run_sandboxed",
+    "octowiz.marketplace_info",
+  ])("forwards %s to A2A server (not rejected as unknown)", async (capability) => {
+    const { server, port } = await mockA2AServer(
+      makeA2AResponse({ status: "completed" })
+    );
+    process.env.OCTOWIZ_A2A_URL = `http://127.0.0.1:${port}`;
+    await processTask({ id: `t-${capability}`, capability, payload: { cwd: "/allowed/repo" } });
+    expect(postResult).toHaveBeenCalledWith(
+      `t-${capability}`, "lt-1",
+      expect.objectContaining({ status: "completed" })
+    );
+    server.close();
+  });
+
   it("rejects octowiz.advise as unknown capability (removed; handled by AELLI)", async () => {
     claimTask.mockResolvedValue({ ok: true, leaseToken: "lt-advise" });
     await processTask({ id: "t-advise", capability: "octowiz.advise", payload: { type: "prompt", sessionId: "s1" } });

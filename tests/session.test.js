@@ -20,6 +20,23 @@ afterEach(() => {
   delete process.env.AELLI_CACHE_DIR;
 });
 
+// ── start() ───────────────────────────────────────────────────────────────
+
+describe("start()", () => {
+  it("returns a context object and does not write a PID file", () => {
+    const dir = makeTmpDir();
+    const { start } = loadSession(dir);
+
+    const ctx = start("sess-start-1", dir);
+
+    // Context must be returned (captureContext populates at minimum repoRoot)
+    expect(ctx).toBeTruthy();
+    // The old start() wrote aelli-cc.<sessionId>.pid for the spawned child.
+    // The launchd daemon owns the queue subscriber — no PID file should exist.
+    expect(fs.existsSync(path.join(dir, "aelli-cc.sess-start-1.pid"))).toBe(false);
+  });
+});
+
 // ── stop() ────────────────────────────────────────────────────────────────
 
 describe("stop()", () => {

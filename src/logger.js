@@ -8,7 +8,7 @@ const YELLOW   = '\x1b[38;5;220m';
 const RED      = '\x1b[38;5;203m';
 const RESET    = '\x1b[0m';
 
-const BADGE_OCW   = `${BOLD}${PURPLE}--*${RESET}`;
+const BADGE_OCW   = `${BOLD}${PURPLE}[--*]${RESET}`;
 const BADGE_AELLI = `${BOLD}${PURPLE}[æ]${RESET}`;
 
 function badge(args) {

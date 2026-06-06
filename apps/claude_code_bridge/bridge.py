@@ -19,7 +19,7 @@ _BOLD   = "\033[1m"
 _PURPLE = "\033[38;5;135m"
 _DIM    = "\033[2m"
 _RESET  = "\033[0m"
-_BADGE       = f"{_BOLD}{_PURPLE}--*{_RESET}"
+_BADGE       = f"{_BOLD}{_PURPLE}[--*]{_RESET}"
 _AELLI_BADGE = f"{_BOLD}{_PURPLE}[æ]{_RESET}"
 
 
@@ -188,12 +188,13 @@ def _resolve_router_url() -> Optional[str]:
     return None
 
 
-def _route_event(task_kind: str, data: Dict) -> None:
-    """Bounded-blocking routing call — blocks up to timeout=2s, then returns silently (fail-open).
-    Logs the routing decision via OCTOWIZ_VERBOSE when available. Never raises."""
+def _route_event(task_kind: str, data: Dict) -> Optional[Dict]:
+    """Bounded-blocking routing call — blocks up to timeout=2s, then returns None (fail-open).
+    Returns the routing decision dict ({router, tier, model, workflow}) when available so
+    the caller can include it in the event forwarded to the dev-advisor. Never raises."""
     url = _resolve_router_url()
     if not url:
-        return
+        return None
     body = {
         "jsonrpc": "2.0",
         "method": "message/send",
@@ -212,23 +213,32 @@ def _route_event(task_kind: str, data: Dict) -> None:
             headers["x-aelli-secret"] = token
     try:
         import httpx
+        import re
         resp = httpx.post(url, json=body, headers=headers, timeout=2)
         resp.raise_for_status()
         text = resp.text
-        import re
-        m = re.search(r"^data: (.+)$", text, re.MULTILINE)
-        if m:
-            decision = json.loads(m.group(1))
-            _verbose_log(f"[router] {json.dumps(decision)}")
+        # Iterate all data: lines — skip [DONE] sentinel and non-JSON preamble/keepalives
+        # (mirrors the parseSseEvents loop in src/a2a-client.js).
+        for raw in re.findall(r"^data: (.+)$", text, re.MULTILINE):
+            if raw.strip() == "[DONE]":
+                continue
+            try:
+                decision = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(decision, dict):
+                _verbose_log(f"[octowiz - router] {json.dumps(decision)}")
+                return decision
     except Exception as exc:
-        _verbose_log(f"[route:{task_kind}] fail-open: {exc}")
+        _verbose_log(f"[octowiz - router] fail-open: {exc}")
+    return None
 
 
 def main() -> int:
     # Warn when routing through LiteLLM but auth token is missing
     if os.environ.get("AELLI_LITELLM_BASE", "") and not os.environ.get("AELLI_AUTH_TOKEN", ""):
         _log(
-            "[octowiz --*] Warning: AELLI_LITELLM_BASE is set but AELLI_AUTH_TOKEN is missing. "
+            "[octowiz - config] AELLI_LITELLM_BASE is set but AELLI_AUTH_TOKEN is missing. "
             "All A2A calls through the LiteLLM gateway will get 401 Unauthorized. "
             "Set AELLI_AUTH_TOKEN to a valid LiteLLM API key."
         )
@@ -245,7 +255,7 @@ def main() -> int:
         _local_hosts = {"localhost", "127.0.0.1", "::1", "[::1]"}
         if _parsed.scheme == "http" and _parsed.hostname not in _local_hosts:
             _log(
-                "[octowiz --*] WARNING: AELLI_DEV_ADVISOR_URL uses plain HTTP; "
+                "[octowiz - config] AELLI_DEV_ADVISOR_URL uses plain HTTP; "
                 "the auth token will be sent in cleartext. Use HTTPS for non-local deployments."
             )
     except Exception:
@@ -262,18 +272,22 @@ def main() -> int:
         return 0
 
     # Fire routing decision alongside advisory for UserPromptSubmit events (fail-open).
+    # The returned decision is attached to the event so the dev-advisor has routing
+    # context (router, tier, model, workflow) when generating its advisory.
     if data.get("hook_event_name") == "UserPromptSubmit":
-        _route_event("feature", {
+        routing = _route_event("feature", {
             "content": event.get("prompt_summary", ""),
             "fileCount": len(event.get("live_modified_files", [])),
         })
+        if isinstance(routing, dict):
+            event["routingDecision"] = routing
 
     advice = _post_event(url, event)
     if advice:
         advice_type = advice.get("type", "advisory")
         message = advice.get("message", "")
         ts = datetime.datetime.now().strftime("%H:%M:%S")
-        prefix = f"{_AELLI_BADGE} {_DIM}{ts}{_RESET} {_PURPLE}[{advice_type}]{_RESET}"
+        prefix = f"{_AELLI_BADGE} {_DIM}{ts}{_RESET} {_PURPLE}[ÆLLI - {advice_type}]{_RESET}"
         print(json.dumps({"systemMessage": f"{prefix} {message}"}))
 
     return 0

@@ -493,3 +493,102 @@ class TestRouteEvent(unittest.TestCase):
             )
 
         mock_route.assert_not_called()
+
+    def test_route_event_returns_decision_dict(self):
+        """_route_event returns the parsed routing decision when the response contains a data: line."""
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.raise_for_status = unittest.mock.MagicMock()
+        mock_resp.text = 'data: {"router":"aelli","tier":"fast","model":"claude-3","workflow":"coding"}\n'
+
+        with unittest.mock.patch(
+            "bridge._resolve_router_url",
+            return_value="http://localhost:4000/a2a/aelli-router/message/send",
+        ), unittest.mock.patch("httpx.post", return_value=mock_resp):
+            result = _route_event("feature", {"content": "refactor", "fileCount": 1})
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["router"], "aelli")
+        self.assertEqual(result["tier"], "fast")
+
+    def test_route_event_returns_none_when_no_data_line(self):
+        """_route_event returns None when the response has no SSE data: line."""
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.raise_for_status = unittest.mock.MagicMock()
+        mock_resp.text = ""
+
+        with unittest.mock.patch(
+            "bridge._resolve_router_url",
+            return_value="http://localhost:4000/a2a/aelli-router/message/send",
+        ), unittest.mock.patch("httpx.post", return_value=mock_resp):
+            result = _route_event("feature", {"content": "hello", "fileCount": 0})
+
+        self.assertIsNone(result)
+
+    def test_route_event_skips_preamble_and_returns_first_json_dict(self):
+        """_route_event skips non-JSON preamble and [DONE] lines and returns the first dict."""
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.raise_for_status = unittest.mock.MagicMock()
+        # Real LiteLLM stream: non-JSON preamble, then the decision, then [DONE]
+        mock_resp.text = (
+            "data: : keepalive\n"
+            "data: [DONE]\n"
+            'data: {"router":"aelli","tier":"fast"}\n'
+            "data: [DONE]\n"
+        )
+
+        with unittest.mock.patch(
+            "bridge._resolve_router_url",
+            return_value="http://localhost:4000/a2a/aelli-router/message/send",
+        ), unittest.mock.patch("httpx.post", return_value=mock_resp):
+            result = _route_event("feature", {"content": "fix", "fileCount": 1})
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["router"], "aelli")
+        self.assertEqual(result["tier"], "fast")
+
+    def test_routing_decision_attached_to_event_in_main(self):
+        """main() attaches routingDecision to the event when _route_event returns a dict."""
+        hook_data = {
+            "session_id": "sess-routing",
+            "cwd": "/repo",
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "add tests",
+        }
+        captured_events = []
+
+        def fake_post_event(url, event):
+            captured_events.append(event)
+            return None
+
+        with unittest.mock.patch("bridge._git_context", return_value={"repoRoot": "/repo", "branch": "main"}), \
+             unittest.mock.patch("bridge._git_modified_files", return_value=[]), \
+             unittest.mock.patch("bridge._route_event", return_value={"router": "aelli", "tier": "fast"}), \
+             unittest.mock.patch("bridge._post_event", side_effect=fake_post_event):
+            _run_main(hook_data, env={"AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor"})
+
+        self.assertEqual(len(captured_events), 1)
+        self.assertIn("routingDecision", captured_events[0])
+        self.assertEqual(captured_events[0]["routingDecision"], {"router": "aelli", "tier": "fast"})
+
+    def test_routing_decision_not_attached_when_route_returns_none(self):
+        """main() does NOT attach routingDecision when _route_event returns None (fail-open)."""
+        hook_data = {
+            "session_id": "sess-no-route",
+            "cwd": "/repo",
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "quick fix",
+        }
+        captured_events = []
+
+        def fake_post_event(url, event):
+            captured_events.append(event)
+            return None
+
+        with unittest.mock.patch("bridge._git_context", return_value={"repoRoot": "/repo", "branch": "main"}), \
+             unittest.mock.patch("bridge._git_modified_files", return_value=[]), \
+             unittest.mock.patch("bridge._route_event", return_value=None), \
+             unittest.mock.patch("bridge._post_event", side_effect=fake_post_event):
+            _run_main(hook_data, env={"AELLI_DEV_ADVISOR_URL": "http://localhost:3456/a2a/dev-advisor"})
+
+        self.assertEqual(len(captured_events), 1)
+        self.assertNotIn("routingDecision", captured_events[0])

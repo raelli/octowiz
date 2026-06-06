@@ -41,7 +41,7 @@ Run through this before tagging. Every item must be green before the PR merges.
     | python3 -c "import sys,json; [print(p['name'], p['version']) for p in json.load(sys.stdin) if p['name']=='octowiz']"
   ```
 - [ ] `/plugin update` in Claude Code installs the new version without error
-- [ ] Hook tags in the terminal show the expected `[octowiz --* <action>]` format
+- [ ] Hook tags in the terminal show the expected `[--*] HH:MM:SS [octowiz - <action>]` format
 
 ---
 
