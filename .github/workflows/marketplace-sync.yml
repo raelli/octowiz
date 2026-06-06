@@ -1,0 +1,40 @@
+name: marketplace-sync
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"        # e.g. v0.9.10
+          VERSION="${TAG#v}"              # strip leading v → 0.9.10
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Upsert octowiz in IntegraHub marketplace
+        env:
+          LITELLM_MASTER_KEY: ${{ secrets.LITELLM_MASTER_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          curl -sf -X POST "https://llm.integrahub.de/claude-code/plugins" \
+            -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"name\": \"octowiz\",
+              \"source\": {\"source\": \"github\", \"repo\": \"raelli/octowiz\"},
+              \"version\": \"$VERSION\",
+              \"description\": \"A skill-backed memory stack for coding agents.\",
+              \"keywords\": [\"claude-code\", \"mattpocock\", \"superpowers\", \"antfu-skill\"],
+              \"category\": \"Development\"
+            }" | tee /tmp/result.json
+          STATUS=$(python3 -c "import json,sys; print(json.load(open('/tmp/result.json')).get('status',''))")
+          if [ "$STATUS" != "success" ]; then
+            echo "Marketplace upsert failed" >&2
+            exit 1
+          fi
+          echo "Marketplace updated: octowiz $VERSION"
