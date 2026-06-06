@@ -4,7 +4,7 @@ const { version } = require("./package.json");
 const daemon = require("./src/daemon");
 
 // Daemon only — start once out-of-band (node index.js or make start).
-// Per-session push subscriptions run via hooks/scripts/session-subscriber.js.
+// Per-session push subscriptions are not yet implemented (subscribe endpoint pending).
 async function start() {
   daemon.start();
   logger.log(`[octowiz v${version}] daemon ready`);
