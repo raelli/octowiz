@@ -466,7 +466,9 @@ describe("_connectSSE reconnect — exponential backoff on error", () => {
       return req;
     });
 
-    const setTimeoutSpy = jest.spyOn(global, "setTimeout");
+    // Mock setTimeout to capture the scheduled delay without actually firing the
+    // reconnect callback — prevents a live 6s timer from outlasting the test.
+    const setTimeoutSpy = jest.spyOn(global, "setTimeout").mockImplementation(() => null);
     const { subscribeToQueue } = require("../src/a2a-client");
 
     subscribeToQueue("http://127.0.0.1:9/sse", jest.fn());
