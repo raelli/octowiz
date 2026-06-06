@@ -29,15 +29,15 @@ for candidate in "$OCTOWIZ_BIN/python" "$OCTOWIZ_BIN/python3" python3 python; do
 done
 
 if [ -z "$PYTHON" ]; then
-    _log "[upgrade] CLI is outdated but no Python found. Run: pip install --upgrade git+https://github.com/raelli/octowiz.git"
+    _log "[octowiz --* upgrade] CLI is outdated but no Python found. Run: pip install --upgrade git+https://github.com/raelli/octowiz.git"
     exit 0
 fi
 
-_log "[upgrade] CLI is outdated — upgrading to match plugin version..."
+_log "[octowiz --* upgrade] CLI is outdated — upgrading to match plugin version..."
 if "$PYTHON" -m pip install --upgrade --quiet "git+https://github.com/raelli/octowiz.git" 2>&1; then
-    _log "[upgrade] CLI upgraded successfully."
+    _log "[octowiz --* upgrade] CLI upgraded successfully."
 else
-    _log "[upgrade] Auto-upgrade failed. Run manually: pip install --upgrade git+https://github.com/raelli/octowiz.git"
+    _log "[octowiz --* upgrade] Auto-upgrade failed. Run manually: pip install --upgrade git+https://github.com/raelli/octowiz.git"
 fi
 
 exit 0

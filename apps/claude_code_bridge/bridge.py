@@ -228,7 +228,7 @@ def main() -> int:
     # Warn when routing through LiteLLM but auth token is missing
     if os.environ.get("AELLI_LITELLM_BASE", "") and not os.environ.get("AELLI_AUTH_TOKEN", ""):
         _log(
-            "[octowiz] Warning: AELLI_LITELLM_BASE is set but AELLI_AUTH_TOKEN is missing. "
+            "[octowiz --*] Warning: AELLI_LITELLM_BASE is set but AELLI_AUTH_TOKEN is missing. "
             "All A2A calls through the LiteLLM gateway will get 401 Unauthorized. "
             "Set AELLI_AUTH_TOKEN to a valid LiteLLM API key."
         )
@@ -245,7 +245,7 @@ def main() -> int:
         _local_hosts = {"localhost", "127.0.0.1", "::1", "[::1]"}
         if _parsed.scheme == "http" and _parsed.hostname not in _local_hosts:
             _log(
-                "[octowiz] WARNING: AELLI_DEV_ADVISOR_URL uses plain HTTP; "
+                "[octowiz --*] WARNING: AELLI_DEV_ADVISOR_URL uses plain HTTP; "
                 "the auth token will be sent in cleartext. Use HTTPS for non-local deployments."
             )
     except Exception:
