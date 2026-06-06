@@ -213,15 +213,22 @@ def _route_event(task_kind: str, data: Dict) -> Optional[Dict]:
             headers["x-aelli-secret"] = token
     try:
         import httpx
+        import re
         resp = httpx.post(url, json=body, headers=headers, timeout=2)
         resp.raise_for_status()
         text = resp.text
-        import re
-        m = re.search(r"^data: (.+)$", text, re.MULTILINE)
-        if m:
-            decision = json.loads(m.group(1))
-            _verbose_log(f"[octowiz - router] {json.dumps(decision)}")
-            return decision
+        # Iterate all data: lines — skip [DONE] sentinel and non-JSON preamble/keepalives
+        # (mirrors the parseSseEvents loop in src/a2a-client.js).
+        for raw in re.findall(r"^data: (.+)$", text, re.MULTILINE):
+            if raw.strip() == "[DONE]":
+                continue
+            try:
+                decision = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(decision, dict):
+                _verbose_log(f"[octowiz - router] {json.dumps(decision)}")
+                return decision
     except Exception as exc:
         _verbose_log(f"[octowiz - router] fail-open: {exc}")
     return None

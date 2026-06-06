@@ -524,6 +524,28 @@ class TestRouteEvent(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_route_event_skips_preamble_and_returns_first_json_dict(self):
+        """_route_event skips non-JSON preamble and [DONE] lines and returns the first dict."""
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.raise_for_status = unittest.mock.MagicMock()
+        # Real LiteLLM stream: non-JSON preamble, then the decision, then [DONE]
+        mock_resp.text = (
+            "data: : keepalive\n"
+            "data: [DONE]\n"
+            'data: {"router":"aelli","tier":"fast"}\n'
+            "data: [DONE]\n"
+        )
+
+        with unittest.mock.patch(
+            "bridge._resolve_router_url",
+            return_value="http://localhost:4000/a2a/aelli-router/message/send",
+        ), unittest.mock.patch("httpx.post", return_value=mock_resp):
+            result = _route_event("feature", {"content": "fix", "fileCount": 1})
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["router"], "aelli")
+        self.assertEqual(result["tier"], "fast")
+
     def test_routing_decision_attached_to_event_in_main(self):
         """main() attaches routingDecision to the event when _route_event returns a dict."""
         hook_data = {
