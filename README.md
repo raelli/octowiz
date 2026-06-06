@@ -10,7 +10,7 @@
 ![python 3.8+](https://img.shields.io/badge/python-3.8%2B-3776AB.svg?logo=python&logoColor=white)
 ![LiteLLM Proxy compatible](https://img.shields.io/badge/LiteLLM_Proxy-compatible-7C3AED.svg)
 ![26 memories](https://img.shields.io/badge/memories-26-22c55e.svg)
-![v0.9.6](https://img.shields.io/badge/version-0.9.6-6366f1.svg)
+![v0.9.13](https://img.shields.io/badge/version-0.9.6-6366f1.svg)
 
 [**Live overview ↗**](https://raelli.github.io/octowiz/) &nbsp;·&nbsp; [ÆLLI — orchestration brain](https://github.com/raelli/aelli) &nbsp;·&nbsp; [Install](#setup) &nbsp;·&nbsp; [Diagnostics](#diagnostics)
 
