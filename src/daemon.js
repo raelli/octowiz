@@ -147,9 +147,15 @@ async function processTask(task) {
   // AELLI_VALIDATOR_PRINCIPAL must match the OCTOWIZ_INBOUND_SECRET value that
   // this daemon uses when authenticating to AELLI's task queue.
   if (capability === "router.validation-request") {
-    const { validateDraft } = require("./validation");
+    const { validateJavaScriptSyntax } = require("./validation");
     const { workflowTaskId, draft = "" } = payload;
-    const validation = validateDraft(draft);
+    // Validate payload shape before JS syntax check so callers get an explicit
+    // error rather than an empty-draft failure for a missing field.
+    if (typeof workflowTaskId !== "string" || typeof draft !== "string") {
+      await postResult(id, leaseToken, { status: "completed", workflowTaskId, passed: false, failureKind: "invalid-payload" });
+      return;
+    }
+    const validation = validateJavaScriptSyntax(draft);
     await postResult(id, leaseToken, {
       status: "completed",
       workflowTaskId,

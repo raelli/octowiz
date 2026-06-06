@@ -1,16 +1,9 @@
 "use strict";
 
-/**
- * Validate a generated code draft before accepting a high-risk workflow result.
- *
- * Uses Node's built-in vm module for a lightweight JS syntax check.
- * Non-JS content that happens to parse as valid JS is accepted — we do not
- * attempt language detection.
- *
- * @param {string} draft
- * @returns {{ passed: boolean, failureKind?: string, output?: string }}
- */
-function validateDraft(draft) {
+// Checks JavaScript syntax only via Node's vm module.
+// Non-JS content that parses as valid JS is accepted; caller is responsible
+// for any upstream format validation (e.g. JSON.parse before this).
+function validateJavaScriptSyntax(draft) {
   if (!draft || typeof draft !== "string" || draft.trim() === "") {
     return { passed: false, failureKind: "empty-draft", output: "Draft is empty." };
   }
@@ -28,4 +21,4 @@ function validateDraft(draft) {
   }
 }
 
-module.exports = { validateDraft };
+module.exports = { validateJavaScriptSyntax };

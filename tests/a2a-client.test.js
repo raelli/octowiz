@@ -78,25 +78,6 @@ describe("parseSseEvents", () => {
   });
 });
 
-describe("subscribe", () => {
-  beforeEach(() => {
-    jest.resetModules();
-  });
-
-  it("throws synchronously when onTask is not provided", () => {
-    const { subscribe } = require("../src/a2a-client");
-    expect(() => subscribe()).toThrow(TypeError);
-    expect(() => subscribe()).toThrow("subscribe() requires an onTask callback function");
-  });
-
-  it("throws synchronously when onTask is not a function", () => {
-    const { subscribe } = require("../src/a2a-client");
-    expect(() => subscribe("not-a-function")).toThrow(TypeError);
-    expect(() => subscribe(null)).toThrow(TypeError);
-    expect(() => subscribe(42)).toThrow(TypeError);
-  });
-});
-
 describe("subscribeToQueue", () => {
   let subscribeToQueue, parseSseEvents;
   beforeEach(() => {

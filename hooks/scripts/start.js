@@ -18,18 +18,6 @@ function appendLog(msg) {
   } catch {}
 }
 
-function spawnSubscriber(sessionId) {
-  const subscriberJs = path.join(__dirname, "session-subscriber.js");
-  const child = spawn(process.execPath, [subscriberJs], {
-    env: { ...process.env, PTY_SESSION_ID: sessionId },
-    detached: true,
-    stdio: "ignore",
-  });
-  child.unref();
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
-  fs.writeFileSync(path.join(CACHE_DIR, `${sessionId}.pid`), String(child.pid));
-}
-
 function isPortOpen(port) {
   return new Promise((resolve) => {
     const s = net.createConnection({ port, host: "127.0.0.1" });
@@ -85,8 +73,6 @@ async function handleStart(input) {
     appendLog(`[octowiz --* start] session-start post failed: ${e?.message ?? e}`);
   });
 
-  // spawnSubscriber disabled: AELLI has no /a2a/tasks/subscribe endpoint yet.
-  // Re-enable when per-session SSE push is wired (see src/session-subscriber.js).
 }
 
 if (require.main === module) {
