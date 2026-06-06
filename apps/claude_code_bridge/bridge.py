@@ -19,7 +19,8 @@ _BOLD   = "\033[1m"
 _PURPLE = "\033[38;5;135m"
 _DIM    = "\033[2m"
 _RESET  = "\033[0m"
-_BADGE  = f"{_BOLD}{_PURPLE}--*{_RESET}"
+_BADGE       = f"{_BOLD}{_PURPLE}--*{_RESET}"
+_AELLI_BADGE = f"{_BOLD}{_PURPLE}[æ]{_RESET}"
 
 
 def _log(msg: str) -> None:
@@ -271,7 +272,9 @@ def main() -> int:
     if advice:
         advice_type = advice.get("type", "advisory")
         message = advice.get("message", "")
-        print(json.dumps({"systemMessage": f"[octowiz/{advice_type}] {message}"}))
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        prefix = f"{_AELLI_BADGE} {_DIM}{ts}{_RESET} {_PURPLE}[{advice_type}]{_RESET}"
+        print(json.dumps({"systemMessage": f"{prefix} {message}"}))
 
     return 0
 
