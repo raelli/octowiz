@@ -20,6 +20,24 @@ afterEach(() => {
   delete process.env.AELLI_CACHE_DIR;
 });
 
+// ── start() ───────────────────────────────────────────────────────────────
+
+describe("start()", () => {
+  it("returns a context object without spawning a child process", () => {
+    const dir = makeTmpDir();
+    const { start } = loadSession(dir);
+
+    const spawnSpy = jest.spyOn(require("child_process"), "spawn");
+    const ctx = start("sess-start-1", dir);
+
+    // Context must be returned (captureContext populates at minimum repoRoot)
+    expect(ctx).toBeTruthy();
+    // The launchd daemon owns the queue subscriber — start() must not spawn index.js
+    expect(spawnSpy).not.toHaveBeenCalled();
+    spawnSpy.mockRestore();
+  });
+});
+
 // ── stop() ────────────────────────────────────────────────────────────────
 
 describe("stop()", () => {

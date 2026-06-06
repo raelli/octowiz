@@ -1,4 +1,3 @@
-const { spawn } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -11,34 +10,12 @@ function pidFile(sessionId) {
   return path.join(CACHE_DIR, `aelli-cc.${sessionId}.pid`);
 }
 
-// Start a session: capture git context, spawn the background A2A subscriber,
-// and persist the PID. Returns the captured session context object.
+// Start a session: capture git context and return the context object.
+// The daemon is managed by launchd (de.integrahub.octowiz-daemon); no
+// per-session process is spawned here.
 function start(sessionId, cwd) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
-
-  // Kill any leftover subscriber from a previous run of this session
-  const pf = pidFile(sessionId);
-  if (fs.existsSync(pf)) {
-    try {
-      const old = parseInt(fs.readFileSync(pf, "utf8").trim(), 10);
-      if (!isNaN(old)) process.kill(old, "SIGTERM");
-    } catch {}
-    try { fs.unlinkSync(pf); } catch {}
-  }
-
-  const ctx = captureContext(sessionId, cwd);
-
-  const indexJs = path.join(__dirname, "..", "index.js");
-  const child = spawn(process.execPath, [indexJs], {
-    env: { ...process.env, PTY_SESSION_ID: sessionId },
-    detached: true,
-    stdio: "ignore",
-  });
-  child.unref();
-
-  fs.writeFileSync(pf, String(child.pid));
-
-  return ctx;
+  return captureContext(sessionId, cwd);
 }
 
 // Return the full session context (cached stable fields + live git state).

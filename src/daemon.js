@@ -34,6 +34,13 @@ const KNOWN_CAPABILITIES = new Set([
   "octowiz.dispatch",
   "octowiz.manage_agents",
   "octowiz.observe",
+  "octowiz.load_memory",
+  "octowiz.escalate_to_aelli",
+  "octowiz.plan",
+  "octowiz.review",
+  "octowiz.write_diary",
+  "octowiz.run_sandboxed",
+  "octowiz.marketplace_info",
   "router.validation-request",
 ]);
 
@@ -143,7 +150,7 @@ async function processTask(task) {
       await postResult(id, leaseToken, { status: "error", failureKind: "unknown-advisory-type", type: advisory.type });
       return;
     }
-    logger.log(`[octowiz] advisory for session ${sessionId}: ${advisory.type} — ${advisory.message}`);
+    logger.log(`[octowiz - observe] advisory for session ${sessionId}: ${advisory.type} — ${advisory.message}`);
     await postResult(id, leaseToken, { status: "completed", advisory });
     return;
   }
@@ -182,7 +189,7 @@ async function processTask(task) {
     const queueStatus = normalized.status === "error" ? "error" : "completed";
     await postResult(id, leaseToken, { ...normalized, status: queueStatus });
   } catch (err) {
-    logger.error(`[octowiz] forward to A2A server failed for ${capability}:`, err.message);
+    logger.error(`[octowiz - forward] A2A server failed for ${capability}:`, err.message);
     await postResult(id, leaseToken, { status: "error", message: err.message });
   }
 }
@@ -190,7 +197,7 @@ async function processTask(task) {
 function start() {
   checkStartup();
   subscribeToQueue(QUEUE_URL, processTask);
-  logger.log(`[octowiz] Subscribed to task queue at ${QUEUE_URL}`);
+  logger.log(`[octowiz - startup] subscribed to task queue at ${QUEUE_URL}`);
 }
 
 module.exports = { start, processTask, _forwardToA2A };
