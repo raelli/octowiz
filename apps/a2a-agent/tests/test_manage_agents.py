@@ -107,7 +107,10 @@ class TestManageAgentsCwdValidation(unittest.TestCase):
     def test_absolute_cwd_is_accepted_and_forwarded(self):
         from capabilities.manage_agents import handle_manage_agents
         adapter = FakeAdapter()
-        result = _run(handle_manage_agents({"operation": "list", "cwd": "/projects/foo"}, adapter=adapter))
+        with __import__("unittest.mock", fromlist=["patch"]).patch.dict(
+            os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/projects"}
+        ):
+            result = _run(handle_manage_agents({"operation": "list", "cwd": "/projects/foo"}, adapter=adapter))
         self.assertEqual(result["status"], "ok")
         self.assertEqual(len(adapter.list_calls), 1)
         self.assertIn("/projects/foo", adapter.list_calls[0])
@@ -115,7 +118,10 @@ class TestManageAgentsCwdValidation(unittest.TestCase):
     def test_cwd_canonicalized_before_passing_to_adapter(self):
         from capabilities.manage_agents import handle_manage_agents
         adapter = FakeAdapter()
-        _run(handle_manage_agents({"operation": "list", "cwd": "/projects/../projects/foo"}, adapter=adapter))
+        with __import__("unittest.mock", fromlist=["patch"]).patch.dict(
+            os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/projects"}
+        ):
+            _run(handle_manage_agents({"operation": "list", "cwd": "/projects/../projects/foo"}, adapter=adapter))
         self.assertEqual(len(adapter.list_calls), 1)
         self.assertEqual(adapter.list_calls[0], "/projects/foo")
 

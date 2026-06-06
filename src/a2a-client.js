@@ -6,6 +6,7 @@ const os = require("os");
 const path = require("path");
 
 const API_BASE = process.env.AELLI_BASE_URL || process.env.AELLI_API_BASE || "http://localhost:3001/api";
+const MAX_RECONNECT_MS = 30_000;
 const SESSION_ID = process.env.PTY_SESSION_ID || "";
 const AUTH_TOKEN = process.env.AELLI_AUTH_TOKEN || "";
 
@@ -180,8 +181,9 @@ function _connectSSE(urlStr, headers, onEvent, reconnectMs = 3000, onConnected =
 
   req.setTimeout(60_000, () => req.destroy());
   req.on("error", (e) => {
-    logger.error("[AELLI SSE] error:", e.message, `— reconnecting in ${reconnectMs / 1000 + 2}s`);
-    setTimeout(() => _connectSSE(urlStr, headers, onEvent, reconnectMs + 2000), reconnectMs + 2000);
+    const nextMs = Math.min(reconnectMs * 2, MAX_RECONNECT_MS);
+    logger.error("[AELLI SSE] error:", e.message, `— reconnecting in ${nextMs / 1000}s`);
+    setTimeout(() => _connectSSE(urlStr, headers, onEvent, nextMs, onConnected), nextMs);
   });
   req.end();
 }

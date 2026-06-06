@@ -97,6 +97,16 @@ class TestRunSandboxedValidation(unittest.TestCase):
 
 class TestRunSandboxedWaitFalse(unittest.TestCase):
 
+    def setUp(self):
+        self._orig_allowed_roots = os.environ.get("OCTOWIZ_ALLOWED_ROOTS")
+        os.environ["OCTOWIZ_ALLOWED_ROOTS"] = "/repo:/projects"
+
+    def tearDown(self):
+        if self._orig_allowed_roots is None:
+            os.environ.pop("OCTOWIZ_ALLOWED_ROOTS", None)
+        else:
+            os.environ["OCTOWIZ_ALLOWED_ROOTS"] = self._orig_allowed_roots
+
     def test_wait_false_returns_dispatched_immediately(self):
         from capabilities.run_sandboxed import handle_run_sandboxed
         provider = _MockSandcastleProvider(run_id="sc-1", status_sequence=["running"])
@@ -145,6 +155,16 @@ class TestRunSandboxedWaitFalse(unittest.TestCase):
 
 
 class TestRunSandboxedWaitTrue(unittest.TestCase):
+
+    def setUp(self):
+        self._orig_allowed_roots = os.environ.get("OCTOWIZ_ALLOWED_ROOTS")
+        os.environ["OCTOWIZ_ALLOWED_ROOTS"] = "/repo:/projects"
+
+    def tearDown(self):
+        if self._orig_allowed_roots is None:
+            os.environ.pop("OCTOWIZ_ALLOWED_ROOTS", None)
+        else:
+            os.environ["OCTOWIZ_ALLOWED_ROOTS"] = self._orig_allowed_roots
 
     def test_wait_true_polls_until_completed(self):
         from capabilities.run_sandboxed import handle_run_sandboxed
@@ -256,6 +276,16 @@ class TestRunSandboxedWaitTrue(unittest.TestCase):
 
 class TestRunSandboxedBranchValidation(unittest.TestCase):
 
+    def setUp(self):
+        self._orig_allowed_roots = os.environ.get("OCTOWIZ_ALLOWED_ROOTS")
+        os.environ["OCTOWIZ_ALLOWED_ROOTS"] = "/repo:/projects"
+
+    def tearDown(self):
+        if self._orig_allowed_roots is None:
+            os.environ.pop("OCTOWIZ_ALLOWED_ROOTS", None)
+        else:
+            os.environ["OCTOWIZ_ALLOWED_ROOTS"] = self._orig_allowed_roots
+
     def _call(self, event, **kwargs):
         from capabilities.run_sandboxed import handle_run_sandboxed
         return asyncio.run(handle_run_sandboxed(event, **kwargs))
@@ -285,6 +315,16 @@ class TestRunSandboxedBranchValidation(unittest.TestCase):
 
 class TestRunSandboxedTimeoutStopsContainer(unittest.TestCase):
 
+    def setUp(self):
+        self._orig_allowed_roots = os.environ.get("OCTOWIZ_ALLOWED_ROOTS")
+        os.environ["OCTOWIZ_ALLOWED_ROOTS"] = "/repo:/projects"
+
+    def tearDown(self):
+        if self._orig_allowed_roots is None:
+            os.environ.pop("OCTOWIZ_ALLOWED_ROOTS", None)
+        else:
+            os.environ["OCTOWIZ_ALLOWED_ROOTS"] = self._orig_allowed_roots
+
     def test_capability_timeout_stops_provider_container(self):
         from capabilities.run_sandboxed import handle_run_sandboxed
         provider = _MockSandcastleProvider(
@@ -308,6 +348,16 @@ class TestRunSandboxedTimeoutStopsContainer(unittest.TestCase):
 
 
 class TestRunSandboxedDispatchError(unittest.TestCase):
+
+    def setUp(self):
+        self._orig_allowed_roots = os.environ.get("OCTOWIZ_ALLOWED_ROOTS")
+        os.environ["OCTOWIZ_ALLOWED_ROOTS"] = "/repo:/projects"
+
+    def tearDown(self):
+        if self._orig_allowed_roots is None:
+            os.environ.pop("OCTOWIZ_ALLOWED_ROOTS", None)
+        else:
+            os.environ["OCTOWIZ_ALLOWED_ROOTS"] = self._orig_allowed_roots
 
     def test_dispatch_exception_returns_error(self):
         from capabilities.run_sandboxed import handle_run_sandboxed

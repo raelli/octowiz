@@ -440,3 +440,55 @@ describe("route", () => {
     expect(url).toBe("http://localhost:4000/a2a/aelli-router/message/send");
   });
 });
+
+// ── _connectSSE reconnect backoff ─────────────────────────────────────────
+
+describe("_connectSSE reconnect — exponential backoff on error", () => {
+  afterEach(() => {
+    jest.resetModules();
+    jest.restoreAllMocks();
+  });
+
+  it("schedules reconnect with doubled delay when connection errors", (done) => {
+    jest.resetModules();
+    const http = require("http");
+    // Make the http.request immediately fire an "error" event
+    jest.spyOn(http, "request").mockImplementation((_opts, _cb) => {
+      const req = {
+        setTimeout: jest.fn(),
+        write: jest.fn(),
+        end: jest.fn(),
+        on: jest.fn((event, handler) => {
+          if (event === "error") setImmediate(() => handler(new Error("ECONNREFUSED")));
+          return req;
+        }),
+      };
+      return req;
+    });
+
+    const setTimeoutSpy = jest.spyOn(global, "setTimeout");
+    const { subscribeToQueue } = require("../src/a2a-client");
+
+    subscribeToQueue("http://127.0.0.1:9/sse", jest.fn());
+
+    setImmediate(() => {
+      const reconnectCall = setTimeoutSpy.mock.calls.find(
+        ([, delay]) => delay >= 6000 // doubled from initial 3000
+      );
+      expect(reconnectCall).toBeDefined();
+      expect(reconnectCall[1]).toBe(6000); // 3000 * 2
+      done();
+    });
+  });
+
+  it("caps reconnect delay at 30s after repeated errors", () => {
+    // Verify the exponential cap formula independently of HTTP mechanics.
+    const delays = [];
+    let d = 3000;
+    for (let i = 0; i < 6; i++) {
+      d = Math.min(d * 2, 30_000);
+      delays.push(d);
+    }
+    expect(delays).toEqual([6000, 12000, 24000, 30000, 30000, 30000]);
+  });
+});

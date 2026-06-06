@@ -42,8 +42,7 @@ class TestReviewWithoutLiteLLM(unittest.TestCase):
 
     def test_ok_without_litellm(self):
         from capabilities.review import handle_review
-        with patch.dict(os.environ, {}, clear=True):
-            os.environ["OCTOWIZ_INBOUND_SECRET"] = "test-secret"
+        with patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/tmp", "OCTOWIZ_INBOUND_SECRET": "test-secret"}, clear=True):
             result = _run(handle_review({"cwd": "/tmp"}))
         self.assertEqual(result["status"], "ok")
         self.assertIsNone(result["doctrine"])
@@ -51,13 +50,13 @@ class TestReviewWithoutLiteLLM(unittest.TestCase):
 
     def test_role_is_reviewer(self):
         from capabilities.review import handle_review
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/tmp"}, clear=True):
             result = _run(handle_review({"cwd": "/tmp"}))
         self.assertEqual(result["role"], "reviewer")
 
     def test_cwd_echoed_in_response(self):
         from capabilities.review import handle_review
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/tmp"}, clear=True):
             result = _run(handle_review({"cwd": "/tmp"}))
         # validate_cwd canonicalizes; /tmp should resolve to /private/tmp on macOS
         # but in either case the returned cwd should be an absolute path
@@ -65,19 +64,19 @@ class TestReviewWithoutLiteLLM(unittest.TestCase):
 
     def test_default_namespace_is_gfe(self):
         from capabilities.review import handle_review
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/tmp"}, clear=True):
             result = _run(handle_review({"cwd": "/tmp"}))
         self.assertEqual(result["namespace"], "gfe")
 
     def test_namespace_from_event_overrides_default(self):
         from capabilities.review import handle_review
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/tmp"}, clear=True):
             result = _run(handle_review({"cwd": "/tmp", "namespace": "acme"}))
         self.assertEqual(result["namespace"], "acme")
 
     def test_session_id_none_when_absent(self):
         from capabilities.review import handle_review
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/tmp"}, clear=True):
             result = _run(handle_review({"cwd": "/tmp"}))
         self.assertIsNone(result["sessionId"])
 
@@ -88,7 +87,7 @@ class TestReviewWithDoctrine(unittest.TestCase):
         from capabilities.review import handle_review
         fake_doctrine = {"checklist": ["tests pass", "no secrets"], "role": "senior reviewer"}
         with patch("memory_client.namespace.load_role_bundle", return_value=fake_doctrine):
-            with patch.dict(os.environ, {"LITELLM_BASE_URL": "http://litellm.local", "LITELLM_API_KEY": "key123"}):
+            with patch.dict(os.environ, {"LITELLM_BASE_URL": "http://litellm.local", "LITELLM_API_KEY": "key123", "OCTOWIZ_ALLOWED_ROOTS": "/tmp"}):
                 result = _run(handle_review({"cwd": "/tmp"}))
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["doctrine"], fake_doctrine)
@@ -98,7 +97,7 @@ class TestReviewWithDoctrine(unittest.TestCase):
         import httpx
         from capabilities.review import handle_review
         with patch("memory_client.namespace.load_role_bundle", side_effect=httpx.RequestError("connection refused")):
-            with patch.dict(os.environ, {"LITELLM_BASE_URL": "http://litellm.local", "LITELLM_API_KEY": "key123"}):
+            with patch.dict(os.environ, {"LITELLM_BASE_URL": "http://litellm.local", "LITELLM_API_KEY": "key123", "OCTOWIZ_ALLOWED_ROOTS": "/tmp"}):
                 result = _run(handle_review({"cwd": "/tmp"}))
         self.assertEqual(result["status"], "ok")
         self.assertIsNone(result["doctrine"])
@@ -109,7 +108,7 @@ class TestReviewSuggestedPrompt(unittest.TestCase):
 
     def test_suggested_prompt_includes_cwd(self):
         from capabilities.review import handle_review
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/tmp"}, clear=True):
             result = _run(handle_review({"cwd": "/tmp"}))
         self.assertIn("[octowiz.review]", result["suggested_prompt"])
         # cwd may be canonicalized (/tmp -> /private/tmp on macOS)
@@ -117,14 +116,14 @@ class TestReviewSuggestedPrompt(unittest.TestCase):
 
     def test_suggested_prompt_includes_session(self):
         from capabilities.review import handle_review
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/tmp"}, clear=True):
             result = _run(handle_review({"cwd": "/tmp", "sessionId": "sess-abc123"}))
         self.assertIn("sess-abc123", result["suggested_prompt"])
         self.assertIn("session sess-abc123", result["suggested_prompt"])
 
     def test_suggested_prompt_includes_context(self):
         from capabilities.review import handle_review
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/tmp"}, clear=True):
             result = _run(handle_review({
                 "cwd": "/tmp",
                 "context": "PR #42 — adds rate limiting",
@@ -134,7 +133,7 @@ class TestReviewSuggestedPrompt(unittest.TestCase):
 
     def test_suggested_prompt_no_session_when_absent(self):
         from capabilities.review import handle_review
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/tmp"}, clear=True):
             result = _run(handle_review({"cwd": "/tmp"}))
         self.assertNotIn("(session", result["suggested_prompt"])
 
