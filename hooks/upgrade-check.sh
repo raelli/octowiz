@@ -2,6 +2,11 @@
 # Auto-upgrade octowiz CLI when the plugin has been updated to a newer version.
 # Runs at every SessionStart but exits immediately once the CLI is current.
 
+_BADGE="\033[1m\033[38;5;135m--*\033[0m"
+_DIM="\033[2m"
+_RESET="\033[0m"
+_log() { printf "${_BADGE} ${_DIM}%s${_RESET} %s\n" "$(date +%H:%M:%S)" "$1" >&2; }
+
 # Nothing to do if octowiz-cache isn't installed yet
 if ! command -v octowiz-cache &>/dev/null; then
     exit 0
@@ -24,15 +29,15 @@ for candidate in "$OCTOWIZ_BIN/python" "$OCTOWIZ_BIN/python3" python3 python; do
 done
 
 if [ -z "$PYTHON" ]; then
-    echo "[octowiz] CLI is outdated but no Python found to upgrade. Run: pip install --upgrade git+https://github.com/raelli/octowiz.git" >&2
+    _log "[upgrade] CLI is outdated but no Python found. Run: pip install --upgrade git+https://github.com/raelli/octowiz.git"
     exit 0
 fi
 
-echo "[octowiz] CLI is outdated — upgrading to match plugin version..." >&2
+_log "[upgrade] CLI is outdated — upgrading to match plugin version..."
 if "$PYTHON" -m pip install --upgrade --quiet "git+https://github.com/raelli/octowiz.git" 2>&1; then
-    echo "[octowiz] CLI upgraded successfully." >&2
+    _log "[upgrade] CLI upgraded successfully."
 else
-    echo "[octowiz] Auto-upgrade failed. Run manually: pip install --upgrade git+https://github.com/raelli/octowiz.git" >&2
+    _log "[upgrade] Auto-upgrade failed. Run manually: pip install --upgrade git+https://github.com/raelli/octowiz.git"
 fi
 
 exit 0
