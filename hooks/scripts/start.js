@@ -69,11 +69,11 @@ async function handleStart(input) {
   const sessionId = input.session_id || `cc-${Date.now()}-${process.pid}`;
   const cwd = input.cwd || process.cwd();
 
-  logger.log("[start] session starting", sessionId);
+  logger.log("[octowiz --* start] session starting", sessionId);
 
   if (!process.env.AELLI_AUTH_TOKEN) {
-    logger.warn("[start] AELLI_AUTH_TOKEN not set — advisory delivery disabled");
-    appendLog("[start] AELLI_AUTH_TOKEN not set — advisory delivery disabled");
+    logger.warn("[octowiz --* start] AELLI_AUTH_TOKEN not set — advisory delivery disabled");
+    appendLog("[octowiz --* start] AELLI_AUTH_TOKEN not set — advisory delivery disabled");
   }
 
   await ensureA2AServer();
@@ -81,8 +81,8 @@ async function handleStart(input) {
   const ctx = captureContext(sessionId, cwd);
   const payload = buildSessionStart(ctx);
   await post("session-start", payload, { sync: true, timeoutMs: 500 }).catch((e) => {
-    logger.error("[start] session-start post failed:", e?.message ?? e);
-    appendLog(`[start] session-start post failed: ${e?.message ?? e}`);
+    logger.error("[octowiz --* start] session-start post failed:", e?.message ?? e);
+    appendLog(`[octowiz --* start] session-start post failed: ${e?.message ?? e}`);
   });
 
   // spawnSubscriber disabled: AELLI has no /a2a/tasks/subscribe endpoint yet.
@@ -96,7 +96,7 @@ if (require.main === module) {
     let input = {};
     try { input = JSON.parse(raw); } catch {}
     try { await handleStart(input); } catch (e) {
-      logger.error("[start] error:", e.message);
+      logger.error("[octowiz --* start] error:", e.message);
       appendLog(`[start] error: ${e.message}`);
     }
     process.exit(0);

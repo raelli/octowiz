@@ -24,7 +24,7 @@ async function handleStop(input) {
   const sessionId = input.session_id || "";
   if (!sessionId) return;
 
-  logger.log("[stop] session ending", sessionId);
+  logger.log("[octowiz --* stop] session ending", sessionId);
 
   killSubscriber(sessionId);
 
