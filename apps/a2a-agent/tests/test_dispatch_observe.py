@@ -11,6 +11,21 @@ from unittest.mock import MagicMock
 _FAST = {"poll_interval": 0.001, "timeout": 5.0}
 _INSTANT_TIMEOUT = {"poll_interval": 0.001, "timeout": 0.005}
 
+_PREV_ALLOWED_ROOTS = None
+
+
+def setUpModule():
+    global _PREV_ALLOWED_ROOTS
+    _PREV_ALLOWED_ROOTS = os.environ.get("OCTOWIZ_ALLOWED_ROOTS")
+    os.environ["OCTOWIZ_ALLOWED_ROOTS"] = "/repo"
+
+
+def tearDownModule():
+    if _PREV_ALLOWED_ROOTS is None:
+        os.environ.pop("OCTOWIZ_ALLOWED_ROOTS", None)
+    else:
+        os.environ["OCTOWIZ_ALLOWED_ROOTS"] = _PREV_ALLOWED_ROOTS
+
 
 def _run(coro):
     return asyncio.run(coro)

@@ -59,6 +59,25 @@ def _run(coro):
 _FAST = {"poll_interval": 0.001, "timeout": 5.0}
 _INSTANT_TIMEOUT = {"poll_interval": 0.001, "timeout": 0.005}
 
+# path_guard.validate_cwd checks OCTOWIZ_ALLOWED_ROOTS at call time.
+# These tests exercise dispatch logic, not path-guard logic (which is covered
+# in test_path_guard.py).  Set a permissive allowlist so the guard passes for
+# the fake /repo cwd used throughout this file.
+_PREV_ALLOWED_ROOTS = None
+
+
+def setUpModule():
+    global _PREV_ALLOWED_ROOTS
+    _PREV_ALLOWED_ROOTS = os.environ.get("OCTOWIZ_ALLOWED_ROOTS")
+    os.environ["OCTOWIZ_ALLOWED_ROOTS"] = "/repo:/projects"
+
+
+def tearDownModule():
+    if _PREV_ALLOWED_ROOTS is None:
+        os.environ.pop("OCTOWIZ_ALLOWED_ROOTS", None)
+    else:
+        os.environ["OCTOWIZ_ALLOWED_ROOTS"] = _PREV_ALLOWED_ROOTS
+
 
 class TestDispatchHappyPaths(unittest.TestCase):
 
