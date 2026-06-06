@@ -6,6 +6,8 @@ const { checkStartup, validateCwd } = require("./policy");
 const { claimTask, postResult } = require("./task-queue-client");
 const { normalizeA2AResponse } = require("./a2a-response");
 
+const ALLOWED_ADVISORY_TYPES = new Set(["file-conflict", "branch-drift", "spec-deviation"]);
+
 const QUEUE_URL = `${(process.env.AELLI_BASE_URL || "http://localhost:3456").replace(/\/$/, "")}/a2a/task-queue`;
 
 // The daemon now forwards all capability work to the Python A2A server.
@@ -137,6 +139,10 @@ async function processTask(task) {
   // Log the advisory and echo it back as the artifact.
   if (capability === "octowiz.observe") {
     const { sessionId, advisory = {} } = payload;
+    if (!ALLOWED_ADVISORY_TYPES.has(advisory.type)) {
+      await postResult(id, leaseToken, { status: "error", failureKind: "unknown-advisory-type", type: advisory.type });
+      return;
+    }
     logger.log(`[octowiz] advisory for session ${sessionId}: ${advisory.type} — ${advisory.message}`);
     await postResult(id, leaseToken, { status: "completed", advisory });
     return;

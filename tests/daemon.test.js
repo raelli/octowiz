@@ -437,4 +437,43 @@ describe("daemon.processTask — router.validation-request", () => {
       expect.objectContaining({ passed: false, failureKind: "empty-draft" })
     );
   });
+  // ── octowiz.observe: artifact type validation ─────────────────────────────
+
+  it('rejects advisory with unknown type', async () => {
+    claimTask.mockResolvedValue({ ok: true, leaseToken: 'lt-bad' });
+    await processTask({
+      id: 't-bad-type',
+      capability: 'octowiz.observe',
+      payload: { sessionId: 's1', advisory: { type: 'unknown-evil', message: 'x' } },
+    });
+    expect(postResult).toHaveBeenCalledWith('t-bad-type', 'lt-bad',
+      expect.objectContaining({ status: 'error', failureKind: 'unknown-advisory-type' }));
+  });
+
+  it('rejects advisory with missing type', async () => {
+    claimTask.mockResolvedValue({ ok: true, leaseToken: 'lt-missing' });
+    await processTask({
+      id: 't-missing-type',
+      capability: 'octowiz.observe',
+      payload: { sessionId: 's1', advisory: { message: 'no type field' } },
+    });
+    expect(postResult).toHaveBeenCalledWith('t-missing-type', 'lt-missing',
+      expect.objectContaining({ status: 'error', failureKind: 'unknown-advisory-type' }));
+  });
+
+  it.each(['file-conflict', 'branch-drift', 'spec-deviation'])(
+    'accepts advisory type %s',
+    async (type) => {
+      claimTask.mockResolvedValue({ ok: true, leaseToken: 'lt-ok' });
+      const advisory = { type, message: 'ok' };
+      await processTask({
+        id: `t-${type}`,
+        capability: 'octowiz.observe',
+        payload: { sessionId: 's1', advisory },
+      });
+      expect(postResult).toHaveBeenCalledWith(`t-${type}`, 'lt-ok',
+        expect.objectContaining({ status: 'completed', advisory }));
+    }
+  );
+
 });
