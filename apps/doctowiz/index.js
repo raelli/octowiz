@@ -16,21 +16,23 @@ const http = require("http");
 const https = require("https");
 
 // ── Config ────────────────────────────────────────────────────────────────────
+// All env-derived facts come from src/config.js — the same resolution rules
+// production uses, so the diagnostic probes exactly what the plugin will do.
+
+const config = require("../../src/config");
 
 const PLUGIN_ROOT =
   process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, "../..");
 const BRIDGE_PY = path.join(
   PLUGIN_ROOT, "apps", "claude_code_bridge", "bridge.py"
 );
-const CACHE_DIR =
-  process.env.AELLI_CACHE_DIR ||
-  path.join(os.homedir(), ".cache", "aelli-cc");
-const LOG_FILE = path.join(CACHE_DIR, "aelli-cc.log");
+const CACHE_DIR = config.cacheDir();
+const LOG_FILE = config.logFile();
 const DAEMON_LOG = path.join(CACHE_DIR, "octowiz-daemon.log");
 
 const NODE_PORT = 3456;
-const A2A_PORT = parseInt(process.env.OCTOWIZ_A2A_PORT || "8765", 10);
-const LITELLM_BASE = (process.env.AELLI_LITELLM_BASE || "").replace(/\/$/, "");
+const A2A_PORT = config.a2aPort();
+const LITELLM_BASE = config.litellmBase();
 
 // ── Result accumulator ────────────────────────────────────────────────────────
 
@@ -184,7 +186,7 @@ function checkProcesses() {
 // ── Phase 2: Config ───────────────────────────────────────────────────────────
 
 function checkConfig() {
-  if (process.env.AELLI_AUTH_TOKEN) {
+  if (config.authToken()) {
     addCheck("config", "AELLI_AUTH_TOKEN", PASS, "Set");
   } else {
     addCheck("config", "AELLI_AUTH_TOKEN", FAIL,
@@ -211,10 +213,10 @@ function checkConfig() {
 
 async function checkEndpoints() {
   // AELLI Node — remote when AELLI_BASE_URL is set (integra42 Docker), local otherwise.
-  const aeBaseUrl = (process.env.AELLI_BASE_URL || "").replace(/\/$/, "");
+  const aeBaseUrl = process.env.AELLI_BASE_URL ? config.aelliBase() : "";
   if (aeBaseUrl) {
     const healthUrl = `${aeBaseUrl}/health`;
-    const token = process.env.AELLI_AUTH_TOKEN || "";
+    const token = config.authToken();
     const r = await httpRequest(healthUrl, {
       method: "GET",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -262,8 +264,8 @@ async function checkEndpoints() {
 
   // LiteLLM gateway — probe the exact delivery route bridge.py and a2a-client.js use
   if (LITELLM_BASE) {
-    const deliveryUrl = `${LITELLM_BASE}/a2a/aelli-dev-advisor/message/send`;
-    const token = process.env.AELLI_AUTH_TOKEN || "";
+    // Probe the exact route and headers production resolves to.
+    const deliveryUrl = config.devAdvisorUrl();
     const minimalBody = JSON.stringify({
       jsonrpc: "2.0", method: "message/send", id: "doctowiz-probe",
       params: { message: { role: "user", messageId: "probe", parts: [] } },
@@ -272,7 +274,7 @@ async function checkEndpoints() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...config.aelliAuthHeaders(),
       },
       body: minimalBody,
     });

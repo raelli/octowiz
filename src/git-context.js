@@ -34,10 +34,8 @@
 
 const { execFileSync } = require("child_process");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
-
-const CACHE_DIR = process.env.AELLI_CACHE_DIR || path.join(os.homedir(), ".cache", "aelli-cc");
+const { cacheDir } = require("./config");
 
 function run(args, cwd) {
   try {
@@ -97,9 +95,10 @@ function captureContext(sessionId, cwd) {
   const repoRoot = run(["rev-parse", "--show-toplevel"], cwd);
   const repo = repoRoot ? run(["remote", "get-url", "origin"], repoRoot) : null;
   const ctx = { sessionId, repoRoot, repo, cwd };
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
-  const tmp = path.join(CACHE_DIR, `git-context-${sessionId}.json.tmp`);
-  const dest = path.join(CACHE_DIR, `git-context-${sessionId}.json`);
+  const dir = cacheDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = path.join(dir, `git-context-${sessionId}.json.tmp`);
+  const dest = path.join(dir, `git-context-${sessionId}.json`);
   fs.writeFileSync(tmp, JSON.stringify(ctx));
   fs.renameSync(tmp, dest); // atomic on POSIX
   return ctx;
@@ -110,7 +109,7 @@ function captureContext(sessionId, cwd) {
 function getStableContext(sessionId) {
   try {
     return JSON.parse(
-      fs.readFileSync(path.join(CACHE_DIR, `git-context-${sessionId}.json`), "utf8")
+      fs.readFileSync(path.join(cacheDir(), `git-context-${sessionId}.json`), "utf8")
     );
   } catch {
     return null;

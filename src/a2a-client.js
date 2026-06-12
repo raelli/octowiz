@@ -2,79 +2,28 @@ const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const logger = require("./logger");
-const os = require("os");
-const path = require("path");
+const config = require("./config");
 
-const API_BASE = process.env.AELLI_BASE_URL || process.env.AELLI_API_BASE || "http://localhost:3001/api";
 const MAX_RECONNECT_MS = 30_000;
-const SESSION_ID = process.env.PTY_SESSION_ID || "";
-const AUTH_TOKEN = process.env.AELLI_AUTH_TOKEN || "";
 
-function isLocalhost(urlStr) {
-  try {
-    const h = new URL(urlStr).hostname;
-    return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]";
-  } catch { return false; }
+// Surface misconfiguration once at load time (config owns the rules).
+for (const warning of config.configWarnings()) {
+  logger.warn(warning);
 }
-
-// AELLI_LITELLM_BASE: route through LiteLLM A2A gateway
-// AELLI_DEV_ADVISOR_URL: direct call to dev-advisor (local default)
-const LITELLM_BASE = (process.env.AELLI_LITELLM_BASE || "").replace(/\/+$/, "");
-const DEV_ADVISOR_URL =
-  process.env.AELLI_DEV_ADVISOR_URL || "http://localhost:3456/a2a/dev-advisor";
-const ROUTER_URL = process.env.AELLI_ROUTER_URL
-  || (LITELLM_BASE ? `${LITELLM_BASE}/a2a/aelli-router/message/send` : null);
-
-// Warn when AELLI_LITELLM_BASE is set but no auth token is configured
-if (LITELLM_BASE && !AUTH_TOKEN) {
-  logger.warn(
-    "[AELLI A2A] AELLI_LITELLM_BASE is set but AELLI_AUTH_TOKEN is missing. " +
-    "All A2A calls through the LiteLLM gateway will get 401 Unauthorized. " +
-    "Set AELLI_AUTH_TOKEN to a valid LiteLLM API key."
-  );
-}
-
-// Warn when sending credentials over non-localhost plain HTTP
-if (AUTH_TOKEN) {
-  const urlsToCheck = [
-    ["AELLI_API_BASE", API_BASE],
-    ...(LITELLM_BASE ? [["AELLI_LITELLM_BASE", LITELLM_BASE]] : []),
-    ["AELLI_DEV_ADVISOR_URL", DEV_ADVISOR_URL],
-  ];
-  for (const [name, url] of urlsToCheck) {
-    if (!url.startsWith("https://") && !isLocalhost(url)) {
-      logger.warn(
-        `[AELLI A2A] AELLI_AUTH_TOKEN is set but ${name} uses plain HTTP on a non-localhost address. Use HTTPS to protect your token.`
-      );
-    }
-  }
-}
-
-const LOG_FILE = path.join(
-  process.env.AELLI_CACHE_DIR || path.join(os.homedir(), ".cache", "aelli-cc"),
-  "aelli-cc.log"
-);
 
 function appendLog(msg) {
   try {
-    fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`);
+    fs.appendFileSync(config.logFile(), `[${new Date().toISOString()}] ${msg}\n`);
   } catch {}
 }
 
-function makeAuthHeaders() {
-  if (!AUTH_TOKEN) return {};
-  return LITELLM_BASE
-    ? { "Authorization": `Bearer ${AUTH_TOKEN}` }
-    : { "x-aelli-secret": AUTH_TOKEN };
-}
-
 // Build a standard JSON-RPC POST init object (shared by post() and route()).
-// subscribeToQueue() intentionally uses x-aelli-secret directly and does not
-// go through this helper — it connects to octowiz's own inbound queue, not AELLI.
+// subscribeToQueue() intentionally uses queueAuthHeaders() and does not go
+// through this helper — it connects to octowiz's own inbound queue, not AELLI.
 function _jsonInit(body) {
   return {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...makeAuthHeaders() },
+    headers: { "Content-Type": "application/json", ...config.aelliAuthHeaders() },
     body: typeof body === "string" ? body : JSON.stringify(body),
   };
 }
@@ -116,7 +65,7 @@ function parseSseEvents(buffer) {
 
 function request(method, urlPath, body = null) {
   return new Promise((resolve, reject) => {
-    const url = new URL(API_BASE + urlPath);
+    const url = new URL(config.apiBase() + urlPath);
     const isHttps = url.protocol === "https:";
     const lib = isHttps ? https : http;
 
@@ -125,7 +74,7 @@ function request(method, urlPath, body = null) {
       port: url.port || (isHttps ? 443 : 80),
       path: url.pathname + url.search,
       method,
-      headers: { "Content-Type": "application/json", ...makeAuthHeaders() },
+      headers: { "Content-Type": "application/json", ...config.aelliAuthHeaders() },
     };
 
     const req = lib.request(options, (res) => {
@@ -192,10 +141,9 @@ function subscribeToQueue(queueUrl, onTask) {
   if (typeof onTask !== "function") {
     throw new TypeError("[octowiz] subscribeToQueue() requires an onTask callback");
   }
-  const secret = process.env.AELLI_AUTH_TOKEN || process.env.AELLI_INBOUND_SECRET || "";
   _connectSSE(
     queueUrl,
-    { "x-aelli-secret": secret },
+    config.queueAuthHeaders(),
     (event, data) => {
       if (event === "task-new" && data) {
         try {
@@ -222,9 +170,7 @@ function subscribeToQueue(queueUrl, onTask) {
 // On timeout or any network error: logs locally and returns null (fail-open —
 // the caller proceeds without advice rather than blocking).
 async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
-  const url = LITELLM_BASE
-    ? `${LITELLM_BASE}/a2a/aelli-dev-advisor/message/send`
-    : DEV_ADVISOR_URL;
+  const url = config.devAdvisorUrl();
 
   const init = _jsonInit({
     jsonrpc: "2.0",
@@ -267,7 +213,8 @@ async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
 // events whose data can't be parsed as JSON, skip the sentinel `[DONE]` line,
 // and return the first successfully parsed object (the routing decision).
 async function route(taskKind, data = {}, { timeoutMs = 2000 } = {}) {
-  if (!ROUTER_URL) return null;
+  const routerUrl = config.routerUrl();
+  if (!routerUrl) return null;
   const init = _jsonInit({
     jsonrpc: "2.0",
     method: "message/send",
@@ -275,7 +222,7 @@ async function route(taskKind, data = {}, { timeoutMs = 2000 } = {}) {
       type: "route", taskKind, ...data,
     }) }] } },
   });
-  const [res, err] = await _abortFetch(ROUTER_URL, init, timeoutMs);
+  const [res, err] = await _abortFetch(routerUrl, init, timeoutMs);
   if (!res) {
     appendLog(`[route:${taskKind}] fail-open: ${err?.message ?? err}`);
     return null;

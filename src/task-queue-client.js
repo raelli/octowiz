@@ -1,13 +1,11 @@
 const https = require("https");
 const http = require("http");
 const logger = require("./logger");
-
-const BASE = (process.env.AELLI_BASE_URL || "http://localhost:3456").replace(/\/$/, "");
-const SECRET = process.env.AELLI_AUTH_TOKEN || process.env.AELLI_INBOUND_SECRET || "";
+const config = require("./config");
 
 function _post(path, body) {
   return new Promise((resolve, reject) => {
-    const url = new URL(BASE + path);
+    const url = new URL(config.aelliBase() + path);
     const isHttps = url.protocol === "https:";
     const lib = isHttps ? https : http;
     const payload = JSON.stringify(body);
@@ -19,7 +17,7 @@ function _post(path, body) {
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(payload),
-        "x-aelli-secret": SECRET,
+        ...config.queueAuthHeaders(),
       },
     };
     const req = lib.request(options, (res) => {

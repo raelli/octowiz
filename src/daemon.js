@@ -5,30 +5,9 @@ const { subscribeToQueue } = require("./a2a-client");
 const { checkStartup, validateCwd } = require("./policy");
 const { claimTask, postResult } = require("./task-queue-client");
 const { normalizeA2AResponse } = require("./a2a-response");
+const config = require("./config");
 
 const ALLOWED_ADVISORY_TYPES = new Set(["file-conflict", "branch-drift", "spec-deviation"]);
-
-const QUEUE_URL = `${(process.env.AELLI_BASE_URL || "http://localhost:3456").replace(/\/$/, "")}/a2a/task-queue`;
-
-// The daemon now forwards all capability work to the Python A2A server.
-// Build the base URL from OCTOWIZ_A2A_URL, or fall back to localhost on
-// OCTOWIZ_A2A_PORT (default 8765).
-function _a2aBaseUrl() {
-  if (process.env.OCTOWIZ_A2A_URL) {
-    return process.env.OCTOWIZ_A2A_URL.replace(/\/$/, "");
-  }
-  const port = process.env.OCTOWIZ_A2A_PORT || "8765";
-  return `http://localhost:${port}`;
-}
-
-// The Python A2A server authenticates via x-octowiz-secret.
-const OCTOWIZ_SECRET = process.env.OCTOWIZ_INBOUND_SECRET || "";
-
-// OCTOWIZ_DISPATCH_TIMEOUT is in *seconds* (matching Python's dispatch.py).
-// The daemon's HTTP timeout must exceed the Python ceiling so we never abort
-// a POST before Python finishes.  Add a 30 s buffer.
-const _dispatchTimeoutSec = parseInt(process.env.OCTOWIZ_DISPATCH_TIMEOUT || "300", 10);
-const A2A_TIMEOUT_MS = _dispatchTimeoutSec * 1000 + 30_000;
 
 const KNOWN_CAPABILITIES = new Set([
   "octowiz.dispatch",
@@ -53,8 +32,8 @@ const KNOWN_CAPABILITIES = new Set([
  */
 function _forwardToA2A(capability, payload) {
   return new Promise((resolve, reject) => {
-    const baseUrl = _a2aBaseUrl();
-    const url = new URL(baseUrl + "/a2a/octowiz");
+    const url = new URL(config.a2aServerUrl() + "/a2a/octowiz");
+    const timeoutMs = config.a2aTimeoutMs();
     const isHttps = url.protocol === "https:";
     const lib = isHttps ? https : http;
 
@@ -83,7 +62,7 @@ function _forwardToA2A(capability, payload) {
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(rpcBody),
-        "x-octowiz-secret": OCTOWIZ_SECRET,
+        ...config.a2aServerAuthHeaders(),
       },
     };
 
@@ -107,8 +86,8 @@ function _forwardToA2A(capability, payload) {
       });
     });
 
-    req.setTimeout(A2A_TIMEOUT_MS, () => {
-      req.destroy(new Error(`A2A forward timed out after ${A2A_TIMEOUT_MS}ms`));
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`A2A forward timed out after ${timeoutMs}ms`));
     });
     req.on("error", reject);
     req.write(rpcBody);
@@ -196,8 +175,9 @@ async function processTask(task) {
 
 function start() {
   checkStartup();
-  subscribeToQueue(QUEUE_URL, processTask);
-  logger.log(`[octowiz - startup] subscribed to task queue at ${QUEUE_URL}`);
+  const queueUrl = config.queueUrl();
+  subscribeToQueue(queueUrl, processTask);
+  logger.log(`[octowiz - startup] subscribed to task queue at ${queueUrl}`);
 }
 
 module.exports = { start, processTask, _forwardToA2A };

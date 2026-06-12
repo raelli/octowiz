@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 "use strict";
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const logger = require("../../src/logger");
-
-const CACHE_DIR = process.env.AELLI_CACHE_DIR || path.join(os.homedir(), ".cache", "aelli-cc");
+const { cacheDir } = require("../../src/config");
 
 function killSubscriber(sessionId) {
-  const pidFile = path.join(CACHE_DIR, `${sessionId}.pid`);
+  const pidFile = path.join(cacheDir(), `${sessionId}.pid`);
   if (!fs.existsSync(pidFile)) return;
   try {
     const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);

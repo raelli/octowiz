@@ -7,14 +7,12 @@ const { spawn } = require("child_process");
 
 const net = require("net");
 const logger = require("../../src/logger");
-
-const CACHE_DIR = process.env.AELLI_CACHE_DIR || path.join(os.homedir(), ".cache", "aelli-cc");
-const LOG_FILE = path.join(CACHE_DIR, "aelli-cc.log");
+const config = require("../../src/config");
 
 function appendLog(msg) {
   try {
-    fs.mkdirSync(CACHE_DIR, { recursive: true });
-    fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`);
+    fs.mkdirSync(config.cacheDir(), { recursive: true });
+    fs.appendFileSync(config.logFile(), `[${new Date().toISOString()}] ${msg}\n`);
   } catch {}
 }
 
@@ -27,7 +25,7 @@ function isPortOpen(port) {
 }
 
 async function ensureA2AServer() {
-  const port = parseInt(process.env.OCTOWIZ_A2A_PORT || "8765", 10);
+  const port = config.a2aPort();
   if (await isPortOpen(port)) return;
 
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, "../..");
@@ -44,8 +42,8 @@ async function ensureA2AServer() {
     stdio: "ignore",
   });
   child.unref();
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
-  fs.writeFileSync(path.join(CACHE_DIR, "a2a-agent.pid"), String(child.pid));
+  fs.mkdirSync(config.cacheDir(), { recursive: true });
+  fs.writeFileSync(path.join(config.cacheDir(), "a2a-agent.pid"), String(child.pid));
   appendLog(`[start] Python A2A server started on port ${port} (pid ${child.pid})`);
 }
 
@@ -98,12 +96,11 @@ async function handleStart(input) {
 
   logger.log("[octowiz - start] session starting", sessionId);
 
-  if (!process.env.AELLI_AUTH_TOKEN) {
+  if (!config.authToken()) {
     logger.warn("[octowiz - start] AELLI_AUTH_TOKEN not set — advisory delivery disabled");
     appendLog("[octowiz - start] AELLI_AUTH_TOKEN not set — advisory delivery disabled");
   }
 
-  const port = parseInt(process.env.OCTOWIZ_A2A_PORT || "8765", 10);
   await ensureA2AServer();
   await ensureDaemonVersion();
 
