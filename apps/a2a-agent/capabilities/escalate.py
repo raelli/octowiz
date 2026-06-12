@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
+from a2a import err
 
 _AELLI_BASE_URL_DEFAULT = "http://localhost:3456"
 
@@ -60,7 +61,7 @@ def _post_sync(
 async def handle_escalate(event: Dict) -> Dict:
     question = event.get("question", "")
     if not question or not isinstance(question, str) or not question.strip():
-        return {"status": "error", "message": "question is required"}
+        return err("question is required")
 
     context = event.get("context")
     session_id = event.get("sessionId")

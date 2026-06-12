@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from a2a import err
 from marketplace_client import manifest as _manifest
 from marketplace_client.resolver import (
     resolve_dependencies,
@@ -51,7 +52,7 @@ async def handle_marketplace_info(event: Dict[str, Any]) -> Dict[str, Any]:
         return await loop.run_in_executor(None, _handle_discover, event)
 
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-        return {"status": "error", "message": str(exc)}
+        return err(str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -94,11 +95,11 @@ def _handle_discover(event: Dict[str, Any]) -> Dict[str, Any]:
 def _handle_compat(event: Dict[str, Any]) -> Dict[str, Any]:
     checks = event.get("checks", [])
     if not isinstance(checks, list):
-        return {"status": "error", "message": "checks must be a list"}
+        return err("checks must be a list")
     results = []
     for item in checks:
         if not isinstance(item, dict):
-            return {"status": "error", "message": f"each check must be a dict, got {type(item).__name__}"}
+            return err(f"each check must be a dict, got {type(item).__name__}")
         name = item.get("name", "")
         required = item.get("required", "0.0.0")
         available = item.get("available", "0.0.0")

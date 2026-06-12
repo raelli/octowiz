@@ -5,6 +5,7 @@ import os
 import time
 from pathlib import Path
 from typing import Dict, Optional
+from a2a import err
 
 _VALID_ENTRY_TYPES = {"working", "long_term"}
 
@@ -65,10 +66,10 @@ async def handle_write_diary(event: Dict) -> Dict:
     metadata = event.get("metadata") or None
 
     if entry_type not in _VALID_ENTRY_TYPES:
-        return {"status": "error", "message": "entry_type must be 'working' or 'long_term'"}
+        return err("entry_type must be 'working' or 'long_term'")
 
     if not content or not isinstance(content, str):
-        return {"status": "error", "message": "content is required"}
+        return err("content is required")
 
     base_url = os.environ.get("LITELLM_BASE_URL", "")
     api_key = os.environ.get("LITELLM_API_KEY") or None

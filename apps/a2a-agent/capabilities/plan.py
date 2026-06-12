@@ -2,6 +2,7 @@
 from typing import Any, Dict, Optional
 
 from capabilities.doctrine_enrichment import handle_doctrine_enrichment
+from a2a import err
 
 
 def _plan_prompt_builder(event: Dict, context: Any) -> str:
@@ -15,6 +16,6 @@ def _plan_prompt_builder(event: Dict, context: Any) -> str:
 async def handle_plan(event: Dict, *, source: Optional[Any] = None) -> Dict:
     task = event.get("task", "")
     if not task:
-        return {"status": "error", "message": "task is required"}
+        return err("task is required")
     result = await handle_doctrine_enrichment(event, "planner", _plan_prompt_builder, source=source)
     return {**result, "task": task}

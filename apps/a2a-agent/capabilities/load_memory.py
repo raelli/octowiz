@@ -7,6 +7,7 @@ import httpx
 
 # Import as module object so patches on memory_client.namespace.* take effect at call time.
 from memory_client import namespace as _ns
+from a2a import err
 
 
 async def handle_load_memory(event: dict) -> dict:
@@ -37,4 +38,4 @@ async def handle_load_memory(event: dict) -> dict:
         return result
 
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-        return {"status": "error", "message": str(exc)}
+        return err(str(exc))
