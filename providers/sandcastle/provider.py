@@ -13,7 +13,7 @@ from providers.protocol import RunState
 
 from .runner import build_container_cmd, _run_cmd, _start_container
 from .status import is_error as _native_is_error
-from .status import is_terminal
+from .status import is_terminal as _native_is_terminal
 
 
 def to_run_state(raw_status: str) -> RunState:
@@ -25,7 +25,7 @@ def to_run_state(raw_status: str) -> RunState:
     """
     if _native_is_error(raw_status):
         status = protocol.ERROR
-    elif is_terminal(raw_status):
+    elif _native_is_terminal(raw_status):
         status = protocol.COMPLETED
     else:
         status = protocol.RUNNING
@@ -92,7 +92,7 @@ class SandcastleProvider:
         run = self._runs.get(run_id)
         if run is None:
             return "error"
-        if is_terminal(run.status):
+        if _native_is_terminal(run.status):
             return run.status
 
         ret = run.proc.poll()

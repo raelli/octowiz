@@ -180,5 +180,4 @@ module.exports = {
   queueAuthHeaders,
   a2aServerAuthHeaders,
   configWarnings,
-  isLocalhost,
 };
