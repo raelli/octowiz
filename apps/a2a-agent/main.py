@@ -1,5 +1,7 @@
 import hashlib
+import json
 import os
+import pathlib
 
 from fastapi import FastAPI, Request
 from fastapi.middleware import Middleware
@@ -12,6 +14,26 @@ from dispatch import dispatch
 
 app = FastAPI(title="Octowiz A2A Agent")
 app.add_middleware(BaseHTTPMiddleware, dispatch=auth_middleware)
+
+
+def _read_plugin_version() -> str:
+    here = pathlib.Path(__file__).resolve().parent
+    for candidate in [here, *here.parents]:
+        p = candidate / ".claude-plugin" / "plugin.json"
+        if p.exists():
+            try:
+                return json.loads(p.read_text(encoding="utf-8")).get("version", "unknown")
+            except Exception:
+                break
+    return "unknown"
+
+
+_PLUGIN_VERSION = _read_plugin_version()
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "version": _PLUGIN_VERSION}
 
 
 @app.get("/a2a/octowiz/.well-known/agent.json")

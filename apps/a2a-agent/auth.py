@@ -4,6 +4,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 _PUBLIC_PATHS = {
+    "/health",
     "/a2a/octowiz/.well-known/agent.json",
     "/a2a/octowiz/.well-known/agent-card.json",
 }

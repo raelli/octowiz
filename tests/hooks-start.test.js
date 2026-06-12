@@ -8,11 +8,9 @@ describe("hooks/scripts/start.js", () => {
     jest.mock("../src/a2a-client", () => ({ post: jest.fn().mockResolvedValue(null) }));
     jest.mock("../src/git-context", () => ({
       captureContext: jest.fn().mockReturnValue({
-        sessionId: "s1", repoRoot: "/repo", repo: "origin", cwd: "/repo", branch: "main",
+        sessionId: "s1", repoRoot: "/repo", repo: "origin", cwd: "/repo",
       }),
-    }));
-    jest.mock("../src/event-builder", () => ({
-      buildSessionStart: jest.fn().mockReturnValue({ sessionId: "s1", branch: "main" }),
+      getLiveContext: jest.fn().mockReturnValue({ branch: "main", modifiedFiles: [] }),
     }));
   });
 
@@ -22,13 +20,13 @@ describe("hooks/scripts/start.js", () => {
     jest.restoreAllMocks();
   });
 
-  it("calls post with session-start and correct sessionId", async () => {
+  it("calls post with session-start and correct sessionId and branch", async () => {
     const { post: mockPost } = require("../src/a2a-client");
     const { handleStart } = require("../hooks/scripts/start");
     await handleStart({ session_id: "s1", cwd: "/repo" });
     expect(mockPost).toHaveBeenCalledWith(
       "session-start",
-      expect.objectContaining({ sessionId: "s1" }),
+      expect.objectContaining({ sessionId: "s1", branch: "main" }),
       expect.objectContaining({ sync: true, timeoutMs: 500 })
     );
   });
@@ -62,11 +60,9 @@ describe("hooks/scripts/start.js — subscriber spawn", () => {
     jest.mock("../src/a2a-client", () => ({ post: jest.fn().mockResolvedValue(null) }));
     jest.mock("../src/git-context", () => ({
       captureContext: jest.fn().mockReturnValue({
-        sessionId: "s1", repoRoot: "/repo", repo: "origin", cwd: "/repo", branch: "main",
+        sessionId: "s1", repoRoot: "/repo", repo: "origin", cwd: "/repo",
       }),
-    }));
-    jest.mock("../src/event-builder", () => ({
-      buildSessionStart: jest.fn().mockReturnValue({ sessionId: "s1" }),
+      getLiveContext: jest.fn().mockReturnValue({ branch: "main", modifiedFiles: [] }),
     }));
     const childProcess = require("child_process");
     spawnMock = jest.spyOn(childProcess, "spawn").mockReturnValue({
@@ -111,5 +107,72 @@ describe("hooks/scripts/start.js — subscriber spawn", () => {
       (args) => String(args[1]?.[0]).includes("session-subscriber.js")
     );
     expect(subscriberSpawn).toBeUndefined();
+  });
+});
+
+describe("ensureDaemonVersion", () => {
+  let execFileSyncSpy;
+
+  beforeEach(() => {
+    jest.resetModules();
+    // default: return undefined — causes PlistBuddy Print's .trim() to throw,
+    // so any test that doesn't set up its own mock gets a safe no-op
+    execFileSyncSpy = jest.spyOn(require("child_process"), "execFileSync")
+      .mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    delete process.env.CLAUDE_PLUGIN_ROOT;
+    jest.restoreAllMocks();
+  });
+
+  it("is a no-op when CLAUDE_PLUGIN_ROOT is not set", async () => {
+    delete process.env.CLAUDE_PLUGIN_ROOT;
+    const { ensureDaemonVersion } = require("../hooks/scripts/start");
+    await expect(ensureDaemonVersion()).resolves.not.toThrow();
+    expect(execFileSyncSpy).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op when PlistBuddy read fails (plist absent or unreadable)", async () => {
+    process.env.CLAUDE_PLUGIN_ROOT = "/plugin/root";
+    execFileSyncSpy.mockImplementation(() => { throw new Error("file not found"); });
+    const { ensureDaemonVersion } = require("../hooks/scripts/start");
+    await expect(ensureDaemonVersion()).resolves.not.toThrow();
+    const launchctlCalls = execFileSyncSpy.mock.calls.filter((c) => c[0] === "launchctl");
+    expect(launchctlCalls.length).toBe(0);
+  });
+
+  it("is a no-op when daemon plist already points at current plugin", async () => {
+    process.env.CLAUDE_PLUGIN_ROOT = "/plugin/root";
+    execFileSyncSpy.mockReturnValue("/plugin/root/index.js"); // PlistBuddy Print returns matching path
+    const { ensureDaemonVersion } = require("../hooks/scripts/start");
+    await ensureDaemonVersion();
+    const launchctlCalls = execFileSyncSpy.mock.calls.filter((c) => c[0] === "launchctl");
+    expect(launchctlCalls.length).toBe(0);
+  });
+
+  it("restarts Node daemon when plist points at old index.js", async () => {
+    process.env.CLAUDE_PLUGIN_ROOT = "/plugin/root";
+    execFileSyncSpy
+      .mockReturnValueOnce("/old/plugin/root/index.js") // PlistBuddy Print — stale path
+      .mockImplementation(() => {});                    // launchctl + PlistBuddy Set + launchctl
+    const { ensureDaemonVersion } = require("../hooks/scripts/start");
+    await ensureDaemonVersion({ sleepMs: 0 });
+    const launchctlCalls = execFileSyncSpy.mock.calls.filter((c) => c[0] === "launchctl");
+    expect(launchctlCalls.length).toBe(2); // unload + load
+    const plistBuddyCalls = execFileSyncSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("PlistBuddy")
+    );
+    expect(plistBuddyCalls.length).toBe(2); // Print + Set
+    expect(plistBuddyCalls[1][1][1]).toContain("/plugin/root/index.js");
+  });
+
+  it("does not throw when restart fails", async () => {
+    process.env.CLAUDE_PLUGIN_ROOT = "/plugin/root";
+    execFileSyncSpy
+      .mockReturnValueOnce("/old/plugin/root/index.js") // PlistBuddy Print succeeds
+      .mockImplementation(() => { throw new Error("launchctl failed"); }); // restart fails
+    const { ensureDaemonVersion } = require("../hooks/scripts/start");
+    await expect(ensureDaemonVersion({ sleepMs: 0 })).resolves.not.toThrow();
   });
 });

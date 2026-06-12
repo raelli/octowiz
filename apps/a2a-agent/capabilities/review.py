@@ -1,50 +1,28 @@
 """octowiz.review capability — doctrine enrichment for reviewing work."""
-import os
-from typing import Dict
+from typing import Any, Dict, Optional
+
+from capabilities.doctrine_enrichment import handle_doctrine_enrichment
 
 
-async def handle_review(event: Dict) -> Dict:
+def _review_prompt_builder(event: Dict, context: Any) -> str:
+    cwd = event.get("cwd", "")
+    prompt = f"[octowiz.review] Review the work in {cwd}"
+    if event.get("sessionId"):
+        prompt += f" (session {event['sessionId']})"
+    if context:
+        prompt += f"\n\nContext:\n{context}"
+    return prompt
+
+
+async def handle_review(event: Dict, *, source: Optional[Any] = None) -> Dict:
     cwd = event.get("cwd", "")
     if not cwd:
         return {"status": "error", "message": "cwd is required"}
-
     from path_guard import validate_cwd
     try:
         cwd = validate_cwd(cwd)
     except ValueError as exc:
         return {"status": "error", "message": str(exc)}
-
-    namespace = event.get("namespace") or os.environ.get("OCTOWIZ_MEMORY_NAMESPACE", "gfe")
-    context = event.get("context")
-
-    doctrine = None
-    warning = None
-
-    base_url = os.environ.get("LITELLM_BASE_URL", "")
-    if base_url:
-        api_key = os.environ.get("LITELLM_API_KEY", "")
-        try:
-            from memory_client import namespace as _ns
-            doctrine = _ns.load_role_bundle(base_url, api_key, "reviewer", namespace)
-        except Exception as exc:
-            doctrine = None
-            warning = str(exc)
-
-    suggested_prompt = f"[octowiz.review] Review the work in {cwd}"
-    if event.get("sessionId"):
-        suggested_prompt += f" (session {event['sessionId']})"
-    if context:
-        suggested_prompt += f"\n\nContext:\n{context}"
-
-    result: Dict = {
-        "status": "ok",
-        "role": "reviewer",
-        "cwd": cwd,
-        "sessionId": event.get("sessionId"),
-        "namespace": namespace,
-        "doctrine": doctrine,
-        "suggested_prompt": suggested_prompt,
-    }
-    if warning is not None:
-        result["warning"] = warning
-    return result
+    enriched_event = {**event, "cwd": cwd}
+    result = await handle_doctrine_enrichment(enriched_event, "reviewer", _review_prompt_builder, source=source)
+    return {**result, "cwd": cwd, "sessionId": event.get("sessionId")}
