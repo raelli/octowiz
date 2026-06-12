@@ -10,4 +10,9 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-process.env.AELLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "octowiz-test-cache-"));
+// setupFiles run once per test FILE; reuse one dir per worker process so a
+// full run creates a handful of temp dirs, not one per suite. A test that
+// deletes AELLI_CACHE_DIR mid-file gets a fresh dir before the next file.
+if (!(process.env.AELLI_CACHE_DIR || "").includes("octowiz-test-cache-")) {
+  process.env.AELLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "octowiz-test-cache-"));
+}
