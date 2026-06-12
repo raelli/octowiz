@@ -33,7 +33,7 @@ If `.octowiz/setup-state.json` does not exist in the current directory, create `
 
 ## Environment (per-machine)
 - [STATUS] superpowers plugin
-- [STATUS] mattpo-skills plugin
+- [STATUS] mattpocock-skills plugin
 - [STATUS] antfu-skills plugin
 - [STATUS] LiteLLM env vars (LITELLM_BASE_URL + API key)
 - [STATUS] LiteLLM routing cache (verified within 24h)
@@ -274,6 +274,23 @@ Always run last, after all other phases complete.
 octowiz-cache check
 ```
 
+### Step 4.1b: Background services
+
+Both services self-heal on version skew at session start (Node daemon since
+0.9.17, Python A2A server since 0.9.18) — verify they are up and current:
+
+```bash
+# Node daemon (launchd)
+launchctl list de.integrahub.octowiz-daemon 2>/dev/null || echo "daemon: not loaded"
+
+# Python A2A server — version must match the installed plugin
+curl -s -m 3 "http://localhost:${OCTOWIZ_A2A_PORT:-8765}/health" 2>/dev/null \
+  || echo "a2a: down (starts on next session open)"
+```
+
+If either is missing or stale, route to `/octowiz:octowiz-doctowiz` (fixes
+`daemon_start` and `aelli_python`) rather than fixing inline here.
+
 ### Step 4.2: If hard_gaps is empty — setup complete
 
 1. Delete `ONBOARDING.md` from the current directory:
@@ -290,7 +307,7 @@ Report remaining gaps. For each:
 | Gap ID | Message |
 |---|---|
 | `plugin_superpowers` | superpowers plugin not found. Run: `claude plugins install superpowers` |
-| `plugin_mattpo-skills` | mattpo-skills plugin not found. Run: `claude plugins install mattpo-skills` |
+| `plugin_mattpo-skills` | mattpocock-skills plugin not found. Run: `claude plugins install mattpocock-skills` (the gap ID keeps the legacy `mattpo-skills` name) |
 | `plugin_antfu-skills` | antfu-skills plugin not found. Run: `claude plugins install antfu-skills` |
 | `litellm_env` | LITELLM_BASE_URL or API key not set. Add to `~/.claude/settings.json` under `"env"`. |
 | `litellm_cache` | LiteLLM routing bundle not verified. Run: `octowiz-cache build --all` |
