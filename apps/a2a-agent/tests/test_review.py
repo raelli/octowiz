@@ -85,8 +85,8 @@ class TestReviewWithDoctrine(unittest.TestCase):
 
     def test_ok_with_doctrine(self):
         from capabilities.review import handle_review
-        fake_doctrine = {"checklist": ["tests pass", "no secrets"], "role": "senior reviewer"}
-        with patch("memory_client.namespace.load_role_bundle", return_value=fake_doctrine):
+        fake_doctrine = "# Octowiz Doctrine Bundle: reviewer\n\n## key\n\ntests pass\n"
+        with patch("memory_client.cache.get_bundle", return_value=fake_doctrine):
             with patch.dict(os.environ, {"LITELLM_BASE_URL": "http://litellm.local", "LITELLM_API_KEY": "key123", "OCTOWIZ_ALLOWED_ROOTS": "/tmp"}):
                 result = _run(handle_review({"cwd": "/tmp"}))
         self.assertEqual(result["status"], "ok")
@@ -94,9 +94,8 @@ class TestReviewWithDoctrine(unittest.TestCase):
         self.assertNotIn("warning", result)
 
     def test_doctrine_error_is_warning(self):
-        import httpx
         from capabilities.review import handle_review
-        with patch("memory_client.namespace.load_role_bundle", side_effect=httpx.RequestError("connection refused")):
+        with patch("memory_client.cache.get_bundle", side_effect=Exception("connection refused")):
             with patch.dict(os.environ, {"LITELLM_BASE_URL": "http://litellm.local", "LITELLM_API_KEY": "key123", "OCTOWIZ_ALLOWED_ROOTS": "/tmp"}):
                 result = _run(handle_review({"cwd": "/tmp"}))
         self.assertEqual(result["status"], "ok")

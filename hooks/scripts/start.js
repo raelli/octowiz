@@ -51,8 +51,7 @@ async function ensureA2AServer() {
 
 async function handleStart(input) {
   const { post } = require("../../src/a2a-client");
-  const { captureContext } = require("../../src/git-context");
-  const { buildSessionStart } = require("../../src/event-builder");
+  const { captureContext, getLiveContext } = require("../../src/git-context");
 
   const sessionId = input.session_id || `cc-${Date.now()}-${process.pid}`;
   const cwd = input.cwd || process.cwd();
@@ -67,7 +66,7 @@ async function handleStart(input) {
   await ensureA2AServer();
 
   const ctx = captureContext(sessionId, cwd);
-  const payload = buildSessionStart(ctx);
+  const payload = { ...ctx, ...getLiveContext(sessionId) };
   await post("session-start", payload, { sync: true, timeoutMs: 500 }).catch((e) => {
     logger.error("[octowiz - start] session-start post failed:", e?.message ?? e);
     appendLog(`[octowiz - start] session-start post failed: ${e?.message ?? e}`);

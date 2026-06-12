@@ -8,11 +8,9 @@ describe("hooks/scripts/start.js", () => {
     jest.mock("../src/a2a-client", () => ({ post: jest.fn().mockResolvedValue(null) }));
     jest.mock("../src/git-context", () => ({
       captureContext: jest.fn().mockReturnValue({
-        sessionId: "s1", repoRoot: "/repo", repo: "origin", cwd: "/repo", branch: "main",
+        sessionId: "s1", repoRoot: "/repo", repo: "origin", cwd: "/repo",
       }),
-    }));
-    jest.mock("../src/event-builder", () => ({
-      buildSessionStart: jest.fn().mockReturnValue({ sessionId: "s1", branch: "main" }),
+      getLiveContext: jest.fn().mockReturnValue({ branch: "main", modifiedFiles: [] }),
     }));
   });
 
@@ -22,13 +20,13 @@ describe("hooks/scripts/start.js", () => {
     jest.restoreAllMocks();
   });
 
-  it("calls post with session-start and correct sessionId", async () => {
+  it("calls post with session-start and correct sessionId and branch", async () => {
     const { post: mockPost } = require("../src/a2a-client");
     const { handleStart } = require("../hooks/scripts/start");
     await handleStart({ session_id: "s1", cwd: "/repo" });
     expect(mockPost).toHaveBeenCalledWith(
       "session-start",
-      expect.objectContaining({ sessionId: "s1" }),
+      expect.objectContaining({ sessionId: "s1", branch: "main" }),
       expect.objectContaining({ sync: true, timeoutMs: 500 })
     );
   });
@@ -62,11 +60,9 @@ describe("hooks/scripts/start.js — subscriber spawn", () => {
     jest.mock("../src/a2a-client", () => ({ post: jest.fn().mockResolvedValue(null) }));
     jest.mock("../src/git-context", () => ({
       captureContext: jest.fn().mockReturnValue({
-        sessionId: "s1", repoRoot: "/repo", repo: "origin", cwd: "/repo", branch: "main",
+        sessionId: "s1", repoRoot: "/repo", repo: "origin", cwd: "/repo",
       }),
-    }));
-    jest.mock("../src/event-builder", () => ({
-      buildSessionStart: jest.fn().mockReturnValue({ sessionId: "s1" }),
+      getLiveContext: jest.fn().mockReturnValue({ branch: "main", modifiedFiles: [] }),
     }));
     const childProcess = require("child_process");
     spawnMock = jest.spyOn(childProcess, "spawn").mockReturnValue({
