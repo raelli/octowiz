@@ -24,18 +24,101 @@ function isPortOpen(port) {
   });
 }
 
-async function ensureA2AServer() {
-  const port = config.a2aPort();
-  if (await isPortOpen(port)) return;
+function _readPluginVersion(pluginRoot) {
+  try {
+    const raw = fs.readFileSync(path.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8");
+    const version = JSON.parse(raw).version;
+    return typeof version === "string" && version ? version : null;
+  } catch {
+    return null;
+  }
+}
 
+async function _getJson(url, timeoutMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    let body = null;
+    try { body = await res.json(); } catch {}
+    return { status: res.status, body };
+  } catch {
+    return { status: null, body: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Classify whatever is listening on the A2A port (#116).
+//
+// The agent-card route has been public in every octowiz version, so it is the
+// identity anchor: no card, no kill — a foreign service whose /health happens
+// to return 200 must never be restarted. /health (public since 0.9.16) then
+// settles fresh vs stale; an auth-gated /health behind a valid card is a
+// pre-/health octowiz server, which is stale by definition.
+async function _classifyA2AServer(port, expectedVersion, { timeoutMs = 2000 } = {}) {
+  const base = `http://127.0.0.1:${port}`;
+  const card = await _getJson(`${base}/a2a/octowiz/.well-known/agent.json`, timeoutMs);
+  if (card.status === null) return "unknown";
+  if (card.status !== 200) return "foreign";
+  const health = await _getJson(`${base}/health`, timeoutMs);
+  if (health.status === 200 && health.body && health.body.version === expectedVersion) {
+    return "fresh";
+  }
+  return "stale";
+}
+
+async function ensureA2AServer({
+  killFn = (pid) => process.kill(pid, "SIGTERM"),
+  spawnFn = spawn,
+  waitMs = 250,
+  waitTries = 20,
+} = {}) {
+  const port = config.a2aPort();
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, "../..");
+
+  if (await isPortOpen(port)) {
+    const expectedVersion = _readPluginVersion(pluginRoot);
+    if (!expectedVersion) return; // nothing to compare against — leave the server alone
+
+    const state = await _classifyA2AServer(port, expectedVersion);
+    if (state === "foreign") {
+      appendLog(`[start] port ${port} serves a non-octowiz service — leaving it alone`);
+      return;
+    }
+    if (state !== "stale") return; // fresh, or unreachable mid-probe
+
+    // Stale octowiz server: only ever kill the pid we recorded at spawn time.
+    let pid = NaN;
+    try {
+      pid = parseInt(fs.readFileSync(path.join(config.cacheDir(), "a2a-agent.pid"), "utf8").trim(), 10);
+    } catch {}
+    if (!Number.isInteger(pid) || pid <= 0) {
+      appendLog(`[start] A2A server on port ${port} is stale but no pid file — not killing an unknown process`);
+      return;
+    }
+
+    appendLog(`[start] A2A server version skew on port ${port} (want ${expectedVersion}) — restarting pid ${pid}`);
+    try { killFn(pid); } catch {}
+
+    let freed = false;
+    for (let i = 0; i < waitTries; i++) {
+      await new Promise((r) => setTimeout(r, waitMs));
+      if (!(await isPortOpen(port))) { freed = true; break; }
+    }
+    if (!freed) {
+      appendLog(`[start] port ${port} still busy after kill — skipping respawn`);
+      return;
+    }
+  }
+
   const agentDir = path.join(pluginRoot, "apps", "a2a-agent");
   if (!fs.existsSync(path.join(agentDir, "main.py"))) {
     appendLog("[start] a2a-agent not found — skipping Python server startup");
     return;
   }
 
-  const child = spawn("python3", ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", String(port)], {
+  const child = spawnFn("python3", ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", String(port)], {
     cwd: agentDir,
     env: { ...process.env },
     detached: true,
@@ -127,4 +210,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { handleStart, ensureDaemonVersion };
+module.exports = { handleStart, ensureDaemonVersion, ensureA2AServer };
