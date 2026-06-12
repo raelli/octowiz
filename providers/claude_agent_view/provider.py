@@ -6,8 +6,33 @@ import subprocess
 import time
 from typing import List, Optional
 
+from providers import protocol
+from providers.protocol import RunState
+
 from .parser import parse_sessions
 from .session import AgentSession
+from .status import is_error as _native_is_error
+from .status import is_terminal as _native_is_terminal
+
+
+def to_run_state(session: Optional[AgentSession]) -> Optional[RunState]:
+    """Map a native AgentSession onto the canonical RunState.
+
+    Native vocabulary (busy/idle/stopped/exited/error from the claude CLI)
+    stays here; capabilities only ever see the canonical trio. needs_input
+    passes through — a busy session waiting for a human is canonically
+    still 'running' with needs_input=True, exactly as consumers treated it
+    before the protocol existed.
+    """
+    if session is None:
+        return None
+    if _native_is_error(session.status):
+        status = protocol.ERROR
+    elif _native_is_terminal(session.status):
+        status = protocol.COMPLETED
+    else:
+        status = protocol.RUNNING
+    return RunState(status=status, raw_status=session.status, needs_input=session.needs_input)
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _SESSION_RE = re.compile(r"backgrounded\s*[·•]\s*(\S+)")
@@ -98,6 +123,10 @@ class ClaudeAgentViewProvider:
             if s.id.startswith(run_id):
                 return s
         return None
+
+    def poll_run(self, run_id: str) -> Optional[RunState]:
+        """Canonical state of the session, or None if not yet observable."""
+        return to_run_state(self.get_status(run_id))
 
     def get_logs(self, run_id: str) -> str:
         """Return stdout log for run_id."""

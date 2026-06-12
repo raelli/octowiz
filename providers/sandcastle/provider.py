@@ -8,8 +8,28 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
+from providers import protocol
+from providers.protocol import RunState
+
 from .runner import build_container_cmd, _run_cmd, _start_container
+from .status import is_error as _native_is_error
 from .status import is_terminal
+
+
+def to_run_state(raw_status: str) -> RunState:
+    """Map a native Sandcastle status onto the canonical RunState.
+
+    Native vocabulary (running/completed/error/timed_out) stays here;
+    timed_out folds into canonical 'error', matching how run_sandboxed
+    already treated it. Container runs never wait for input.
+    """
+    if _native_is_error(raw_status):
+        status = protocol.ERROR
+    elif is_terminal(raw_status):
+        status = protocol.COMPLETED
+    else:
+        status = protocol.RUNNING
+    return RunState(status=status, raw_status=raw_status, needs_input=False)
 
 _DEFAULT_TIMEOUT = float(os.environ.get("SANDCASTLE_TIMEOUT", "300"))
 _DEFAULT_IMAGE = os.environ.get("SANDCASTLE_IMAGE", "")
@@ -84,6 +104,10 @@ class SandcastleProvider:
 
         run.status = "completed" if ret == 0 else "error"
         return run.status
+
+    def poll_run(self, run_id: str) -> RunState:
+        """Canonical state of the run. Unknown run ids surface as error."""
+        return to_run_state(self.get_status(run_id))
 
     def get_logs(self, run_id: str) -> str:
         """Return captured stdout/stderr from the run."""

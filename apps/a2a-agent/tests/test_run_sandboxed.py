@@ -44,6 +44,10 @@ class _MockSandcastleProvider:
         except StopIteration:
             return "running"
 
+    def poll_run(self, run_id):
+        from providers.sandcastle.provider import to_run_state
+        return to_run_state(self.get_status(run_id))
+
     def get_logs(self, run_id):
         return self._logs
 

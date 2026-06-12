@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 
 import session_owners
 from path_guard import validate_cwd
-from providers.claude_agent_view.status import is_terminal, is_error
+from providers.protocol import is_error, is_terminal
 
 _DEFAULT_POLL_INTERVAL = float(os.environ.get("OCTOWIZ_DISPATCH_POLL_INTERVAL", "5"))
 _DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "300"))
@@ -135,15 +135,15 @@ class DispatchSession:
         """
         _loop = asyncio.get_running_loop()
 
-        # Fetch status.
-        session = await _loop.run_in_executor(
-            None, self._provider.get_status, self.session_id
+        # Fetch canonical run state through the provider protocol.
+        run_state = await _loop.run_in_executor(
+            None, self._provider.poll_run, self.session_id
         )
-        if session is None:
+        if run_state is None:
             # Session not yet visible in the supervisor — stay RUNNING.
             return DispatchSessionState.RUNNING
 
-        # Mark that we have successfully observed a real session object at least once.
+        # Mark that we have successfully observed a real run state at least once.
         self._ever_observed = True
 
         # Fetch output exactly once per poll tick.
@@ -154,16 +154,16 @@ class DispatchSession:
         except Exception:
             self._output = ""
 
-        if session.needs_input:
+        if run_state.needs_input:
             self.state = DispatchSessionState.NEEDS_INPUT
             return self.state
 
-        if is_error(session.status):
+        if is_error(run_state.status):
             self._is_session_error = True
             self.state = DispatchSessionState.DONE
             return self.state
 
-        if is_terminal(session.status):
+        if is_terminal(run_state.status):
             self.state = DispatchSessionState.DONE
             return self.state
 

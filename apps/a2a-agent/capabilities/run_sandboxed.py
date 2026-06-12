@@ -9,7 +9,7 @@ import time
 from typing import Any, Dict, Optional
 
 from path_guard import validate_cwd
-from providers.sandcastle.status import is_error, is_terminal
+from providers.protocol import is_error, is_terminal
 
 _DEFAULT_POLL_INTERVAL = float(os.environ.get("OCTOWIZ_DISPATCH_POLL_INTERVAL", "5"))
 _DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "300"))
@@ -92,11 +92,13 @@ async def handle_run_sandboxed(
 
     while time.monotonic() < deadline:
         await asyncio.sleep(poll_interval)
-        status = await _loop.run_in_executor(None, provider.get_status, run_id)
-        if is_terminal(status):
+        run_state = await _loop.run_in_executor(None, provider.poll_run, run_id)
+        if run_state is not None and is_terminal(run_state.status):
             logs = await _loop.run_in_executor(None, provider.get_logs, run_id)
-            top_status = "error" if is_error(status) else "ok"
-            return {"status": top_status, "run_id": run_id, "exit_status": status, "logs": logs}
+            top_status = "error" if is_error(run_state.status) else "ok"
+            # exit_status keeps the provider-native status (e.g. timed_out)
+            # so artifacts stay byte-identical to the pre-protocol shape.
+            return {"status": top_status, "run_id": run_id, "exit_status": run_state.raw_status, "logs": logs}
 
     # Stop the container before returning — don't orphan it.
     await _loop.run_in_executor(None, provider.stop, run_id)

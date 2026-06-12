@@ -47,6 +47,12 @@ class _MockProvider:
         except StopIteration:
             return None
 
+    def poll_run(self, session_id):
+        # Reuse the real provider's canonical mapping so the fake speaks the
+        # same protocol dialect production does.
+        from providers.claude_agent_view.provider import to_run_state
+        return to_run_state(self.get_status(session_id))
+
     def get_logs(self, session_id):
         self.logs_calls.append(session_id)
         return self._log_output

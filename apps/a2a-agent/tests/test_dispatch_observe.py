@@ -57,6 +57,10 @@ class FakeProvider:
         except StopIteration:
             return _session("stopped")
 
+    def poll_run(self, session_id):
+        from providers.claude_agent_view.provider import to_run_state
+        return to_run_state(self.get_status(session_id))
+
     def get_logs(self, session_id):
         return self.logs
 
