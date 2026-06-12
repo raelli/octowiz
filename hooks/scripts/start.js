@@ -49,53 +49,32 @@ async function ensureA2AServer() {
   appendLog(`[start] Python A2A server started on port ${port} (pid ${child.pid})`);
 }
 
-function _fetchHealth(port) {
-  const http = require("http");
-  return new Promise((resolve, reject) => {
-    const req = http.get(
-      { host: "127.0.0.1", port, path: "/health", timeout: 1500 },
-      (res) => {
-        let body = "";
-        res.on("data", (c) => (body += c));
-        res.on("end", () => {
-          try { resolve(JSON.parse(body)); }
-          catch { reject(new Error("invalid JSON from /health")); }
-        });
-      }
-    );
-    req.on("error", reject);
-    req.on("timeout", () => { req.destroy(); reject(new Error("health check timeout")); });
-  });
-}
-
-async function ensureDaemonVersion(port, { sleepMs = 3000 } = {}) {
+async function ensureDaemonVersion({ sleepMs = 3000 } = {}) {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
   if (!pluginRoot) return;
 
-  let pluginVersion;
-  try {
-    const pluginJson = JSON.parse(
-      fs.readFileSync(path.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8")
-    );
-    pluginVersion = pluginJson.version;
-  } catch {
-    return;
-  }
-
-  let daemonVersion;
-  try {
-    daemonVersion = (await _fetchHealth(port)).version;
-  } catch {
-    return; // server still starting or unreachable — skip version check
-  }
-
-  if (!daemonVersion || pluginVersion === daemonVersion) return;
-
-  appendLog(`[start] version mismatch: plugin=${pluginVersion} daemon=${daemonVersion} — restarting daemon`);
-  logger.log(`[octowiz - start] daemon version mismatch (${daemonVersion} → ${pluginVersion}), restarting`);
-
   const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", "de.integrahub.octowiz-daemon.plist");
   const newIndexJs = path.join(pluginRoot, "index.js");
+
+  // Read what index.js the plist currently points at (= what version launchd will run).
+  // This is the correct target: we're comparing/updating the Node daemon plist, not any
+  // HTTP endpoint from the Python A2A server.
+  let currentIndexJs;
+  try {
+    const { execFileSync } = require("child_process");
+    currentIndexJs = execFileSync(
+      "/usr/libexec/PlistBuddy",
+      ["-c", "Print :ProgramArguments:1", plistPath],
+      { encoding: "utf8" }
+    ).trim();
+  } catch {
+    return; // plist absent, PlistBuddy missing, or key not found — skip
+  }
+
+  if (currentIndexJs === newIndexJs) return;
+
+  appendLog(`[start] daemon path mismatch: plist=${currentIndexJs} plugin=${newIndexJs} — restarting daemon`);
+  logger.log(`[octowiz - start] daemon path mismatch (${currentIndexJs} → ${newIndexJs}), restarting`);
 
   try {
     const { execFileSync } = require("child_process");
@@ -126,7 +105,7 @@ async function handleStart(input) {
 
   const port = parseInt(process.env.OCTOWIZ_A2A_PORT || "8765", 10);
   await ensureA2AServer();
-  await ensureDaemonVersion(port);
+  await ensureDaemonVersion();
 
   const ctx = captureContext(sessionId, cwd);
   const payload = { ...ctx, ...getLiveContext(sessionId) };

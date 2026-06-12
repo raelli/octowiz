@@ -111,13 +111,14 @@ describe("hooks/scripts/start.js — subscriber spawn", () => {
 });
 
 describe("ensureDaemonVersion", () => {
-  let http, execFileSyncSpy, readFileSyncSpy;
+  let execFileSyncSpy;
 
   beforeEach(() => {
     jest.resetModules();
-    http = require("http");
-    readFileSyncSpy = jest.spyOn(require("fs"), "readFileSync");
-    execFileSyncSpy = jest.spyOn(require("child_process"), "execFileSync").mockImplementation(() => {});
+    // default: return undefined — causes PlistBuddy Print's .trim() to throw,
+    // so any test that doesn't set up its own mock gets a safe no-op
+    execFileSyncSpy = jest.spyOn(require("child_process"), "execFileSync")
+      .mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -125,77 +126,53 @@ describe("ensureDaemonVersion", () => {
     jest.restoreAllMocks();
   });
 
-  function mockHealth(version) {
-    jest.spyOn(http, "get").mockImplementation((opts, cb) => {
-      const res = {
-        on: (ev, handler) => {
-          if (ev === "data") handler(JSON.stringify({ status: "ok", version }));
-          if (ev === "end") handler();
-          return res;
-        },
-      };
-      cb(res);
-      return { on: () => {} };
-    });
-  }
-
   it("is a no-op when CLAUDE_PLUGIN_ROOT is not set", async () => {
     delete process.env.CLAUDE_PLUGIN_ROOT;
     const { ensureDaemonVersion } = require("../hooks/scripts/start");
-    await expect(ensureDaemonVersion(8765)).resolves.not.toThrow();
+    await expect(ensureDaemonVersion()).resolves.not.toThrow();
     expect(execFileSyncSpy).not.toHaveBeenCalled();
   });
 
-  it("is a no-op when plugin.json cannot be read", async () => {
-    process.env.CLAUDE_PLUGIN_ROOT = "/nonexistent/path";
-    readFileSyncSpy.mockImplementation(() => { throw new Error("ENOENT"); });
-    const { ensureDaemonVersion } = require("../hooks/scripts/start");
-    await expect(ensureDaemonVersion(8765)).resolves.not.toThrow();
-    expect(execFileSyncSpy).not.toHaveBeenCalled();
-  });
-
-  it("is a no-op when health check fails", async () => {
+  it("is a no-op when PlistBuddy read fails (plist absent or unreadable)", async () => {
     process.env.CLAUDE_PLUGIN_ROOT = "/plugin/root";
-    readFileSyncSpy.mockReturnValue(JSON.stringify({ version: "1.0.0" }));
-    jest.spyOn(http, "get").mockImplementation((opts, cb) => {
-      const req = { on: (ev, h) => { if (ev === "error") h(new Error("ECONNREFUSED")); return req; }, destroy: () => {} };
-      return req;
-    });
+    execFileSyncSpy.mockImplementation(() => { throw new Error("file not found"); });
     const { ensureDaemonVersion } = require("../hooks/scripts/start");
-    await expect(ensureDaemonVersion(8765)).resolves.not.toThrow();
-    expect(execFileSyncSpy).not.toHaveBeenCalled();
+    await expect(ensureDaemonVersion()).resolves.not.toThrow();
+    const launchctlCalls = execFileSyncSpy.mock.calls.filter((c) => c[0] === "launchctl");
+    expect(launchctlCalls.length).toBe(0);
   });
 
-  it("is a no-op when versions match", async () => {
+  it("is a no-op when daemon plist already points at current plugin", async () => {
     process.env.CLAUDE_PLUGIN_ROOT = "/plugin/root";
-    readFileSyncSpy.mockReturnValue(JSON.stringify({ version: "0.9.16" }));
-    mockHealth("0.9.16");
+    execFileSyncSpy.mockReturnValue("/plugin/root/index.js"); // PlistBuddy Print returns matching path
     const { ensureDaemonVersion } = require("../hooks/scripts/start");
-    await ensureDaemonVersion(8765);
-    expect(execFileSyncSpy).not.toHaveBeenCalled();
+    await ensureDaemonVersion();
+    const launchctlCalls = execFileSyncSpy.mock.calls.filter((c) => c[0] === "launchctl");
+    expect(launchctlCalls.length).toBe(0);
   });
 
-  it("restarts daemon when versions differ", async () => {
+  it("restarts Node daemon when plist points at old index.js", async () => {
     process.env.CLAUDE_PLUGIN_ROOT = "/plugin/root";
-    readFileSyncSpy.mockReturnValue(JSON.stringify({ version: "0.9.16" }));
-    mockHealth("0.9.8");
+    execFileSyncSpy
+      .mockReturnValueOnce("/old/plugin/root/index.js") // PlistBuddy Print — stale path
+      .mockImplementation(() => {});                    // launchctl + PlistBuddy Set + launchctl
     const { ensureDaemonVersion } = require("../hooks/scripts/start");
-    await ensureDaemonVersion(8765, { sleepMs: 0 });
+    await ensureDaemonVersion({ sleepMs: 0 });
     const launchctlCalls = execFileSyncSpy.mock.calls.filter((c) => c[0] === "launchctl");
     expect(launchctlCalls.length).toBe(2); // unload + load
     const plistBuddyCalls = execFileSyncSpy.mock.calls.filter((c) =>
       String(c[0]).includes("PlistBuddy")
     );
-    expect(plistBuddyCalls.length).toBe(1);
-    expect(plistBuddyCalls[0][1][1]).toContain("/plugin/root/index.js");
+    expect(plistBuddyCalls.length).toBe(2); // Print + Set
+    expect(plistBuddyCalls[1][1][1]).toContain("/plugin/root/index.js");
   });
 
   it("does not throw when restart fails", async () => {
     process.env.CLAUDE_PLUGIN_ROOT = "/plugin/root";
-    readFileSyncSpy.mockReturnValue(JSON.stringify({ version: "0.9.16" }));
-    mockHealth("0.9.8");
-    execFileSyncSpy.mockImplementation(() => { throw new Error("launchctl failed"); });
+    execFileSyncSpy
+      .mockReturnValueOnce("/old/plugin/root/index.js") // PlistBuddy Print succeeds
+      .mockImplementation(() => { throw new Error("launchctl failed"); }); // restart fails
     const { ensureDaemonVersion } = require("../hooks/scripts/start");
-    await expect(ensureDaemonVersion(8765)).resolves.not.toThrow();
+    await expect(ensureDaemonVersion({ sleepMs: 0 })).resolves.not.toThrow();
   });
 });
