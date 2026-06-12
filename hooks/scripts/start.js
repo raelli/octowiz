@@ -49,6 +49,67 @@ async function ensureA2AServer() {
   appendLog(`[start] Python A2A server started on port ${port} (pid ${child.pid})`);
 }
 
+function _fetchHealth(port) {
+  const http = require("http");
+  return new Promise((resolve, reject) => {
+    const req = http.get(
+      { host: "127.0.0.1", port, path: "/health", timeout: 1500 },
+      (res) => {
+        let body = "";
+        res.on("data", (c) => (body += c));
+        res.on("end", () => {
+          try { resolve(JSON.parse(body)); }
+          catch { reject(new Error("invalid JSON from /health")); }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.on("timeout", () => { req.destroy(); reject(new Error("health check timeout")); });
+  });
+}
+
+async function ensureDaemonVersion(port, { sleepMs = 3000 } = {}) {
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
+  if (!pluginRoot) return;
+
+  let pluginVersion;
+  try {
+    const pluginJson = JSON.parse(
+      fs.readFileSync(path.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8")
+    );
+    pluginVersion = pluginJson.version;
+  } catch {
+    return;
+  }
+
+  let daemonVersion;
+  try {
+    daemonVersion = (await _fetchHealth(port)).version;
+  } catch {
+    return; // server still starting or unreachable — skip version check
+  }
+
+  if (!daemonVersion || pluginVersion === daemonVersion) return;
+
+  appendLog(`[start] version mismatch: plugin=${pluginVersion} daemon=${daemonVersion} — restarting daemon`);
+  logger.log(`[octowiz - start] daemon version mismatch (${daemonVersion} → ${pluginVersion}), restarting`);
+
+  const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", "de.integrahub.octowiz-daemon.plist");
+  const newIndexJs = path.join(pluginRoot, "index.js");
+
+  try {
+    const { execFileSync } = require("child_process");
+    execFileSync("launchctl", ["unload", plistPath], { stdio: "ignore" });
+    execFileSync("/usr/libexec/PlistBuddy", ["-c", `Set :ProgramArguments:1 ${newIndexJs}`, plistPath], { stdio: "ignore" });
+    execFileSync("launchctl", ["load", plistPath], { stdio: "ignore" });
+    appendLog(`[start] daemon reloaded from ${newIndexJs}`);
+    await new Promise((r) => setTimeout(r, sleepMs));
+  } catch (e) {
+    logger.warn("[octowiz - start] daemon restart failed:", e?.message ?? e);
+    appendLog(`[start] daemon restart failed: ${e?.message ?? e}`);
+  }
+}
+
 async function handleStart(input) {
   const { post } = require("../../src/a2a-client");
   const { captureContext, getLiveContext } = require("../../src/git-context");
@@ -63,7 +124,9 @@ async function handleStart(input) {
     appendLog("[octowiz - start] AELLI_AUTH_TOKEN not set — advisory delivery disabled");
   }
 
+  const port = parseInt(process.env.OCTOWIZ_A2A_PORT || "8765", 10);
   await ensureA2AServer();
+  await ensureDaemonVersion(port);
 
   const ctx = captureContext(sessionId, cwd);
   const payload = { ...ctx, ...getLiveContext(sessionId) };
@@ -88,4 +151,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { handleStart };
+module.exports = { handleStart, ensureDaemonVersion };
