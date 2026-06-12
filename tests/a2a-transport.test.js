@@ -185,6 +185,18 @@ describe("sendEvent", () => {
     ).rejects.toThrow(/A2A server returned HTTP 500.*boom/);
   });
 
+  it("throws a parse error when a 200 response body is not JSON", async () => {
+    // e.g. an HTML error page from a proxy, or a truncated response
+    server = await listen((req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("<html>gateway error</html>");
+    });
+    const { port } = server.address();
+    await expect(
+      sendEvent(`http://127.0.0.1:${port}/x`, { method: "octowiz/event", payload: {} })
+    ).rejects.toThrow(/Failed to parse A2A response/);
+  });
+
   it("throws a parse error on malformed artifact JSON", async () => {
     server = await listen((req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });

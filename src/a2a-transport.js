@@ -98,6 +98,11 @@ async function sendEvent(
     const excerpt = typeof body === "string" ? body : JSON.stringify(body);
     throw new Error(`A2A server returned HTTP ${status}: ${String(excerpt).slice(0, 200)}`);
   }
+  // A 200 whose body did not parse as a JSON-RPC object (proxy error page,
+  // truncated response) is a failure — never let it pass as an empty artifact.
+  if (typeof body !== "object" || body === null) {
+    throw new Error(`Failed to parse A2A response: non-JSON body: ${String(body).slice(0, 200)}`);
+  }
   try {
     return extractArtifact(body, fallback);
   } catch (err) {
