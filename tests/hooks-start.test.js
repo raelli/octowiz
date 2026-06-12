@@ -1,10 +1,22 @@
 "use strict";
 
+// Hermetic plugin root: no plugin.json (so ensureA2AServer skips its probe
+// path when a port is open) and no apps/a2a-agent/main.py (so nothing is
+// ever really spawned when the port is closed). Keeps handleStart tests off
+// the network and away from any real A2A server on the machine.
+function makeBarePluginRoot() {
+  const fs = require("fs");
+  const os = require("os");
+  const path = require("path");
+  return fs.mkdtempSync(path.join(os.tmpdir(), "octowiz-bare-root-"));
+}
+
 describe("hooks/scripts/start.js", () => {
   beforeEach(() => {
     jest.resetModules();
     process.env.AELLI_LITELLM_BASE = "https://llm.test";
     process.env.AELLI_AUTH_TOKEN = "tok";
+    process.env.CLAUDE_PLUGIN_ROOT = makeBarePluginRoot();
     jest.mock("../src/a2a-client", () => ({ post: jest.fn().mockResolvedValue(null) }));
     jest.mock("../src/git-context", () => ({
       captureContext: jest.fn().mockReturnValue({
@@ -12,11 +24,17 @@ describe("hooks/scripts/start.js", () => {
       }),
       getLiveContext: jest.fn().mockReturnValue({ branch: "main", modifiedFiles: [] }),
     }));
+    // With CLAUDE_PLUGIN_ROOT set, ensureDaemonVersion would otherwise read
+    // the REAL launchd plist and try to reload the real daemon mid-test.
+    jest.spyOn(require("child_process"), "execFileSync").mockImplementation(() => {
+      throw new Error("child_process disabled in handleStart tests");
+    });
   });
 
   afterEach(() => {
     delete process.env.AELLI_LITELLM_BASE;
     delete process.env.AELLI_AUTH_TOKEN;
+    delete process.env.CLAUDE_PLUGIN_ROOT;
     jest.restoreAllMocks();
   });
 
@@ -64,10 +82,14 @@ describe("hooks/scripts/start.js — subscriber spawn", () => {
       }),
       getLiveContext: jest.fn().mockReturnValue({ branch: "main", modifiedFiles: [] }),
     }));
+    process.env.CLAUDE_PLUGIN_ROOT = makeBarePluginRoot();
     const childProcess = require("child_process");
     spawnMock = jest.spyOn(childProcess, "spawn").mockReturnValue({
       unref: jest.fn(),
       pid: 1234,
+    });
+    jest.spyOn(childProcess, "execFileSync").mockImplementation(() => {
+      throw new Error("child_process disabled in handleStart tests");
     });
     const fs = require("fs");
     jest.spyOn(fs, "mkdirSync").mockImplementation(() => {});
@@ -78,6 +100,7 @@ describe("hooks/scripts/start.js — subscriber spawn", () => {
     jest.restoreAllMocks();
     delete process.env.AELLI_LITELLM_BASE;
     delete process.env.AELLI_AUTH_TOKEN;
+    delete process.env.CLAUDE_PLUGIN_ROOT;
   });
 
   it("does not spawn session-subscriber.js (endpoint absent)", async () => {

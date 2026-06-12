@@ -164,6 +164,29 @@ describe("ensureA2AServer version-skew restart", () => {
     expect(spawned).toEqual([]);
   });
 
+  it("refuses to kill when the recorded pid is not the uvicorn on the configured port", async () => {
+    // Use the default killFn (pid verification via ps) against our own test
+    // process pid — alive, but not a uvicorn — so the SIGTERM must be refused
+    // and nothing respawned.
+    server = await octowizServer({ version: "1.0.0" });
+    process.env.OCTOWIZ_A2A_PORT = String(server.address().port);
+    process.env.CLAUDE_PLUGIN_ROOT = makePluginRoot("1.2.3");
+    const config = require("../src/config");
+    fs.mkdirSync(config.cacheDir(), { recursive: true });
+    fs.writeFileSync(path.join(config.cacheDir(), "a2a-agent.pid"), String(process.pid));
+
+    const spawned = [];
+    const spawnFn = (cmd, args) => {
+      spawned.push({ cmd, args });
+      return { pid: 99999, unref() {} };
+    };
+    const { ensureA2AServer } = require("../hooks/scripts/start");
+    await ensureA2AServer({ spawnFn, waitMs: 10, waitTries: 2 });
+
+    expect(spawned).toEqual([]); // refusal short-circuits before respawn
+    // and we are still alive to assert it (no SIGTERM landed on this process)
+  });
+
   it("spawns when the port is closed (existing behavior)", async () => {
     const closed = await listen(() => {});
     const port = closed.address().port;

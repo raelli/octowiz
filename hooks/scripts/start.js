@@ -68,8 +68,29 @@ async function _classifyA2AServer(port, expectedVersion, { timeoutMs = 2000 } = 
   return "stale";
 }
 
+// Default kill: verify the pid still belongs to our uvicorn ON THIS PORT
+// before SIGTERM — pid files can outlive their process (crash, manual
+// restart), and a recycled pid must never be hit. Requiring the configured
+// port in the command line ties the recorded pid back to the listener that
+// was actually probed.
+function _killA2AServer(pid, port) {
+  const { execFileSync } = require("child_process");
+  let cmd = "";
+  try {
+    cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" });
+  } catch {}
+  if (!cmd.includes("uvicorn") || !cmd.includes(String(port))) {
+    throw new Error(`pid ${pid} is not the uvicorn on port ${port} — refusing to kill`);
+  }
+  process.kill(pid, "SIGTERM");
+}
+
+// Concurrency note: two sessions starting at once can both classify the same
+// server stale and race the restart. The loser's spawn fails to bind the busy
+// port and exits; the winner serves. Degraded pid-file state self-heals on the
+// next version skew, so no lock is taken here.
 async function ensureA2AServer({
-  killFn = (pid) => process.kill(pid, "SIGTERM"),
+  killFn = _killA2AServer,
   spawnFn = spawn,
   waitMs = 250,
   waitTries = 20,
@@ -99,7 +120,12 @@ async function ensureA2AServer({
     }
 
     appendLog(`[start] A2A server version skew on port ${port} (want ${expectedVersion}) — restarting pid ${pid}`);
-    try { killFn(pid); } catch {}
+    try {
+      killFn(pid, port);
+    } catch (e) {
+      appendLog(`[start] not restarting A2A server: ${e?.message ?? e}`);
+      return;
+    }
 
     let freed = false;
     for (let i = 0; i < waitTries; i++) {
