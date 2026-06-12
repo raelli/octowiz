@@ -106,7 +106,7 @@ Only if `repo_state` was `"created"` in step 2. Create `ONBOARDING.md` in the cu
 
 ## Environment (per-machine)
 - [ ] superpowers plugin
-- [ ] mattpo-skills plugin
+- [ ] mattpocock-skills plugin
 - [ ] antfu-skills plugin
 - [ ] LiteLLM env vars (LITELLM_BASE_URL + API key)
 - [ ] LiteLLM routing cache
@@ -114,7 +114,7 @@ Only if `repo_state` was `"created"` in step 2. Create `ONBOARDING.md` in the cu
 ## Project (per-repo)
 - [ ] antfu skills setup (if TypeScript/Vue stack)
 - [ ] Agent instructions file
-- [ ] mattpo-skills section (## Agent skills)
+- [ ] mattpocock-skills section (## Agent skills)
 
 ## Next step
 Running octowiz:setup...

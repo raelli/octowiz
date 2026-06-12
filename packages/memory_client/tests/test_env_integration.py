@@ -60,7 +60,7 @@ class TestFirstRunIntegration(unittest.TestCase):
         self.assertTrue(result.repo_state_absent)
         # All three plugin gaps
         self.assertIn("plugin_superpowers", result.hard_gaps)
-        self.assertIn("plugin_mattpo-skills", result.hard_gaps)
+        self.assertIn("plugin_mattpocock-skills", result.hard_gaps)
         self.assertIn("plugin_antfu-skills", result.hard_gaps)
         # Both litellm gaps
         self.assertIn("litellm_env", result.hard_gaps)
@@ -155,7 +155,7 @@ class TestFirstRunIntegration(unittest.TestCase):
             }, clear=False):
                 result2 = run_live_check(self.cwd, self.machine_state_path, self.plugins_base)
         self.assertIn("plugin_superpowers", result2.hard_gaps)
-        self.assertNotIn("plugin_mattpo-skills", result2.hard_gaps)
+        self.assertNotIn("plugin_mattpocock-skills", result2.hard_gaps)
 
     def test_dismissed_check_survives_reinvocation(self):
         # Dismiss litellm_env

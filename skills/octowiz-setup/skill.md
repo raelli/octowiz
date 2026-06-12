@@ -42,7 +42,7 @@ If `.octowiz/setup-state.json` does not exist in the current directory, create `
 ## Project (per-repo)
 - [STATUS] antfu skills setup (if TypeScript/Vue stack)
 - [STATUS] Agent instructions file (AGENTS.md / CLAUDE.md / GEMINI.md)
-- [STATUS] mattpo-skills section in agent file (## Agent skills)
+- [STATUS] mattpocock-skills section in agent file (## Agent skills)
 
 ## Next step
 [What is about to run]
@@ -54,7 +54,7 @@ Use `[x]` for passing checks, `[ ]` for gaps, `[!]` for advisory items.
 
 ## Phase 1: Plugins
 
-**Run if any of these are in `hard_gaps`:** `plugin_superpowers`, `plugin_mattpo-skills`, `plugin_antfu-skills`
+**Run if any of these are in `hard_gaps`:** `plugin_superpowers`, `plugin_mattpocock-skills`, `plugin_antfu-skills`
 
 For each missing plugin, explain what it does and why it is required, then show the install command. Verify after each install.
 
@@ -204,7 +204,7 @@ Also detect manually:
 
 Update the "Project (per-repo)" section of `ONBOARDING.md` with findings.
 
-### Step 3.2: mattpo-skills setup
+### Step 3.2: mattpocock-skills setup
 
 If `mattpo_skills_setup` is in advisory gaps and the agent file exists but has no `## Agent skills` section, invoke:
 
@@ -307,7 +307,7 @@ Report remaining gaps. For each:
 | Gap ID | Message |
 |---|---|
 | `plugin_superpowers` | superpowers plugin not found. Run: `claude plugins install superpowers` |
-| `plugin_mattpo-skills` | mattpocock-skills plugin not found. Run: `claude plugins install mattpocock-skills` (the gap ID keeps the legacy `mattpo-skills` name) |
+| `plugin_mattpocock-skills` | mattpocock-skills plugin not found. Run: `claude plugins install mattpocock-skills` |
 | `plugin_antfu-skills` | antfu-skills plugin not found. Run: `claude plugins install antfu-skills` |
 | `litellm_env` | LITELLM_BASE_URL or API key not set. Add to `~/.claude/settings.json` under `"env"`. |
 | `litellm_cache` | LiteLLM routing bundle not verified. Run: `octowiz-cache build --all` |

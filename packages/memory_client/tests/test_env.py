@@ -124,9 +124,9 @@ class TestPluginDetection(unittest.TestCase):
         self.assertTrue(detect_plugin("superpowers", self.plugins_base))
 
     def test_present_under_different_marketplace(self):
-        plugin_dir = self.plugins_base / "integrahub" / "mattpo-skills" / "1.0.0"
+        plugin_dir = self.plugins_base / "integrahub" / "mattpocock-skills" / "1.0.0"
         plugin_dir.mkdir(parents=True)
-        self.assertTrue(detect_plugin("mattpo-skills", self.plugins_base))
+        self.assertTrue(detect_plugin("mattpocock-skills", self.plugins_base))
 
     def test_detect_all_returns_dict_for_each_required(self):
         result = detect_all_plugins(REQUIRED_PLUGINS, self.plugins_base)
@@ -137,14 +137,14 @@ class TestPluginDetection(unittest.TestCase):
         (self.plugins_base / "integrahub" / "superpowers" / "1.0.0").mkdir(parents=True)
         result = detect_all_plugins(REQUIRED_PLUGINS, self.plugins_base)
         self.assertTrue(result["superpowers"])
-        self.assertFalse(result["mattpo-skills"])
+        self.assertFalse(result["mattpocock-skills"])
         self.assertFalse(result["antfu-skills"])
 
     def test_plugin_detected_without_version_subdir(self):
         # glob matches plugin_id at depth 1 under marketplace; no version dir needed
-        plugin_dir = self.plugins_base / "integrahub" / "mattpo-skills"
+        plugin_dir = self.plugins_base / "integrahub" / "mattpocock-skills"
         plugin_dir.mkdir(parents=True)
-        self.assertTrue(detect_plugin("mattpo-skills", self.plugins_base))
+        self.assertTrue(detect_plugin("mattpocock-skills", self.plugins_base))
 
 
 class TestRepoScan(unittest.TestCase):
@@ -364,7 +364,7 @@ class TestLiveCheck(unittest.TestCase):
         self.assertTrue(result.machine_state_absent)
         self.assertTrue(result.repo_state_absent)
         self.assertIn("plugin_superpowers", result.hard_gaps)
-        self.assertIn("plugin_mattpo-skills", result.hard_gaps)
+        self.assertIn("plugin_mattpocock-skills", result.hard_gaps)
         self.assertIn("plugin_antfu-skills", result.hard_gaps)
         self.assertIn("litellm_env", result.hard_gaps)
         self.assertIn("litellm_cache", result.hard_gaps)

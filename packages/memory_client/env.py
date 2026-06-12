@@ -18,7 +18,7 @@ OCTOWIZ_DIR = ".octowiz"
 SETUP_STATE_FILENAME = "setup-state.json"
 ONBOARDING_FILENAME = "ONBOARDING.md"
 PLUGINS_CACHE_BASE = Path.home() / ".claude" / "plugins" / "cache"
-REQUIRED_PLUGINS = ["superpowers", "mattpo-skills", "antfu-skills"]
+REQUIRED_PLUGINS = ["superpowers", "mattpocock-skills", "antfu-skills"]
 
 
 # ---------------------------------------------------------------------------
