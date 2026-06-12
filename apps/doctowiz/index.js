@@ -20,6 +20,7 @@ const https = require("https");
 // production uses, so the diagnostic probes exactly what the plugin will do.
 
 const config = require("../../src/config");
+const { buildEnvelope } = require("../../src/a2a-transport");
 
 const PLUGIN_ROOT =
   process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, "../..");
@@ -266,10 +267,11 @@ async function checkEndpoints() {
   if (LITELLM_BASE) {
     // Probe the exact route and headers production resolves to.
     const deliveryUrl = config.devAdvisorUrl();
-    const minimalBody = JSON.stringify({
-      jsonrpc: "2.0", method: "message/send", id: "doctowiz-probe",
-      params: { message: { role: "user", messageId: "probe", parts: [] } },
-    });
+    const minimalBody = JSON.stringify(
+      buildEnvelope("message/send", null, {
+        id: "doctowiz-probe", role: "user", messageId: "probe",
+      })
+    );
     const r = await httpRequest(deliveryUrl, {
       method: "POST",
       headers: {

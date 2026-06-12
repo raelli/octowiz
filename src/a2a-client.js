@@ -3,6 +3,7 @@ const https = require("https");
 const fs = require("fs");
 const logger = require("./logger");
 const config = require("./config");
+const { buildEnvelope, extractArtifact, httpJson } = require("./a2a-transport");
 
 const MAX_RECONNECT_MS = 30_000;
 
@@ -63,33 +64,12 @@ function parseSseEvents(buffer) {
   return { events, remainder };
 }
 
-function request(method, urlPath, body = null) {
-  return new Promise((resolve, reject) => {
-    const url = new URL(config.apiBase() + urlPath);
-    const isHttps = url.protocol === "https:";
-    const lib = isHttps ? https : http;
-
-    const options = {
-      hostname: url.hostname,
-      port: url.port || (isHttps ? 443 : 80),
-      path: url.pathname + url.search,
-      method,
-      headers: { "Content-Type": "application/json", ...config.aelliAuthHeaders() },
-    };
-
-    const req = lib.request(options, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => {
-        try { resolve(JSON.parse(data)); } catch { resolve(data); }
-      });
-    });
-
-    req.setTimeout(30_000, () => req.destroy());
-    req.on("error", reject);
-    if (body) req.write(JSON.stringify(body));
-    req.end();
+async function request(method, urlPath, body = null) {
+  const { body: responseBody } = await httpJson(method, config.apiBase() + urlPath, body, {
+    headers: config.aelliAuthHeaders(),
+    timeoutMs: 30_000,
   });
+  return responseBody;
 }
 
 async function updateTask(taskId, state, artifact = null) {
@@ -172,17 +152,12 @@ function subscribeToQueue(queueUrl, onTask) {
 async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
   const url = config.devAdvisorUrl();
 
-  const init = _jsonInit({
-    jsonrpc: "2.0",
-    method: "message/send",
-    params: {
-      message: {
-        role: "user",
-        messageId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        parts: [{ kind: "text", text: JSON.stringify({ type: eventType, ...data }) }],
-      },
-    },
-  });
+  const init = _jsonInit(
+    buildEnvelope("message/send", JSON.stringify({ type: eventType, ...data }), {
+      role: "user",
+      messageId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    })
+  );
 
   if (!sync) {
     fetch(url, init).catch((err) =>
@@ -198,8 +173,7 @@ async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
   }
   try {
     const rpc = await res.json();
-    const text = rpc?.result?.artifacts?.[0]?.parts?.[0]?.text;
-    return text ? JSON.parse(text) : null;
+    return extractArtifact(rpc, null);
   } catch (err) {
     appendLog(`[post:${eventType}] fail-open: ${err?.message ?? err}`);
     return null;
@@ -215,13 +189,9 @@ async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
 async function route(taskKind, data = {}, { timeoutMs = 2000 } = {}) {
   const routerUrl = config.routerUrl();
   if (!routerUrl) return null;
-  const init = _jsonInit({
-    jsonrpc: "2.0",
-    method: "message/send",
-    params: { message: { parts: [{ kind: "text", text: JSON.stringify({
-      type: "route", taskKind, ...data,
-    }) }] } },
-  });
+  const init = _jsonInit(
+    buildEnvelope("message/send", JSON.stringify({ type: "route", taskKind, ...data }))
+  );
   const [res, err] = await _abortFetch(routerUrl, init, timeoutMs);
   if (!res) {
     appendLog(`[route:${taskKind}] fail-open: ${err?.message ?? err}`);

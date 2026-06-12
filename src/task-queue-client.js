@@ -1,37 +1,11 @@
-const https = require("https");
-const http = require("http");
 const logger = require("./logger");
 const config = require("./config");
+const { httpJson } = require("./a2a-transport");
 
 function _post(path, body) {
-  return new Promise((resolve, reject) => {
-    const url = new URL(config.aelliBase() + path);
-    const isHttps = url.protocol === "https:";
-    const lib = isHttps ? https : http;
-    const payload = JSON.stringify(body);
-    const options = {
-      hostname: url.hostname,
-      port: url.port || (isHttps ? 443 : 80),
-      path: url.pathname,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(payload),
-        ...config.queueAuthHeaders(),
-      },
-    };
-    const req = lib.request(options, (res) => {
-      let data = "";
-      res.on("data", (c) => (data += c));
-      res.on("end", () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
-        catch { resolve({ status: res.statusCode, body: data }); }
-      });
-    });
-    req.setTimeout(15_000, () => req.destroy());
-    req.on("error", reject);
-    req.write(payload);
-    req.end();
+  return httpJson("POST", config.aelliBase() + path, body, {
+    headers: config.queueAuthHeaders(),
+    timeoutMs: 15_000,
   });
 }
 
