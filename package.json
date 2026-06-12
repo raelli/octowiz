@@ -12,6 +12,11 @@
     "start": "node index.js",
     "test": "jest --testPathPattern=tests/"
   },
+  "jest": {
+    "setupFiles": [
+      "<rootDir>/tests/setup-env.js"
+    ]
+  },
   "dependencies": {
     "@ai-hero/sandcastle": "^0.7.0"
   },
