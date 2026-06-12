@@ -57,7 +57,11 @@ echo "AELLI_LITELLM_BASE:   ${AELLI_LITELLM_BASE:-(not set)}"
 echo "AELLI_ROUTER_URL:     ${AELLI_ROUTER_URL:-(not set)}"
 echo "OCTOWIZ_ALLOWED_ROOTS:${OCTOWIZ_ALLOWED_ROOTS:-(not set)}"
 
-# Health check
+# Local Python A2A server version (public /health since 0.9.16)
+curl -s -m 3 "http://localhost:${OCTOWIZ_A2A_PORT:-8765}/health" 2>/dev/null \
+  || echo "A2A server: not reachable (starts on next session open)"
+
+# AELLI gateway health
 [ -n "$AELLI_BASE_URL" ] && curl -s "$AELLI_BASE_URL/health" \
   -H "Authorization: Bearer $AELLI_AUTH_TOKEN" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print('aelli/litellm', d.get('status','?'))" 2>/dev/null \
@@ -66,6 +70,12 @@ echo "OCTOWIZ_ALLOWED_ROOTS:${OCTOWIZ_ALLOWED_ROOTS:-(not set)}"
 
 Show a version summary before the diagnostic table. Flag:
 - Plugin cache version ≠ source (`$CLAUDE_PLUGIN_ROOT`) → stale cache, run `claude plugins install octowiz --force`
+- A2A `/health` version ≠ plugin version → stale Python server. Since 0.9.18 the
+  session-start hook restarts it automatically (it verifies the recorded pid is
+  the uvicorn on the configured port before killing); on older plugins use the
+  `aelli_python` fix below.
+- A2A `/health` returns `{"error":"Unauthorized"}` → the running server predates
+  0.9.16 (when `/health` became public) — definitely stale, same fix.
 - `AELLI_BASE_URL` missing → queue subscription and hook delivery both broken
 - `AELLI_AUTH_TOKEN` missing → all AELLI requests will get 401
 - `OCTOWIZ_ALLOWED_ROOTS` missing → daemon will refuse to start
@@ -78,8 +88,8 @@ Check the three background services in parallel:
 # Node daemon (launchd service)
 launchctl list de.integrahub.octowiz-daemon 2>/dev/null
 
-# Python A2A server
-nc -z 127.0.0.1 8765 2>/dev/null && echo "a2a:up" || echo "a2a:down"
+# Python A2A server — /health gives status AND version in one probe
+curl -s -m 3 "http://localhost:${OCTOWIZ_A2A_PORT:-8765}/health" 2>/dev/null && echo " a2a:up" || echo "a2a:down"
 
 # Allowed-roots coverage for current cwd
 node -e "
@@ -200,6 +210,10 @@ Interpret lines visible in the output:
 | `no capability handler` | Daemon received a task type it doesn't recognise |
 | `[start] AELLI_AUTH_TOKEN not set` | Hook started without auth — delivery disabled |
 | `cwd … not within an allowed root` | Task rejected — cwd not in `OCTOWIZ_ALLOWED_ROOTS` |
+| `[start] daemon path mismatch … restarting` | Node daemon was stale — auto-restarted via launchd plist (0.9.17+) |
+| `[start] A2A server version skew … restarting pid` | Python A2A server was stale — auto-restarted (0.9.18+) |
+| `[start] port … serves a non-octowiz service` | Something else owns the A2A port — auto-restart refused to touch it |
+| `[start] not restarting A2A server` | Recorded pid failed identity check (not the uvicorn on that port) — no kill |
 
 If both logs are empty or missing:
 
@@ -456,6 +470,9 @@ node "$CLAUDE_PLUGIN_ROOT/apps/doctowiz/index.js"
 | 0.9.13 | Badge format unified; advisory type validation against allowlist; SSE preamble skip fix | Run `/plugin update` |
 | 0.9.14 | Doctowiz: fix 2 false-positive diagnostic checks (AELLI process + routing bundle) | Run `/plugin update` |
 | 0.9.15 | Bridge: iterate all SSE `data:` lines in `_route_event` (fixes routing response parse); arch deviations resolved | Run `/plugin update` |
+| 0.9.16 | Bridge: plugin dirs excluded from spec-deviation `live_modified_files` | Run `/plugin update` |
+| 0.9.17 | Public `GET /health` on the A2A server (`{"status","version"}`); Node daemon auto-restarts on version skew (launchd plist path check); arch pass 2: `src/config.js` single env owner, `src/a2a-transport.js` single JSON-RPC transport, `AgentRunProvider` protocol, `err()/require()` error-envelope owner | Run `/plugin update` — daemon restarts itself on next session start |
+| 0.9.18 | Python A2A server auto-restarts on version skew (pid-verified); jest runs no longer pollute `~/.cache/aelli-cc/aelli-cc.log` | Run `/plugin update` |
 
 ---
 
@@ -476,6 +493,8 @@ When the user describes a specific symptom, map it to the likely cause and fix:
 | "spec-deviation on every edit" | Normal in octowiz dev repo | No fix — expected |
 | "Was on 0.5.x, just updated, still broken" | Env vars not migrated | Switch to Mode 4 (Update helper) |
 | "LiteLLM shows workflow runs all 'failed' with 'server restarted'" | AELLI restarting during in-flight workflows (auto-deploy) | `workflow_runs_failing` |
+| "Plugin updated but A2A server still serves old code" | Long-running server predates auto-restart (pre-0.9.18) | `aelli_python` |
+| "/health returns Unauthorized" | Running A2A server predates 0.9.16 (public /health) | `aelli_python` |
 
 Run the diagnostic after each fix to confirm the check turns green.
 
@@ -536,13 +555,25 @@ launchctl load  ~/Library/LaunchAgents/de.integrahub.octowiz-daemon.plist
 ```
 
 ### `aelli_python`
-The Python A2A server lives in this repo at `apps/a2a-agent`. Auto-started by the
-CC session hook. If still down, start manually:
+The Python A2A server lives in the plugin at `apps/a2a-agent`. The session-start
+hook auto-starts it, and since 0.9.18 also auto-restarts it on version skew
+(checking `/health` against the installed plugin version, killing only the
+pid-verified uvicorn on the configured port). Manual restart for older plugins
+or a wedged server:
 ```bash
-cd ~/Documents/octowiz/apps/a2a-agent
+# stop the recorded pid (verify it is the uvicorn first)
+PID=$(cat ~/.cache/aelli-cc/a2a-agent.pid 2>/dev/null)
+ps -p "$PID" -o command= | grep -q uvicorn && kill "$PID"
+
+# respawn from the installed plugin
+cd "$CLAUDE_PLUGIN_ROOT/apps/a2a-agent"
 python3 -m uvicorn main:app --host 127.0.0.1 --port 8765 &
 ```
-Confirm: `nc -z 127.0.0.1 8765 && echo up`
+Confirm version matches the plugin:
+```bash
+curl -s http://localhost:8765/health
+node -e "console.log(require('$CLAUDE_PLUGIN_ROOT/package.json').version)"
+```
 
 ### `plugin_cache`
 Force reinstall the plugin from the registry:
@@ -593,3 +624,10 @@ ssh integra42 "cd /opt/integrahub/aelli && git pull && docker compose up -d --bu
 - Port 3456 (AELLI Node) is remote (integra42) — being closed locally is expected.
 - Daemon logs: `~/.cache/aelli-cc/octowiz-daemon.log`
 - Hook/bridge logs: `~/.cache/aelli-cc/aelli-cc.log`
+- `GET http://localhost:8765/health` is public (0.9.16+) and returns
+  `{"status":"ok","version":"<plugin version>"}` — the fastest staleness check.
+- Both background services self-heal on version skew at session start: the Node
+  daemon since 0.9.17 (plist path), the Python A2A server since 0.9.18
+  (/health version + pid-verified kill).
+- Since 0.9.18 jest runs write to a temp cache dir — entries in
+  `aelli-cc.log` are real production events, not test fixtures.

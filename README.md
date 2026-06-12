@@ -145,28 +145,34 @@ Then open Claude Code and run `/plugins` to install the three required plugins:
 
 All three are required. `/octowiz` routes to skills from the other two — if either is missing the coordinator will fail mid-flow.
 
-### 3. Start the daemon
+### 3. Background services
 
-The Octowiz daemon is a Node.js service that runs per machine. It connects the Claude Code hooks to the AELLI A2A network and handles capability dispatch.
+Two services run per machine, and both manage themselves:
+
+- **The Node daemon** (a launchd service, `de.integrahub.octowiz-daemon`) connects the AELLI task queue to the local capability handlers. It auto-starts at login. On every session start the hook compares the launchd plist's target against the installed plugin and reloads the daemon when a plugin update has landed — no manual restart after `/plugin update`.
+- **The Python A2A server** (port 8765) hosts the capability handlers. The session-start hook spawns it when the port is free and, when a server is already running, checks `GET /health` against the installed plugin version — a stale server is replaced automatically (only the recorded, pid-verified uvicorn is ever killed; a foreign service on the port is left alone).
+
+First-time daemon install (one-off):
 
 ```bash
-pnpm start
+# plist at ~/Library/LaunchAgents/de.integrahub.octowiz-daemon.plist
+launchctl load ~/Library/LaunchAgents/de.integrahub.octowiz-daemon.plist
 ```
 
-Or directly:
-
-```bash
-node index.js
-```
-
-The Claude Code hooks (SessionStart, PostToolUse, UserPromptSubmit, Stop) fire automatically once the plugin is installed. They do not manage the daemon lifecycle.
+The Claude Code hooks (SessionStart, PostToolUse, UserPromptSubmit, Stop) fire automatically once the plugin is installed.
 
 #### Env vars
+
+All environment resolution lives in one module (`src/config.js`) — these are the variables it reads:
 
 | Var | Purpose |
 |---|---|
 | `OCTOWIZ_ALLOWED_ROOTS` | **Required.** Colon-separated list of repo root paths the daemon is allowed to serve (e.g. `/Users/me/projects/myrepo`). The daemon exits on startup if this is unset or empty. |
-| `AELLI_BASE_URL` | AELLI server base URL |
+| `AELLI_BASE_URL` | AELLI base URL — used for both the REST API (default `http://localhost:3001/api`) and the task-queue host (default `http://localhost:3456`); setting it points both at the same host |
+| `AELLI_AUTH_TOKEN` | Bearer token for the LiteLLM gateway / `x-aelli-secret` for direct AELLI calls |
+| `AELLI_LITELLM_BASE` | LiteLLM gateway base — when set, advisory and router calls route through it with Bearer auth |
+| `AELLI_DEV_ADVISOR_URL` | Direct dev-advisor URL (used only when no gateway is set) |
+| `AELLI_CACHE_DIR` | Hook/bridge cache + log dir (default `~/.cache/aelli-cc`) |
 | `OCTOWIZ_A2A_URL` | Direct A2A server URL override |
 | `OCTOWIZ_A2A_PORT` | A2A server port (default: 8765) |
 | `OCTOWIZ_DISPATCH_TIMEOUT` | Seconds before capability dispatch times out |
@@ -343,6 +349,13 @@ Run the underlying script directly for a quick terminal check:
 
 ```bash
 node "$CLAUDE_PLUGIN_ROOT/apps/doctowiz/index.js"
+```
+
+For the fastest staleness check, the A2A server exposes a public health route (0.9.16+):
+
+```bash
+curl -s http://localhost:8765/health
+# {"status":"ok","version":"0.9.17"} — version should match the installed plugin
 ```
 
 ### Security
