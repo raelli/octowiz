@@ -13,7 +13,8 @@ const https = require('node:https')
 // messageId are included only when given — the Python parser and AELLI both
 // accept the minimal shape, and existing endpoints see exactly the bytes the
 // pre-transport call sites sent.
-function buildEnvelope(method, text, { id, role, messageId } = {}) {
+function buildEnvelope(method, text, opts = {}) {
+  const { id, role, messageId } = opts
   return {
     jsonrpc: '2.0',
     method,
@@ -29,11 +30,15 @@ function buildEnvelope(method, text, { id, role, messageId } = {}) {
 }
 
 // Pull the artifact out of a JSON-RPC response: result.artifacts[0].parts[0].text,
-// parsed as JSON. Returns `fallback` when no artifact text is present. Throws on
-// malformed artifact JSON — the caller decides whether that is fatal or fail-open.
+// parsed as JSON. Returns `fallback` when no artifact text is present OR when the
+// parsed artifact is null. Throws on malformed artifact JSON — the caller decides
+// whether that is fatal or fail-open.
 function extractArtifact(rpc, fallback = {}) {
   const text = rpc?.result?.artifacts?.[0]?.parts?.[0]?.text
-  return text ? JSON.parse(text) : fallback
+  if (typeof text !== 'string' || text === '')
+    return fallback
+  const parsed = JSON.parse(text)
+  return parsed === null ? fallback : parsed
 }
 
 // JSON-over-HTTP primitive. Resolves { status, body } where body is parsed
@@ -43,6 +48,9 @@ function extractArtifact(rpc, fallback = {}) {
 function httpJson(method, urlStr, body = null, { headers = {}, timeoutMs = 30_000 } = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:')
+      throw new Error(`Unsupported protocol: ${url.protocol}`)
+
     const isHttps = url.protocol === 'https:'
     const lib = isHttps ? https : http
     const payload = body === null ? null : JSON.stringify(body)
@@ -53,31 +61,48 @@ function httpJson(method, urlStr, body = null, { headers = {}, timeoutMs = 30_00
       path: url.pathname + url.search,
       method,
       headers: {
-        'Content-Type': 'application/json',
+        ...(payload !== null ? { 'Content-Type': 'application/json' } : {}),
         ...(payload !== null ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
         ...headers,
       },
     }
 
+    let settled = false
+    const onceResolve = (value) => {
+      if (settled)
+        return
+      settled = true
+      resolve(value)
+    }
+    const onceReject = (err) => {
+      if (settled)
+        return
+      settled = true
+      reject(err)
+    }
+
     const req = lib.request(options, (res) => {
-      let data = ''
-      res.on('data', chunk => (data += chunk))
+      res.on('error', onceReject)
+      const chunks = []
+      res.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)))
       res.on('end', () => {
+        const data = Buffer.concat(chunks).toString('utf8')
         let parsed
         try {
-          parsed = JSON.parse(data)
+          parsed = data === '' ? '' : JSON.parse(data)
         }
         catch {
           parsed = data
         }
-        resolve({ status: res.statusCode, body: parsed })
+        onceResolve({ status: res.statusCode, body: parsed })
       })
     })
 
     req.setTimeout(timeoutMs, () => {
       req.destroy(new Error(`request timed out after ${timeoutMs}ms`))
     })
-    req.on('error', reject)
+    req.on('error', onceReject)
+
     if (payload !== null)
       req.write(payload)
     req.end()
@@ -88,23 +113,32 @@ function httpJson(method, urlStr, body = null, { headers = {}, timeoutMs = 30_00
 //
 // Serializes `payload` as the envelope's text part, POSTs it, and extracts
 // the artifact (`fallback` — default {} — when the response carries none).
-// Throws on network error, non-200 status, or malformed artifact JSON; the
-// caller owns the recovery policy.
+// Throws on network error, non-200 status, RPC error object, invalid JSON-RPC
+// body shape, or malformed artifact JSON; the caller owns the recovery policy.
 async function sendEvent(
   urlStr,
   { method, payload, id, role, messageId, headers = {}, timeoutMs = 30_000, fallback = {} },
 ) {
   const envelope = buildEnvelope(method, JSON.stringify(payload), { id, role, messageId })
   const { status, body } = await httpJson('POST', urlStr, envelope, { headers, timeoutMs })
+
   if (status !== 200) {
     const excerpt = typeof body === 'string' ? body : JSON.stringify(body)
     throw new Error(`A2A server returned HTTP ${status}: ${String(excerpt).slice(0, 200)}`)
   }
-  // A 200 whose body did not parse as a JSON-RPC object (proxy error page,
-  // truncated response) is a failure — never let it pass as an empty artifact.
-  if (typeof body !== 'object' || body === null) {
+
+  // A 200 whose body did not parse as a JSON object (or is an array) is a failure.
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     throw new Error(`Failed to parse A2A response: non-JSON body: ${String(body).slice(0, 200)}`)
   }
+
+  // JSON-RPC application-level error over HTTP 200.
+  if ('error' in body && body.error && typeof body.error === 'object') {
+    const code = String(body.error.code ?? '?')
+    const message = String(body.error.message ?? 'Unknown RPC error')
+    throw new Error(`A2A RPC error ${code}: ${message}`)
+  }
+
   try {
     return extractArtifact(body, fallback)
   }
