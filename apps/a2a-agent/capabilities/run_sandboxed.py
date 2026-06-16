@@ -26,7 +26,7 @@ def _get_provider() -> Any:
     global _shared_provider
     if _shared_provider is None:
         from providers.sandcastle.provider import SandcastleProvider
-        _shared_provider = SandcastleProvider()
+        _shared_provider = SandcastleProvider(timeout=_DEFAULT_TIMEOUT)
     return _shared_provider
 
 
