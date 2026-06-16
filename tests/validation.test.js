@@ -1,6 +1,6 @@
 'use strict'
 
-const { validateJavaScriptSyntax } = require('../src/validation')
+const { validateJavaScriptSyntax, VALIDATION_FAILURE_KINDS } = require('../src/validation')
 
 describe('validateJavaScriptSyntax', () => {
   it('passes valid JavaScript', () => {
@@ -41,5 +41,12 @@ describe('validateJavaScriptSyntax', () => {
     const result = validateJavaScriptSyntax('const obj = { a: 1;')
     expect(result.passed).toBe(false)
     expect(result.failureKind).toBe('syntax-error')
+  })
+
+  it('exposes failure kinds as a frozen constant matching emitted values', () => {
+    expect(VALIDATION_FAILURE_KINDS).toEqual({ EMPTY_DRAFT: 'empty-draft', SYNTAX_ERROR: 'syntax-error' })
+    expect(Object.isFrozen(VALIDATION_FAILURE_KINDS)).toBe(true)
+    expect(validateJavaScriptSyntax('').failureKind).toBe(VALIDATION_FAILURE_KINDS.EMPTY_DRAFT)
+    expect(validateJavaScriptSyntax('function broken( {').failureKind).toBe(VALIDATION_FAILURE_KINDS.SYNTAX_ERROR)
   })
 })
