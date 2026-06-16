@@ -7,6 +7,7 @@ Subcommands: get, build, status, refresh, clear
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
 import os
 import shutil
@@ -244,7 +245,8 @@ def _make_parser() -> argparse.ArgumentParser:
         description="Manage Octowiz doctrine bundle cache.",
         parents=[common],
     )
-    parser.add_argument("--version", action="version", version="octowiz-cache 0.1.0")
+    _pkg_version = importlib.metadata.version("octowiz")
+    parser.add_argument("--version", action="version", version=f"octowiz-cache {_pkg_version}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     # -- get --
