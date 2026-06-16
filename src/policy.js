@@ -16,46 +16,49 @@
 //   - Roots resolved via os.path.realpath() before comparison (matches realpathSync here).
 //   - Empty/unset OCTOWIZ_ALLOWED_ROOTS raises ValueError (deny-all, matches checkStartup).
 
-const path = require("path");
-const fs = require("fs");
-const logger = require("./logger");
+const fs = require('node:fs')
+const path = require('node:path')
+const logger = require('./logger')
 
 function checkStartup() {
-  const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || "";
-  const roots = raw.split(":").map((r) => r.trim()).filter(Boolean);
+  const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || ''
+  const roots = raw.split(':').map(r => r.trim()).filter(Boolean)
   if (roots.length === 0) {
     logger.error(
-      "[policy] Fatal: OCTOWIZ_ALLOWED_ROOTS is not set or empty.\n" +
-      "  Set it to a colon-separated list of absolute paths the daemon is allowed to operate in.\n" +
-      "  Example: export OCTOWIZ_ALLOWED_ROOTS=/Users/me/Documents/myproject"
-    );
-    process.exit(1);
+      '[policy] Fatal: OCTOWIZ_ALLOWED_ROOTS is not set or empty.\n'
+      + '  Set it to a colon-separated list of absolute paths the daemon is allowed to operate in.\n'
+      + '  Example: export OCTOWIZ_ALLOWED_ROOTS=/Users/me/Documents/myproject',
+    )
+    process.exit(1)
   }
 }
 
 function validateCwd(cwd) {
-  if (!cwd || typeof cwd !== "string") throw new Error("cwd is required");
-  let resolved;
+  if (!cwd || typeof cwd !== 'string')
+    throw new Error('cwd is required')
+  let resolved
   try {
-    resolved = fs.realpathSync(cwd);
-  } catch {
-    throw new Error(`cwd "${cwd}" does not exist`);
+    resolved = fs.realpathSync(cwd)
   }
-  const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || "";
-  const roots = raw.split(":").map((r) => r.trim()).filter(Boolean);
+  catch {
+    throw new Error(`cwd "${cwd}" does not exist`)
+  }
+  const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || ''
+  const roots = raw.split(':').map(r => r.trim()).filter(Boolean)
   const allowed = roots.some((root) => {
-    let resolvedRoot;
+    let resolvedRoot
     try {
-      resolvedRoot = fs.realpathSync(root);
-    } catch {
-      return false;
+      resolvedRoot = fs.realpathSync(root)
     }
-    return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
-  });
+    catch {
+      return false
+    }
+    return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep)
+  })
   if (!allowed) {
-    throw new Error(`cwd "${cwd}" is not within an allowed root (OCTOWIZ_ALLOWED_ROOTS=${raw})`);
+    throw new Error(`cwd "${cwd}" is not within an allowed root (OCTOWIZ_ALLOWED_ROOTS=${raw})`)
   }
-  return resolved;
+  return resolved
 }
 
-module.exports = { checkStartup, validateCwd };
+module.exports = { checkStartup, validateCwd }

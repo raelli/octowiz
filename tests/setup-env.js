@@ -6,13 +6,13 @@
 // this override reaches every module without resetModules juggling.
 // Individual tests that set or delete AELLI_CACHE_DIR themselves still work —
 // they only ever compute paths and never write to the resolved default.
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 
 // setupFiles run once per test FILE; reuse one dir per worker process so a
 // full run creates a handful of temp dirs, not one per suite. A test that
 // deletes AELLI_CACHE_DIR mid-file gets a fresh dir before the next file.
-if (!(process.env.AELLI_CACHE_DIR || "").includes("octowiz-test-cache-")) {
-  process.env.AELLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "octowiz-test-cache-"));
+if (!(process.env.AELLI_CACHE_DIR || '').includes('octowiz-test-cache-')) {
+  process.env.AELLI_CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'octowiz-test-cache-'))
 }

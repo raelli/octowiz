@@ -5,8 +5,8 @@
 // and the error vocabulary. Callers say what they want sent where; nothing
 // outside this module builds an envelope or walks an RPC response.
 
-const http = require("http");
-const https = require("https");
+const http = require('node:http')
+const https = require('node:https')
 
 // JSON-RPC 2.0 envelope around a single text part. `text` may be null for an
 // intentionally empty parts array (used by diagnostics probes). id, role, and
@@ -15,25 +15,25 @@ const https = require("https");
 // pre-transport call sites sent.
 function buildEnvelope(method, text, { id, role, messageId } = {}) {
   return {
-    jsonrpc: "2.0",
+    jsonrpc: '2.0',
     method,
     ...(id !== undefined ? { id } : {}),
     params: {
       message: {
         ...(role !== undefined ? { role } : {}),
         ...(messageId !== undefined ? { messageId } : {}),
-        parts: text === null || text === undefined ? [] : [{ kind: "text", text }],
+        parts: text === null || text === undefined ? [] : [{ kind: 'text', text }],
       },
     },
-  };
+  }
 }
 
 // Pull the artifact out of a JSON-RPC response: result.artifacts[0].parts[0].text,
 // parsed as JSON. Returns `fallback` when no artifact text is present. Throws on
 // malformed artifact JSON — the caller decides whether that is fatal or fail-open.
 function extractArtifact(rpc, fallback = {}) {
-  const text = rpc?.result?.artifacts?.[0]?.parts?.[0]?.text;
-  return text ? JSON.parse(text) : fallback;
+  const text = rpc?.result?.artifacts?.[0]?.parts?.[0]?.text
+  return text ? JSON.parse(text) : fallback
 }
 
 // JSON-over-HTTP primitive. Resolves { status, body } where body is parsed
@@ -42,10 +42,10 @@ function extractArtifact(rpc, fallback = {}) {
 // policy belongs to the caller.
 function httpJson(method, urlStr, body = null, { headers = {}, timeoutMs = 30_000 } = {}) {
   return new Promise((resolve, reject) => {
-    const url = new URL(urlStr);
-    const isHttps = url.protocol === "https:";
-    const lib = isHttps ? https : http;
-    const payload = body === null ? null : JSON.stringify(body);
+    const url = new URL(urlStr)
+    const isHttps = url.protocol === 'https:'
+    const lib = isHttps ? https : http
+    const payload = body === null ? null : JSON.stringify(body)
 
     const options = {
       hostname: url.hostname,
@@ -53,33 +53,35 @@ function httpJson(method, urlStr, body = null, { headers = {}, timeoutMs = 30_00
       path: url.pathname + url.search,
       method,
       headers: {
-        "Content-Type": "application/json",
-        ...(payload !== null ? { "Content-Length": Buffer.byteLength(payload) } : {}),
+        'Content-Type': 'application/json',
+        ...(payload !== null ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
         ...headers,
       },
-    };
+    }
 
     const req = lib.request(options, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => {
-        let parsed;
+      let data = ''
+      res.on('data', chunk => (data += chunk))
+      res.on('end', () => {
+        let parsed
         try {
-          parsed = JSON.parse(data);
-        } catch {
-          parsed = data;
+          parsed = JSON.parse(data)
         }
-        resolve({ status: res.statusCode, body: parsed });
-      });
-    });
+        catch {
+          parsed = data
+        }
+        resolve({ status: res.statusCode, body: parsed })
+      })
+    })
 
     req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`request timed out after ${timeoutMs}ms`));
-    });
-    req.on("error", reject);
-    if (payload !== null) req.write(payload);
-    req.end();
-  });
+      req.destroy(new Error(`request timed out after ${timeoutMs}ms`))
+    })
+    req.on('error', reject)
+    if (payload !== null)
+      req.write(payload)
+    req.end()
+  })
 }
 
 // Send one A2A event and return its artifact.
@@ -90,24 +92,25 @@ function httpJson(method, urlStr, body = null, { headers = {}, timeoutMs = 30_00
 // caller owns the recovery policy.
 async function sendEvent(
   urlStr,
-  { method, payload, id, role, messageId, headers = {}, timeoutMs = 30_000, fallback = {} }
+  { method, payload, id, role, messageId, headers = {}, timeoutMs = 30_000, fallback = {} },
 ) {
-  const envelope = buildEnvelope(method, JSON.stringify(payload), { id, role, messageId });
-  const { status, body } = await httpJson("POST", urlStr, envelope, { headers, timeoutMs });
+  const envelope = buildEnvelope(method, JSON.stringify(payload), { id, role, messageId })
+  const { status, body } = await httpJson('POST', urlStr, envelope, { headers, timeoutMs })
   if (status !== 200) {
-    const excerpt = typeof body === "string" ? body : JSON.stringify(body);
-    throw new Error(`A2A server returned HTTP ${status}: ${String(excerpt).slice(0, 200)}`);
+    const excerpt = typeof body === 'string' ? body : JSON.stringify(body)
+    throw new Error(`A2A server returned HTTP ${status}: ${String(excerpt).slice(0, 200)}`)
   }
   // A 200 whose body did not parse as a JSON-RPC object (proxy error page,
   // truncated response) is a failure — never let it pass as an empty artifact.
-  if (typeof body !== "object" || body === null) {
-    throw new Error(`Failed to parse A2A response: non-JSON body: ${String(body).slice(0, 200)}`);
+  if (typeof body !== 'object' || body === null) {
+    throw new Error(`Failed to parse A2A response: non-JSON body: ${String(body).slice(0, 200)}`)
   }
   try {
-    return extractArtifact(body, fallback);
-  } catch (err) {
-    throw new Error(`Failed to parse A2A response: ${err.message}`);
+    return extractArtifact(body, fallback)
+  }
+  catch (err) {
+    throw new Error(`Failed to parse A2A response: ${err.message}`)
   }
 }
 
-module.exports = { buildEnvelope, extractArtifact, httpJson, sendEvent };
+module.exports = { buildEnvelope, extractArtifact, httpJson, sendEvent }

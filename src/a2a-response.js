@@ -28,10 +28,10 @@
  * @type {Array<[string, string]>}
  */
 const ALIAS_MAP = [
-  ["session_id",  "sessionId"],
-  ["run_id",      "runId"],
-  ["exit_status", "exitStatus"],
-];
+  ['session_id', 'sessionId'],
+  ['run_id', 'runId'],
+  ['exit_status', 'exitStatus'],
+]
 
 /**
  * Normalize a raw Python A2A response object into the JS-canonical shape.
@@ -47,14 +47,15 @@ const ALIAS_MAP = [
  *   for any recognized snake_case fields.
  */
 function normalizeA2AResponse(raw) {
-  if (raw == null) return {};
-  const result = { ...raw };
+  if (raw == null)
+    return {}
+  const result = { ...raw }
   for (const [snakeKey, camelKey] of ALIAS_MAP) {
     if (result[snakeKey] !== undefined && result[camelKey] === undefined) {
-      result[camelKey] = result[snakeKey];
+      result[camelKey] = result[snakeKey]
     }
   }
-  return result;
+  return result
 }
 
-module.exports = { normalizeA2AResponse };
+module.exports = { normalizeA2AResponse }
