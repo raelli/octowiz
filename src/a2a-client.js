@@ -100,6 +100,12 @@ function _connectSSE(urlStr, headers, onEvent, reconnectMs = 3000, onConnected =
   const req = lib.request(options, (res) => {
     if (onConnected)
       onConnected()
+    // Absorb socket errors on the response stream (e.g. ECONNRESET when
+    // req.destroy() fires from the idle-timeout handler). Without this,
+    // Node emits an uncaught exception that can crash the daemon.
+    res.on('error', (e) => {
+      logger.warn('[AELLI SSE] stream error:', e.message)
+    })
     let buffer = ''
     res.on('data', (chunk) => {
       buffer += chunk.toString()
