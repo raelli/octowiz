@@ -19,19 +19,24 @@
  *     existing camelCase value is never clobbered.
  *   - A null/undefined input is returned as an empty object — callers own the
  *     fallback for required fields (e.g. `{ status: "completed" }`).
+ *   - Any non-object input (including arrays/primitives/functions) is treated
+ *     as malformed for this boundary and normalized to `{}`.
  */
 
 /**
  * Explicit alias entries: each entry maps a Python snake_case field to its
  * canonical JS camelCase equivalent.
  *
- * @type {Array<[string, string]>}
+ * Kept module-private to avoid accidental runtime mutation/coupling by external
+ * consumers. Add new aliases here as needed.
+ *
+ * @type {ReadonlyArray<readonly [string, string]>}
  */
-const ALIAS_MAP = [
-  ['session_id', 'sessionId'],
-  ['run_id', 'runId'],
-  ['exit_status', 'exitStatus'],
-]
+const ALIAS_MAP = Object.freeze([
+  Object.freeze(['session_id', 'sessionId']),
+  Object.freeze(['run_id', 'runId']),
+  Object.freeze(['exit_status', 'exitStatus']),
+])
 
 /**
  * Normalize a raw Python A2A response object into the JS-canonical shape.
@@ -41,20 +46,28 @@ const ALIAS_MAP = [
  * the camelCase aliases without removing the originals (so callers that already
  * read snake_case keys continue to work).
  *
- * @param {object|null|undefined} raw - The artifact object parsed from the
- *   Python A2A JSON-RPC response. May be null or undefined (returns `{}`).
- * @returns {object} A new object with all original fields plus camelCase aliases
- *   for any recognized snake_case fields.
+ * Non-object values are intentionally coerced to `{}` at this normalization
+ * boundary to keep downstream consumers on a stable object contract.
+ *
+ * @param {Record<string, any>|null|undefined} raw - The artifact value parsed
+ *   from the Python A2A JSON-RPC response.
+ * @returns {Record<string, any>} A new object with all original fields plus
+ *   camelCase aliases for any recognized snake_case fields.
  */
 function normalizeA2AResponse(raw) {
-  if (raw == null)
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
     return {}
+  }
+
   const result = { ...raw }
+
   for (const [snakeKey, camelKey] of ALIAS_MAP) {
+    // Additive aliasing only; never overwrite an explicitly provided camelCase value.
     if (result[snakeKey] !== undefined && result[camelKey] === undefined) {
       result[camelKey] = result[snakeKey]
     }
   }
+
   return result
 }
 
