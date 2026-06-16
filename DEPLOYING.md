@@ -25,6 +25,8 @@ Run through this before tagging. Every item must be green before the PR merges.
 - [ ] `package.json` version bumped (e.g. `0.9.10` → `0.9.11`)
 - [ ] `.claude-plugin/plugin.json` version bumped to the same value
   — both files **must** match; missing `plugin.json` breaks `/plugin update`
+- [ ] `pyproject.toml` `version =` bumped to the same value
+  — mismatched Python metadata makes `pip show octowiz` and upgrade diagnostics unreliable
 - [ ] `pnpm test` — all tests green locally
 - [ ] `nr lint --fix` run; no lint errors
 - [ ] PR opened, reviewed, squash-merged to main
@@ -51,8 +53,21 @@ Run through this before tagging. Every item must be green before the PR merges.
 |---|---|
 | `package.json` | `"version"` |
 | `.claude-plugin/plugin.json` | `"version"` |
+| `pyproject.toml` | `version =` |
 
-No other files hold a pinned version number. The marketplace entry is written by the CI workflow from `package.json` at tag time.
+All three must be identical. Verify before tagging:
+
+```bash
+node -e "console.log(require('./package.json').version)" && \
+node -e "console.log(require('./.claude-plugin/plugin.json').version)" && \
+python3 -c "
+import re, pathlib
+m = re.search(r'^version\s*=\s*\"(.+?)\"', pathlib.Path('pyproject.toml').read_text(), re.M)
+print(m.group(1) if m else 'NOT FOUND')
+"
+```
+
+All three lines must print the same value. The marketplace entry is written by the CI workflow from `package.json` at tag time.
 
 ---
 
