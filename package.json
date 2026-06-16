@@ -1,16 +1,30 @@
 {
   "name": "octowiz",
   "version": "0.9.19",
+  "packageManager": "pnpm@10.27.0",
   "description": "Octowiz — AELLI's coding agent: monitors Claude Code sessions and executes sandboxed tasks",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "octowiz",
+    "aelli",
+    "a2a",
+    "daemon"
+  ],
   "main": "index.js",
   "files": [
+    "hooks/",
     "index.js",
-    "src/",
-    "hooks/"
+    "src/"
   ],
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "start": "node index.js",
-    "test": "jest --testPathPattern=tests/"
+    "test": "jest --testPathPattern=tests/",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "jest": {
     "setupFiles": [
@@ -21,18 +35,8 @@
     "@ai-hero/sandcastle": "^0.7.0"
   },
   "devDependencies": {
+    "@antfu/eslint-config": "^9.0.0",
+    "eslint": "^10.5.0",
     "jest": "^29.0.0"
-  },
-  "keywords": [
-    "claude-code",
-    "octowiz",
-    "aelli",
-    "a2a",
-    "daemon"
-  ],
-  "license": "MIT",
-  "packageManager": "pnpm@10.27.0",
-  "engines": {
-    "node": ">=22.13"
   }
 }

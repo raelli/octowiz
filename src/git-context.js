@@ -4,7 +4,7 @@
  *
  * Two shapes are produced by this module:
  *
- * @typedef {Object} SessionContext
+ * @typedef {object} SessionContext
  * @property {string}      sessionId  - Claude Code session identifier.
  * @property {string|null} repoRoot   - Absolute path to the git repo root (stable).
  * @property {string|null} repo       - Remote origin URL, e.g. "git@github.com:org/repo.git" (stable).
@@ -14,7 +14,7 @@
  * written to a JSON cache, and do not change for the lifetime of the session.
  * Returned by: captureContext() (writes), getStableContext() (reads).
  *
- * @typedef {Object} LiveContext
+ * @typedef {object} LiveContext
  * @property {string|null} branch        - Current git branch (changes during a session).
  * @property {string[]}    modifiedFiles - Files with staged or unstaged changes (changes often).
  *
@@ -32,76 +32,82 @@
  * unified, file a follow-up issue to replace bridge.py's git calls with an IPC/cache read.
  */
 
-const { execFileSync } = require("child_process");
-const fs = require("fs");
-const path = require("path");
-const { cacheDir } = require("./config");
+const { execFileSync } = require('node:child_process')
+const fs = require('node:fs')
+const path = require('node:path')
+const { cacheDir } = require('./config')
 
 function run(args, cwd) {
   try {
-    return execFileSync("git", args, {
+    return execFileSync('git', args, {
       cwd,
-      encoding: "utf8",
+      encoding: 'utf8',
       timeout: 3000,
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
-  } catch {
-    return null;
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim()
+  }
+  catch {
+    return null
   }
 }
 
 // Pure parser for `git status --porcelain` output.
 // Exported so it can be unit-tested without touching the filesystem or git.
 function parseGitStatus(output) {
-  if (!output) return [];
-  const trimmed = output.trimEnd(); // trimEnd only — leading spaces carry status codes
-  if (!trimmed) return [];
+  if (!output)
+    return []
+  const trimmed = output.trimEnd() // trimEnd only — leading spaces carry status codes
+  if (!trimmed)
+    return []
   return [...new Set(
-    trimmed.split("\n")
-      .filter((l) => l && !l.startsWith("??"))
+    trimmed.split('\n')
+      .filter(l => l && !l.startsWith('??'))
       .map((l) => {
-        const part = l.slice(3).trim();
+        const part = l.slice(3).trim()
         // Rename lines: "R  old.js -> new.js" — keep destination only
-        const arrowIdx = part.indexOf(" -> ");
-        return arrowIdx >= 0 ? part.slice(arrowIdx + 4) : part;
+        const arrowIdx = part.indexOf(' -> ')
+        return arrowIdx >= 0 ? part.slice(arrowIdx + 4) : part
       })
-      .filter(Boolean)
-  )];
+      .filter(Boolean),
+  )]
 }
 
 function readBranch(repoRoot) {
-  if (!repoRoot) return null;
-  return run(["rev-parse", "--abbrev-ref", "HEAD"], repoRoot);
+  if (!repoRoot)
+    return null
+  return run(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot)
 }
 
 function readModifiedFiles(repoRoot) {
-  if (!repoRoot) return [];
+  if (!repoRoot)
+    return []
   try {
-    const out = execFileSync("git", ["status", "--porcelain"], {
+    const out = execFileSync('git', ['status', '--porcelain'], {
       cwd: repoRoot,
-      encoding: "utf8",
+      encoding: 'utf8',
       timeout: 3000,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return parseGitStatus(out);
-  } catch {
-    return [];
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    return parseGitStatus(out)
+  }
+  catch {
+    return []
   }
 }
 
 // Capture the stable git context for a session (repo root + remote) and write
 // it to the cache. Call once at SessionStart.
 function captureContext(sessionId, cwd) {
-  const repoRoot = run(["rev-parse", "--show-toplevel"], cwd);
-  const repo = repoRoot ? run(["remote", "get-url", "origin"], repoRoot) : null;
-  const ctx = { sessionId, repoRoot, repo, cwd };
-  const dir = cacheDir();
-  fs.mkdirSync(dir, { recursive: true });
-  const tmp = path.join(dir, `git-context-${sessionId}.json.tmp`);
-  const dest = path.join(dir, `git-context-${sessionId}.json`);
-  fs.writeFileSync(tmp, JSON.stringify(ctx));
-  fs.renameSync(tmp, dest); // atomic on POSIX
-  return ctx;
+  const repoRoot = run(['rev-parse', '--show-toplevel'], cwd)
+  const repo = repoRoot ? run(['remote', 'get-url', 'origin'], repoRoot) : null
+  const ctx = { sessionId, repoRoot, repo, cwd }
+  const dir = cacheDir()
+  fs.mkdirSync(dir, { recursive: true })
+  const tmp = path.join(dir, `git-context-${sessionId}.json.tmp`)
+  const dest = path.join(dir, `git-context-${sessionId}.json`)
+  fs.writeFileSync(tmp, JSON.stringify(ctx))
+  fs.renameSync(tmp, dest) // atomic on POSIX
+  return ctx
 }
 
 // Read the cached SessionContext (stable fields only). No git subprocess is run.
@@ -109,10 +115,11 @@ function captureContext(sessionId, cwd) {
 function getStableContext(sessionId) {
   try {
     return JSON.parse(
-      fs.readFileSync(path.join(cacheDir(), `git-context-${sessionId}.json`), "utf8")
-    );
-  } catch {
-    return null;
+      fs.readFileSync(path.join(cacheDir(), `git-context-${sessionId}.json`), 'utf8'),
+    )
+  }
+  catch {
+    return null
   }
 }
 
@@ -120,22 +127,24 @@ function getStableContext(sessionId) {
 // Always runs git subprocesses — reflects the current working-tree state.
 // Requires that captureContext() was called first so the repoRoot is cached.
 function getLiveContext(sessionId) {
-  const cached = getStableContext(sessionId);
-  if (!cached) return null;
-  const { repoRoot } = cached;
+  const cached = getStableContext(sessionId)
+  if (!cached)
+    return null
+  const { repoRoot } = cached
   return {
     branch: readBranch(repoRoot),
     modifiedFiles: readModifiedFiles(repoRoot),
-  };
+  }
 }
 
 // Merge SessionContext and LiveContext into one object.
 // Convenience wrapper — safe to call on every hook event.
 // Prefer getStableContext() when only stable fields are needed.
 function getContext(sessionId) {
-  const cached = getStableContext(sessionId);
-  if (!cached) return null;
-  return { ...cached, ...getLiveContext(sessionId) };
+  const cached = getStableContext(sessionId)
+  if (!cached)
+    return null
+  return { ...cached, ...getLiveContext(sessionId) }
 }
 
-module.exports = { captureContext, getStableContext, getLiveContext, getContext, parseGitStatus };
+module.exports = { captureContext, getStableContext, getLiveContext, getContext, parseGitStatus }
