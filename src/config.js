@@ -15,18 +15,19 @@
 const os = require('node:os')
 const path = require('node:path')
 
+function env(name) {
+  const v = process.env[name]
+  return typeof v === 'string' ? v.trim() : ''
+}
+
 // ---------------------------------------------------------------- AELLI ----
 
 function apiBase() {
-  return (
-    process.env.AELLI_BASE_URL
-    || process.env.AELLI_API_BASE
-    || 'http://localhost:3001/api'
-  )
+  return (env('AELLI_BASE_URL') || env('AELLI_API_BASE') || 'http://localhost:3001/api').replace(/\/+$/, '')
 }
 
 function aelliBase() {
-  return (process.env.AELLI_BASE_URL || 'http://localhost:3456').replace(/\/$/, '')
+  return (env('AELLI_BASE_URL') || 'http://localhost:3456').replace(/\/$/, '')
 }
 
 function queueUrl() {
@@ -34,16 +35,16 @@ function queueUrl() {
 }
 
 function authToken() {
-  return process.env.AELLI_AUTH_TOKEN || ''
+  return env('AELLI_AUTH_TOKEN')
 }
 
 // Secret for AELLI-inbound calls (task queue claim/result, SSE subscribe).
 function aelliSecret() {
-  return process.env.AELLI_AUTH_TOKEN || process.env.AELLI_INBOUND_SECRET || ''
+  return authToken() || env('AELLI_INBOUND_SECRET')
 }
 
 function litellmBase() {
-  return (process.env.AELLI_LITELLM_BASE || '').replace(/\/+$/, '')
+  return env('AELLI_LITELLM_BASE').replace(/\/+$/, '')
 }
 
 // Dev-advisor delivery route: LiteLLM gateway when configured, direct otherwise.
@@ -51,12 +52,13 @@ function devAdvisorUrl() {
   const base = litellmBase()
   if (base)
     return `${base}/a2a/aelli-dev-advisor/message/send`
-  return process.env.AELLI_DEV_ADVISOR_URL || 'http://localhost:3456/a2a/dev-advisor'
+  return env('AELLI_DEV_ADVISOR_URL') || 'http://localhost:3456/a2a/dev-advisor'
 }
 
 function routerUrl() {
-  if (process.env.AELLI_ROUTER_URL)
-    return process.env.AELLI_ROUTER_URL
+  const explicit = env('AELLI_ROUTER_URL')
+  if (explicit)
+    return explicit
   const base = litellmBase()
   return base ? `${base}/a2a/aelli-router/message/send` : null
 }
@@ -64,7 +66,7 @@ function routerUrl() {
 // -------------------------------------------------------------- storage ----
 
 function cacheDir() {
-  return process.env.AELLI_CACHE_DIR || path.join(os.homedir(), '.cache', 'aelli-cc')
+  return env('AELLI_CACHE_DIR') || path.join(os.homedir(), '.cache', 'aelli-cc')
 }
 
 function logFile() {
@@ -74,25 +76,27 @@ function logFile() {
 // ------------------------------------------------- Python A2A server -------
 
 function a2aPort() {
-  return Number.parseInt(process.env.OCTOWIZ_A2A_PORT || '8765', 10)
+  const parsed = Number.parseInt(env('OCTOWIZ_A2A_PORT') || '8765', 10)
+  // valid user-space TCP range; fallback on invalid or out-of-range input
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : 8765
 }
 
 function a2aServerUrl() {
-  if (process.env.OCTOWIZ_A2A_URL) {
-    return process.env.OCTOWIZ_A2A_URL.replace(/\/$/, '')
-  }
+  const explicit = env('OCTOWIZ_A2A_URL')
+  if (explicit)
+    return explicit.replace(/\/$/, '')
   return `http://localhost:${a2aPort()}`
 }
 
 function octowizSecret() {
-  return process.env.OCTOWIZ_INBOUND_SECRET || ''
+  return env('OCTOWIZ_INBOUND_SECRET')
 }
 
 // OCTOWIZ_DISPATCH_TIMEOUT is in *seconds* (matching Python's dispatch.py).
 // The HTTP timeout must exceed the Python ceiling so a POST is never aborted
 // before Python finishes; add a 30 s buffer.
 function a2aTimeoutMs() {
-  const parsed = Number.parseInt(process.env.OCTOWIZ_DISPATCH_TIMEOUT || '600', 10)
+  const parsed = Number.parseInt(env('OCTOWIZ_DISPATCH_TIMEOUT') || '600', 10)
   const dispatchTimeoutSec = Number.isNaN(parsed) ? 600 : parsed
   return dispatchTimeoutSec * 1000 + 30_000
 }
@@ -113,12 +117,14 @@ function aelliAuthHeaders() {
 // The task queue (claim/result/subscribe) always authenticates with
 // x-aelli-secret, accepting AELLI_INBOUND_SECRET as a fallback.
 function queueAuthHeaders() {
-  return { 'x-aelli-secret': aelliSecret() }
+  const secret = aelliSecret()
+  return secret ? { 'x-aelli-secret': secret } : {}
 }
 
 // The Python A2A server authenticates via x-octowiz-secret.
 function a2aServerAuthHeaders() {
-  return { 'x-octowiz-secret': octowizSecret() }
+  const secret = octowizSecret()
+  return secret ? { 'x-octowiz-secret': secret } : {}
 }
 
 // ---------------------------------------------------------- diagnostics ----
