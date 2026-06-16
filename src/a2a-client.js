@@ -111,7 +111,7 @@ function _connectSSE(urlStr, headers, onEvent, reconnectMs = 3000, onConnected =
     })
     res.on('end', () => {
       logger.warn(`[AELLI SSE] connection closed — reconnecting in ${reconnectMs / 1000}s`)
-      setTimeout(_connectSSE, reconnectMs, urlStr, headers, onEvent, reconnectMs)
+      setTimeout(_connectSSE, reconnectMs, urlStr, headers, onEvent, reconnectMs, onConnected)
     })
   })
 
