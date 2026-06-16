@@ -50,7 +50,8 @@ function validateCwd(cwd) {
     try {
       resolvedRoot = fs.realpathSync(root)
     }
-    catch {
+    catch (err) {
+      logger.warn(`[policy] Root "${root}" could not be resolved and will be ignored. (${err.message || 'unknown error'})`)
       return false
     }
     return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep)
