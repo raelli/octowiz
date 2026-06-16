@@ -92,7 +92,8 @@ function octowizSecret() {
 // The HTTP timeout must exceed the Python ceiling so a POST is never aborted
 // before Python finishes; add a 30 s buffer.
 function a2aTimeoutMs() {
-  const dispatchTimeoutSec = Number.parseInt(process.env.OCTOWIZ_DISPATCH_TIMEOUT || '300', 10)
+  const parsed = Number.parseInt(process.env.OCTOWIZ_DISPATCH_TIMEOUT || '300', 10)
+  const dispatchTimeoutSec = Number.isNaN(parsed) ? 300 : parsed
   return dispatchTimeoutSec * 1000 + 30_000
 }
 
@@ -148,10 +149,12 @@ function configWarnings() {
   }
 
   if (token) {
+    const router = routerUrl()
     const urlsToCheck = [
       ['AELLI_API_BASE', apiBase()],
       ...(gateway ? [['AELLI_LITELLM_BASE', gateway]] : []),
       ['AELLI_DEV_ADVISOR_URL', devAdvisorUrl()],
+      ...(router ? [['AELLI_ROUTER_URL', router]] : []),
     ]
     for (const [name, url] of urlsToCheck) {
       if (!url.startsWith('https://') && !isLocalhost(url)) {
