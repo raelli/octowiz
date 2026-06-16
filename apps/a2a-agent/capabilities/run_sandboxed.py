@@ -13,7 +13,7 @@ from path_guard import validate_cwd
 from providers.protocol import is_error, is_terminal
 
 _DEFAULT_POLL_INTERVAL = float(os.environ.get("OCTOWIZ_DISPATCH_POLL_INTERVAL", "5"))
-_DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "300"))
+_DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "600"))
 
 _VALID_CONTAINER_PROVIDERS = frozenset({"docker", "podman"})
 _BRANCH_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_./-]{0,127}$')
@@ -26,7 +26,7 @@ def _get_provider() -> Any:
     global _shared_provider
     if _shared_provider is None:
         from providers.sandcastle.provider import SandcastleProvider
-        _shared_provider = SandcastleProvider()
+        _shared_provider = SandcastleProvider(timeout=_DEFAULT_TIMEOUT)
     return _shared_provider
 
 

@@ -128,7 +128,7 @@ describe('config', () => {
       expect(config.a2aServerUrl()).toBe('http://localhost:1234')
     })
     it('a2aTimeoutMs derives from OCTOWIZ_DISPATCH_TIMEOUT seconds plus buffer', () => {
-      expect(config.a2aTimeoutMs()).toBe(300 * 1000 + 30000)
+      expect(config.a2aTimeoutMs()).toBe(600 * 1000 + 30000)
       process.env.OCTOWIZ_DISPATCH_TIMEOUT = '60'
       expect(config.a2aTimeoutMs()).toBe(60 * 1000 + 30000)
     })

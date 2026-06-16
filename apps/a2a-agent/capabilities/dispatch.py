@@ -16,7 +16,7 @@ from path_guard import validate_cwd
 from providers.protocol import is_error, is_terminal
 
 _DEFAULT_POLL_INTERVAL = float(os.environ.get("OCTOWIZ_DISPATCH_POLL_INTERVAL", "5"))
-_DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "300"))
+_DEFAULT_TIMEOUT = float(os.environ.get("OCTOWIZ_DISPATCH_TIMEOUT", "600"))
 
 # Sentinel so callers can distinguish "create from env" (omitted) from "disabled" (None).
 _ENV = object()

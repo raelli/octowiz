@@ -92,8 +92,8 @@ function octowizSecret() {
 // The HTTP timeout must exceed the Python ceiling so a POST is never aborted
 // before Python finishes; add a 30 s buffer.
 function a2aTimeoutMs() {
-  const parsed = Number.parseInt(process.env.OCTOWIZ_DISPATCH_TIMEOUT || '300', 10)
-  const dispatchTimeoutSec = Number.isNaN(parsed) ? 300 : parsed
+  const parsed = Number.parseInt(process.env.OCTOWIZ_DISPATCH_TIMEOUT || '600', 10)
+  const dispatchTimeoutSec = Number.isNaN(parsed) ? 600 : parsed
   return dispatchTimeoutSec * 1000 + 30_000
 }
 
