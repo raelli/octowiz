@@ -20,14 +20,28 @@ function env(name) {
   return typeof v === 'string' ? v.trim() : ''
 }
 
+function normalizeUrl(value) {
+  return value.replace(/\/+$/, '')
+}
+
+function isValidHttpUrl(value) {
+  try {
+    const u = new URL(value)
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  }
+  catch {
+    return false
+  }
+}
+
 // ---------------------------------------------------------------- AELLI ----
 
 function apiBase() {
-  return (env('AELLI_BASE_URL') || env('AELLI_API_BASE') || 'http://localhost:3001/api').replace(/\/+$/, '')
+  return normalizeUrl(env('AELLI_BASE_URL') || env('AELLI_API_BASE') || 'http://localhost:3001/api')
 }
 
 function aelliBase() {
-  return (env('AELLI_BASE_URL') || 'http://localhost:3456').replace(/\/$/, '')
+  return normalizeUrl(env('AELLI_BASE_URL') || 'http://localhost:3456')
 }
 
 function queueUrl() {
@@ -44,7 +58,8 @@ function aelliSecret() {
 }
 
 function litellmBase() {
-  return env('AELLI_LITELLM_BASE').replace(/\/+$/, '')
+  const raw = env('AELLI_LITELLM_BASE')
+  return raw ? normalizeUrl(raw) : ''
 }
 
 // Dev-advisor delivery route: LiteLLM gateway when configured, direct otherwise.
@@ -55,6 +70,7 @@ function devAdvisorUrl() {
   return env('AELLI_DEV_ADVISOR_URL') || 'http://localhost:3456/a2a/dev-advisor'
 }
 
+// Returns nullable string: explicit URL, gateway-derived URL, or null when disabled.
 function routerUrl() {
   const explicit = env('AELLI_ROUTER_URL')
   if (explicit)
@@ -84,7 +100,7 @@ function a2aPort() {
 function a2aServerUrl() {
   const explicit = env('OCTOWIZ_A2A_URL')
   if (explicit)
-    return explicit.replace(/\/$/, '')
+    return normalizeUrl(explicit)
   return `http://localhost:${a2aPort()}`
 }
 
@@ -97,7 +113,7 @@ function octowizSecret() {
 // before Python finishes; add a 30 s buffer.
 function a2aTimeoutMs() {
   const parsed = Number.parseInt(env('OCTOWIZ_DISPATCH_TIMEOUT') || '600', 10)
-  const dispatchTimeoutSec = Number.isNaN(parsed) ? 600 : parsed
+  const dispatchTimeoutSec = Number.isNaN(parsed) ? 600 : Math.max(0, parsed)
   return dispatchTimeoutSec * 1000 + 30_000
 }
 
@@ -152,6 +168,23 @@ function configWarnings() {
       + 'All A2A calls through the LiteLLM gateway will get 401 Unauthorized. '
       + 'Set AELLI_AUTH_TOKEN to a valid LiteLLM API key.',
     )
+  }
+
+  const explicitUrls = [
+    ['AELLI_API_BASE', env('AELLI_API_BASE')],
+    ['AELLI_BASE_URL', env('AELLI_BASE_URL')],
+    ['AELLI_LITELLM_BASE', env('AELLI_LITELLM_BASE')],
+    ['AELLI_DEV_ADVISOR_URL', env('AELLI_DEV_ADVISOR_URL')],
+    ['AELLI_ROUTER_URL', env('AELLI_ROUTER_URL')],
+    ['OCTOWIZ_A2A_URL', env('OCTOWIZ_A2A_URL')],
+  ]
+
+  for (const [name, value] of explicitUrls) {
+    if (value && !isValidHttpUrl(value)) {
+      warnings.push(
+        `[AELLI A2A] ${name} is set but is not a valid absolute http(s) URL: "${value}".`,
+      )
+    }
   }
 
   if (token) {
