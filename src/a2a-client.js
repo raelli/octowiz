@@ -98,6 +98,13 @@ function _connectSSE(urlStr, headers, onEvent, reconnectMs = 3000, onConnected =
   }
 
   const req = lib.request(options, (res) => {
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const nextMs = Math.min(reconnectMs * 2, MAX_RECONNECT_MS)
+      logger.error(`[AELLI SSE] HTTP ${res.statusCode} — reconnecting in ${nextMs / 1000}s`)
+      res.resume()
+      setTimeout(_connectSSE, nextMs, urlStr, headers, onEvent, nextMs, onConnected)
+      return
+    }
     if (onConnected)
       onConnected()
     let buffer = ''
