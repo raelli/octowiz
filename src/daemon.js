@@ -44,6 +44,11 @@ function _errorToString(err) {
   catch (_) { return String(err ?? 'unknown error') }
 }
 
+function _truncate(value, maxLen = 128) {
+  const str = typeof value === 'string' ? value : String(value ?? '')
+  return str.length > maxLen ? `${str.slice(0, maxLen)}…` : str
+}
+
 /**
  * Forward a capability task to the Python A2A server via JSON-RPC 2.0 and
  * return the artifact object (whatever the Python handler returned).
@@ -113,7 +118,7 @@ async function processTask(task) {
       : {}
 
     if (!KNOWN_CAPABILITIES.has(capability)) {
-      await postResult(id, leaseToken, { status: 'error', message: `unknown capability: ${capability}` })
+      await postResult(id, leaseToken, { status: 'error', message: `unknown capability: ${_truncate(capability)}` })
       return
     }
 
