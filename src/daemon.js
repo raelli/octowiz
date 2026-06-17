@@ -113,7 +113,7 @@ async function processTask(task) {
       : {}
 
     if (!KNOWN_CAPABILITIES.has(capability)) {
-      await postResult(id, leaseToken, { status: 'error', message: `unknown capability: ${capability}` })
+      await postResult(id, leaseToken, { status: 'error', failureKind: 'unknown-capability', message: `unknown capability: ${_sanitizeForLog(capability)}` })
       return
     }
 
