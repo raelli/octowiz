@@ -25,6 +25,10 @@ async function postResult(taskId, leaseToken, result) {
         return // 409 = late (lease expired or already done), discard
       if (status >= 500 && retries > 0)
         continue // retry on server error
+      if (status >= 500)
+        logger.error(`[daemon] postResult failed after retries: HTTP ${status}`)
+      else
+        logger.error(`[daemon] postResult unexpected ${status} — discarding`)
       return
     }
     catch (err) {
