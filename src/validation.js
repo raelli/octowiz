@@ -6,6 +6,7 @@ const vm = require('node:vm')
 const VALIDATION_FAILURE_KINDS = Object.freeze({
   EMPTY_DRAFT: 'empty-draft',
   SYNTAX_ERROR: 'syntax-error',
+  COMPILE_ERROR: 'compile-error',
 })
 
 // Checks JavaScript syntax only via Node's vm module.
@@ -17,16 +18,16 @@ function validateJavaScriptSyntax(draft) {
   }
 
   try {
-    void new vm.Script(draft, { displayErrors: false })
+    void new vm.Script(draft)
     return { passed: true }
   }
   catch (err) {
-    // instanceof catches the common case; the name check is a cross-realm fallback.
+    // instanceof catches the common case; the name check is the cross-realm fallback.
     if (err instanceof SyntaxError || (err && err.name === 'SyntaxError')) {
       return { passed: false, failureKind: VALIDATION_FAILURE_KINDS.SYNTAX_ERROR, output: err.message }
     }
-    // Non-syntax errors (e.g. resource limits) — pass through; don't block.
-    return { passed: true }
+    // Non-syntax VM errors (e.g. resource limits) — surface as a distinct failure rather than silently passing.
+    return { passed: false, failureKind: VALIDATION_FAILURE_KINDS.COMPILE_ERROR, output: err instanceof Error ? err.message : 'Compilation failed.' }
   }
 }
 
