@@ -14,7 +14,11 @@ async def auth_middleware(request: Request, call_next):
     if request.url.path in _PUBLIC_PATHS:
         return await call_next(request)
 
-    secret = os.environ.get("OCTOWIZ_INBOUND_SECRET")
+    # Trim surrounding whitespace to mirror the daemon's config.env() reader
+    # (src/config.js), which sends the .trim()'d secret in x-octowiz-secret.
+    # Without this, a secret configured with accidental leading/trailing
+    # whitespace would 401 every forwarded capability.
+    secret = (os.environ.get("OCTOWIZ_INBOUND_SECRET") or "").strip()
     if not secret:
         # P1: generic body — do not disclose env var name to the caller.
         return JSONResponse(
