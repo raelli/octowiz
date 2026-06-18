@@ -31,7 +31,7 @@ function validateJavaScriptSyntax(draft) {
     return {
       passed: false,
       failureKind: VALIDATION_FAILURE_KINDS.EMPTY_DRAFT,
-      output: 'Draft is empty.',
+      output: 'Draft must be a non-empty string.',
     }
   }
 
