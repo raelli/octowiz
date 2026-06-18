@@ -12,7 +12,7 @@ const VALIDATION_FAILURE_KINDS = Object.freeze({
 // Non-JS content that parses as valid JS is accepted; caller is responsible
 // for any upstream format validation (e.g. JSON.parse before this).
 function validateJavaScriptSyntax(draft) {
-  if (!draft || typeof draft !== 'string' || draft.trim() === '') {
+  if (typeof draft !== 'string' || draft.trim() === '') {
     return { passed: false, failureKind: VALIDATION_FAILURE_KINDS.EMPTY_DRAFT, output: 'Draft is empty.' }
   }
 

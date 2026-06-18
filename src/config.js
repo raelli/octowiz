@@ -28,6 +28,11 @@ const DEFAULTS = {
   MIN_DISPATCH_TIMEOUT_SEC: 1,
 }
 
+function env(name) {
+  const v = process.env[name]
+  return typeof v === 'string' ? v.trim() : ''
+}
+
 // Expects clean base inputs (no query/hash fragments).
 function trimTrailingSlash(url) {
   return url.replace(/\/+$/, '')
@@ -37,14 +42,14 @@ function trimTrailingSlash(url) {
 
 function apiBase() {
   return trimTrailingSlash(
-    process.env.AELLI_BASE_URL
-    || process.env.AELLI_API_BASE
+    env('AELLI_BASE_URL')
+    || env('AELLI_API_BASE')
     || DEFAULTS.AELLI_API_BASE,
   )
 }
 
 function aelliBase() {
-  return trimTrailingSlash(process.env.AELLI_BASE_URL || DEFAULTS.AELLI_A2A_BASE)
+  return trimTrailingSlash(env('AELLI_BASE_URL') || DEFAULTS.AELLI_A2A_BASE)
 }
 
 function queueUrl() {
@@ -52,16 +57,16 @@ function queueUrl() {
 }
 
 function authToken() {
-  return process.env.AELLI_AUTH_TOKEN || ''
+  return env('AELLI_AUTH_TOKEN')
 }
 
 // Secret for AELLI-inbound calls (task queue claim/result, SSE subscribe).
 function aelliSecret() {
-  return process.env.AELLI_AUTH_TOKEN || process.env.AELLI_INBOUND_SECRET || ''
+  return authToken() || env('AELLI_INBOUND_SECRET')
 }
 
 function litellmBase() {
-  return trimTrailingSlash(process.env.AELLI_LITELLM_BASE || '')
+  return trimTrailingSlash(env('AELLI_LITELLM_BASE'))
 }
 
 // Dev-advisor delivery route: LiteLLM gateway when configured, direct otherwise.
@@ -69,12 +74,13 @@ function devAdvisorUrl() {
   const base = litellmBase()
   if (base)
     return `${base}/a2a/aelli-dev-advisor/message/send`
-  return process.env.AELLI_DEV_ADVISOR_URL || DEFAULTS.AELLI_DEV_ADVISOR_URL
+  return env('AELLI_DEV_ADVISOR_URL') || DEFAULTS.AELLI_DEV_ADVISOR_URL
 }
 
 function routerUrl() {
-  if (process.env.AELLI_ROUTER_URL)
-    return process.env.AELLI_ROUTER_URL
+  const explicit = env('AELLI_ROUTER_URL')
+  if (explicit)
+    return explicit
   const base = litellmBase()
   return base ? `${base}/a2a/aelli-router/message/send` : null
 }
@@ -82,7 +88,7 @@ function routerUrl() {
 // -------------------------------------------------------------- storage ----
 
 function cacheDir() {
-  return process.env.AELLI_CACHE_DIR
+  return env('AELLI_CACHE_DIR')
     || path.join(os.homedir(), DEFAULTS.CACHE_SUBDIR, DEFAULTS.CACHE_DIRNAME)
 }
 
@@ -93,20 +99,20 @@ function logFile() {
 // ------------------------------------------------- Python A2A server -------
 
 function a2aPort() {
-  const raw = (process.env.OCTOWIZ_A2A_PORT || String(DEFAULTS.A2A_PORT)).trim()
-  const parsed = Number.parseInt(raw, 10)
-  return Number.isNaN(parsed) ? DEFAULTS.A2A_PORT : parsed
+  const parsed = Number.parseInt(env('OCTOWIZ_A2A_PORT') || String(DEFAULTS.A2A_PORT), 10)
+  // valid user-space TCP range; fallback on invalid or out-of-range input
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : DEFAULTS.A2A_PORT
 }
 
 function a2aServerUrl() {
-  if (process.env.OCTOWIZ_A2A_URL) {
-    return trimTrailingSlash(process.env.OCTOWIZ_A2A_URL)
-  }
+  const explicit = env('OCTOWIZ_A2A_URL')
+  if (explicit)
+    return trimTrailingSlash(explicit)
   return `http://localhost:${a2aPort()}`
 }
 
 function octowizSecret() {
-  return process.env.OCTOWIZ_INBOUND_SECRET || ''
+  return env('OCTOWIZ_INBOUND_SECRET')
 }
 
 // OCTOWIZ_DISPATCH_TIMEOUT is in *seconds* (matching Python's dispatch.py).
@@ -114,7 +120,7 @@ function octowizSecret() {
 // before Python finishes; add a 30 s buffer.
 function a2aTimeoutMs() {
   const parsed = Number.parseInt(
-    process.env.OCTOWIZ_DISPATCH_TIMEOUT || String(DEFAULTS.DISPATCH_TIMEOUT_SEC),
+    env('OCTOWIZ_DISPATCH_TIMEOUT') || String(DEFAULTS.DISPATCH_TIMEOUT_SEC),
     10,
   )
   const dispatchTimeoutSec = Number.isNaN(parsed)

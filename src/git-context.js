@@ -81,18 +81,7 @@ function readBranch(repoRoot) {
 function readModifiedFiles(repoRoot) {
   if (!repoRoot)
     return []
-  try {
-    const out = execFileSync('git', ['status', '--porcelain'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      timeout: 3000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    return parseGitStatus(out)
-  }
-  catch {
-    return []
-  }
+  return parseGitStatus(run(['status', '--porcelain'], repoRoot))
 }
 
 // Capture the stable git context for a session (repo root + remote) and write
@@ -144,7 +133,12 @@ function getContext(sessionId) {
   const cached = getStableContext(sessionId)
   if (!cached)
     return null
-  return { ...cached, ...getLiveContext(sessionId) }
+  const { repoRoot } = cached
+  return {
+    ...cached,
+    branch: readBranch(repoRoot),
+    modifiedFiles: readModifiedFiles(repoRoot),
+  }
 }
 
 module.exports = { captureContext, getStableContext, getLiveContext, getContext, parseGitStatus }
