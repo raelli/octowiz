@@ -44,7 +44,7 @@ describe('validateJavaScriptSyntax', () => {
   })
 
   it('exposes failure kinds as a frozen constant matching emitted values', () => {
-    expect(VALIDATION_FAILURE_KINDS).toEqual({ EMPTY_DRAFT: 'empty-draft', SYNTAX_ERROR: 'syntax-error' })
+    expect(VALIDATION_FAILURE_KINDS).toEqual({ EMPTY_DRAFT: 'empty-draft', SYNTAX_ERROR: 'syntax-error', COMPILE_ERROR: 'compile-error' })
     expect(Object.isFrozen(VALIDATION_FAILURE_KINDS)).toBe(true)
     expect(validateJavaScriptSyntax('').failureKind).toBe(VALIDATION_FAILURE_KINDS.EMPTY_DRAFT)
     expect(validateJavaScriptSyntax('function broken( {').failureKind).toBe(VALIDATION_FAILURE_KINDS.SYNTAX_ERROR)

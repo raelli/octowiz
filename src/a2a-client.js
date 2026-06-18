@@ -97,9 +97,38 @@ function _connectSSE(urlStr, headers, onEvent, reconnectMs = 3000, onConnected =
     headers: { Accept: 'text/event-stream', ...headers },
   }
 
+  // Reconnect exactly once per connection, no matter which terminal event
+  // fires first (response 'error'/'end' or request 'error'). The idle-timeout
+  // teardown surfaces as a response-stream 'error' rather than a request
+  // 'error', and the response never emits 'end' in that case — so without a
+  // shared guard the subscription would silently die with no reconnect.
+  let reconnectScheduled = false
+  function scheduleReconnect(delayMs) {
+    if (reconnectScheduled)
+      return
+    reconnectScheduled = true
+    setTimeout(_connectSSE, delayMs, urlStr, headers, onEvent, delayMs, onConnected)
+  }
+
   const req = lib.request(options, (res) => {
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const nextMs = Math.min(reconnectMs * 2, MAX_RECONNECT_MS)
+      logger.error(`[AELLI SSE] HTTP ${res.statusCode} — reconnecting in ${nextMs / 1000}s`)
+      res.resume()
+      setTimeout(_connectSSE, nextMs, urlStr, headers, onEvent, nextMs, onConnected)
+      return
+    }
     if (onConnected)
       onConnected()
+    // Socket errors on the response stream (e.g. ECONNRESET when req.destroy()
+    // fires from the idle-timeout handler) would otherwise escalate to an
+    // uncaught exception that can crash the daemon. Absorb the error and
+    // reconnect at the base interval — the idle teardown is expected, not a
+    // failure, so it should not trigger exponential backoff.
+    res.on('error', (e) => {
+      logger.warn('[AELLI SSE] stream error:', e.message, `— reconnecting in ${reconnectMs / 1000}s`)
+      scheduleReconnect(reconnectMs)
+    })
     let buffer = ''
     res.on('data', (chunk) => {
       buffer += chunk.toString()
@@ -111,7 +140,7 @@ function _connectSSE(urlStr, headers, onEvent, reconnectMs = 3000, onConnected =
     })
     res.on('end', () => {
       logger.warn(`[AELLI SSE] connection closed — reconnecting in ${reconnectMs / 1000}s`)
-      setTimeout(_connectSSE, reconnectMs, urlStr, headers, onEvent, reconnectMs, onConnected)
+      scheduleReconnect(reconnectMs)
     })
   })
 
@@ -119,7 +148,7 @@ function _connectSSE(urlStr, headers, onEvent, reconnectMs = 3000, onConnected =
   req.on('error', (e) => {
     const nextMs = Math.min(reconnectMs * 2, MAX_RECONNECT_MS)
     logger.error('[AELLI SSE] error:', e.message, `— reconnecting in ${nextMs / 1000}s`)
-    setTimeout(_connectSSE, nextMs, urlStr, headers, onEvent, nextMs, onConnected)
+    scheduleReconnect(nextMs)
   })
   req.end()
 }

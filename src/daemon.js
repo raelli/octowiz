@@ -113,7 +113,7 @@ async function processTask(task) {
       : {}
 
     if (!KNOWN_CAPABILITIES.has(capability)) {
-      await postResult(id, leaseToken, { status: 'error', message: `unknown capability: ${capability}` })
+      await postResult(id, leaseToken, { status: 'error', failureKind: 'unknown-capability', message: `unknown capability: ${_sanitizeForLog(capability)}` })
       return
     }
 
@@ -131,7 +131,8 @@ async function processTask(task) {
     // octowiz.observe is handled locally — no A2A forwarding needed.
     // Log the advisory and echo it back as the artifact.
     if (capability === 'octowiz.observe') {
-      const { sessionId, advisory = {} } = payload
+      const { sessionId } = payload
+      const advisory = payload.advisory ?? {}
       if (!ALLOWED_ADVISORY_TYPES.has(advisory.type)) {
         await postResult(id, leaseToken, { status: 'error', failureKind: 'unknown-advisory-type', type: advisory.type })
         return
