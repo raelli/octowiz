@@ -473,4 +473,80 @@ describe('_connectSSE reconnect — exponential backoff on error', () => {
     }
     expect(delays).toEqual([6000, 12000, 24000, 30000, 30000, 30000])
   })
+
+  it('reconnects when the response stream errors (idle-timeout teardown)', (done) => {
+    jest.resetModules()
+    const http = require('node:http')
+    // Simulate a connection that succeeds, then has its response stream error —
+    // the shape of an idle-timeout req.destroy() teardown (ECONNRESET on res).
+    jest.spyOn(http, 'request').mockImplementation((_opts, cb) => {
+      const res = {
+        on: jest.fn((event, handler) => {
+          if (event === 'error')
+            setImmediate(() => handler(new Error('ECONNRESET')))
+          return res
+        }),
+      }
+      cb(res) // response received
+      const req = {
+        setTimeout: jest.fn(),
+        write: jest.fn(),
+        end: jest.fn(),
+        on: jest.fn(() => req),
+      }
+      return req
+    })
+
+    const setTimeoutSpy = jest.spyOn(globalThis, 'setTimeout').mockImplementation(() => null)
+    const { subscribeToQueue } = require('../src/a2a-client')
+
+    subscribeToQueue('http://127.0.0.1:9/sse', jest.fn())
+
+    setImmediate(() => {
+      const reconnectCall = setTimeoutSpy.mock.calls.find(
+        ([fn, delay]) => typeof fn === 'function' && delay === 3000,
+      )
+      // The response-side error must schedule a reconnect at the base interval
+      // (not backoff) — otherwise the subscription dies silently.
+      expect(reconnectCall).toBeDefined()
+      done()
+    })
+  })
+
+  it('reconnects only once when both response and request errors fire', (done) => {
+    jest.resetModules()
+    const http = require('node:http')
+    jest.spyOn(http, 'request').mockImplementation((_opts, cb) => {
+      const res = {
+        on: jest.fn((event, handler) => {
+          if (event === 'error')
+            setImmediate(() => handler(new Error('ECONNRESET')))
+          return res
+        }),
+      }
+      cb(res)
+      const req = {
+        setTimeout: jest.fn(),
+        write: jest.fn(),
+        end: jest.fn(),
+        on: jest.fn((event, handler) => {
+          if (event === 'error')
+            setImmediate(() => handler(new Error('ECONNRESET')))
+          return req
+        }),
+      }
+      return req
+    })
+
+    const setTimeoutSpy = jest.spyOn(globalThis, 'setTimeout').mockImplementation(() => null)
+    const { subscribeToQueue } = require('../src/a2a-client')
+
+    subscribeToQueue('http://127.0.0.1:9/sse', jest.fn())
+
+    setImmediate(() => {
+      const reconnectCalls = setTimeoutSpy.mock.calls.filter(([fn]) => typeof fn === 'function')
+      expect(reconnectCalls).toHaveLength(1)
+      done()
+    })
+  })
 })

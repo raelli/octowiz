@@ -45,12 +45,15 @@ function validateCwd(cwd) {
   }
   const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || ''
   const roots = raw.split(':').map(r => r.trim()).filter(Boolean)
+  if (roots.length === 0)
+    throw new Error('OCTOWIZ_ALLOWED_ROOTS is not set or empty — no paths are allowed')
   const allowed = roots.some((root) => {
     let resolvedRoot
     try {
       resolvedRoot = fs.realpathSync(root)
     }
-    catch {
+    catch (err) {
+      logger.warn(`[policy] Root "${root}" could not be resolved and will be ignored. (${err.message || 'unknown error'})`)
       return false
     }
     return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep)

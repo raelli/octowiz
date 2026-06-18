@@ -1,6 +1,6 @@
 {
   "name": "octowiz",
-  "version": "0.9.19",
+  "version": "0.9.20",
   "packageManager": "pnpm@10.27.0",
   "description": "Octowiz — AELLI's coding agent: monitors Claude Code sessions and executes sandboxed tasks",
   "license": "MIT",
