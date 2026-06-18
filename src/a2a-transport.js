@@ -117,7 +117,7 @@ function httpJson(method, urlStr, body = null, { headers = {}, timeoutMs = 30_00
 // body shape, or malformed artifact JSON; the caller owns the recovery policy.
 async function sendEvent(
   urlStr,
-  { method, payload, id, role, messageId, headers = {}, timeoutMs = 30_000, fallback = {} },
+  { method, payload, id, role, messageId, headers = {}, timeoutMs = 30_000, fallback = {} } = {},
 ) {
   const envelope = buildEnvelope(method, JSON.stringify(payload), { id, role, messageId })
   const { status, body } = await httpJson('POST', urlStr, envelope, { headers, timeoutMs })
@@ -143,7 +143,7 @@ async function sendEvent(
     return extractArtifact(body, fallback)
   }
   catch (err) {
-    throw new Error(`Failed to parse A2A response: ${err.message}`)
+    throw new Error(`Failed to parse A2A response: ${err.message}`, { cause: err })
   }
 }
 
