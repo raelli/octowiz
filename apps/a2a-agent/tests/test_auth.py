@@ -58,6 +58,29 @@ class TestAuthWithSecretSet(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
 
 
+class TestAuthSecretWhitespaceIsTrimmed(unittest.TestCase):
+    """A secret configured with accidental leading/trailing whitespace must
+    still authenticate. The daemon (src/config.js env()) trims the secret
+    before sending it in x-octowiz-secret, so the server must trim the env
+    value the same way or every forwarded capability would 401.
+    """
+
+    def setUp(self):
+        # Env secret carries stray whitespace; the daemon would send "core".
+        self.client = _make_client("  core-secret  ")
+
+    def tearDown(self):
+        os.environ.pop("OCTOWIZ_INBOUND_SECRET", None)
+
+    def test_trimmed_header_matches_padded_env_secret(self):
+        resp = self.client.post(
+            "/a2a/octowiz",
+            json=MINIMAL_BODY,
+            headers={"x-octowiz-secret": "core-secret"},
+        )
+        self.assertEqual(resp.status_code, 200)
+
+
 class TestAuthWithNoSecretEnvVar(unittest.TestCase):
     def setUp(self):
         self.client = _make_client(secret=None)

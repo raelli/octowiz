@@ -15,18 +15,41 @@
 const os = require('node:os')
 const path = require('node:path')
 
+const DEFAULTS = {
+  AELLI_API_BASE: 'http://localhost:3001/api',
+  AELLI_A2A_BASE: 'http://localhost:3456',
+  AELLI_DEV_ADVISOR_URL: 'http://localhost:3456/a2a/dev-advisor',
+  CACHE_SUBDIR: '.cache',
+  CACHE_DIRNAME: 'aelli-cc',
+  LOG_FILENAME: 'aelli-cc.log',
+  A2A_PORT: 8765,
+  DISPATCH_TIMEOUT_SEC: 600,
+  HTTP_TIMEOUT_BUFFER_MS: 30_000,
+  MIN_DISPATCH_TIMEOUT_SEC: 1,
+}
+
+function env(name) {
+  const v = process.env[name]
+  return typeof v === 'string' ? v.trim() : ''
+}
+
+// Expects clean base inputs (no query/hash fragments).
+function trimTrailingSlash(url) {
+  return url.replace(/\/+$/, '')
+}
+
 // ---------------------------------------------------------------- AELLI ----
 
 function apiBase() {
-  return (
-    process.env.AELLI_BASE_URL
-    || process.env.AELLI_API_BASE
-    || 'http://localhost:3001/api'
+  return trimTrailingSlash(
+    env('AELLI_BASE_URL')
+    || env('AELLI_API_BASE')
+    || DEFAULTS.AELLI_API_BASE,
   )
 }
 
 function aelliBase() {
-  return (process.env.AELLI_BASE_URL || 'http://localhost:3456').replace(/\/$/, '')
+  return trimTrailingSlash(env('AELLI_BASE_URL') || DEFAULTS.AELLI_A2A_BASE)
 }
 
 function queueUrl() {
@@ -34,16 +57,16 @@ function queueUrl() {
 }
 
 function authToken() {
-  return process.env.AELLI_AUTH_TOKEN || ''
+  return env('AELLI_AUTH_TOKEN')
 }
 
 // Secret for AELLI-inbound calls (task queue claim/result, SSE subscribe).
 function aelliSecret() {
-  return process.env.AELLI_AUTH_TOKEN || process.env.AELLI_INBOUND_SECRET || ''
+  return authToken() || env('AELLI_INBOUND_SECRET')
 }
 
 function litellmBase() {
-  return (process.env.AELLI_LITELLM_BASE || '').replace(/\/+$/, '')
+  return trimTrailingSlash(env('AELLI_LITELLM_BASE'))
 }
 
 // Dev-advisor delivery route: LiteLLM gateway when configured, direct otherwise.
@@ -51,12 +74,13 @@ function devAdvisorUrl() {
   const base = litellmBase()
   if (base)
     return `${base}/a2a/aelli-dev-advisor/message/send`
-  return process.env.AELLI_DEV_ADVISOR_URL || 'http://localhost:3456/a2a/dev-advisor'
+  return env('AELLI_DEV_ADVISOR_URL') || DEFAULTS.AELLI_DEV_ADVISOR_URL
 }
 
 function routerUrl() {
-  if (process.env.AELLI_ROUTER_URL)
-    return process.env.AELLI_ROUTER_URL
+  const explicit = env('AELLI_ROUTER_URL')
+  if (explicit)
+    return explicit
   const base = litellmBase()
   return base ? `${base}/a2a/aelli-router/message/send` : null
 }
@@ -64,37 +88,45 @@ function routerUrl() {
 // -------------------------------------------------------------- storage ----
 
 function cacheDir() {
-  return process.env.AELLI_CACHE_DIR || path.join(os.homedir(), '.cache', 'aelli-cc')
+  return env('AELLI_CACHE_DIR')
+    || path.join(os.homedir(), DEFAULTS.CACHE_SUBDIR, DEFAULTS.CACHE_DIRNAME)
 }
 
 function logFile() {
-  return path.join(cacheDir(), 'aelli-cc.log')
+  return path.join(cacheDir(), DEFAULTS.LOG_FILENAME)
 }
 
 // ------------------------------------------------- Python A2A server -------
 
 function a2aPort() {
-  return Number.parseInt(process.env.OCTOWIZ_A2A_PORT || '8765', 10)
+  const parsed = Number.parseInt(env('OCTOWIZ_A2A_PORT') || String(DEFAULTS.A2A_PORT), 10)
+  // valid user-space TCP range; fallback on invalid or out-of-range input
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : DEFAULTS.A2A_PORT
 }
 
 function a2aServerUrl() {
-  if (process.env.OCTOWIZ_A2A_URL) {
-    return process.env.OCTOWIZ_A2A_URL.replace(/\/$/, '')
-  }
+  const explicit = env('OCTOWIZ_A2A_URL')
+  if (explicit)
+    return trimTrailingSlash(explicit)
   return `http://localhost:${a2aPort()}`
 }
 
 function octowizSecret() {
-  return process.env.OCTOWIZ_INBOUND_SECRET || ''
+  return env('OCTOWIZ_INBOUND_SECRET')
 }
 
 // OCTOWIZ_DISPATCH_TIMEOUT is in *seconds* (matching Python's dispatch.py).
 // The HTTP timeout must exceed the Python ceiling so a POST is never aborted
 // before Python finishes; add a 30 s buffer.
 function a2aTimeoutMs() {
-  const parsed = Number.parseInt(process.env.OCTOWIZ_DISPATCH_TIMEOUT || '600', 10)
-  const dispatchTimeoutSec = Number.isNaN(parsed) ? 600 : parsed
-  return dispatchTimeoutSec * 1000 + 30_000
+  const parsed = Number.parseInt(
+    env('OCTOWIZ_DISPATCH_TIMEOUT') || String(DEFAULTS.DISPATCH_TIMEOUT_SEC),
+    10,
+  )
+  const dispatchTimeoutSec = Number.isNaN(parsed)
+    ? DEFAULTS.DISPATCH_TIMEOUT_SEC
+    : Math.max(DEFAULTS.MIN_DISPATCH_TIMEOUT_SEC, parsed)
+  return dispatchTimeoutSec * 1000 + DEFAULTS.HTTP_TIMEOUT_BUFFER_MS
 }
 
 // ------------------------------------------------------- auth headers ------
@@ -110,15 +142,16 @@ function aelliAuthHeaders() {
     : { 'x-aelli-secret': token }
 }
 
-// The task queue (claim/result/subscribe) always authenticates with
-// x-aelli-secret, accepting AELLI_INBOUND_SECRET as a fallback.
+// The task queue (claim/result/subscribe) always uses x-aelli-secret when set.
 function queueAuthHeaders() {
-  return { 'x-aelli-secret': aelliSecret() }
+  const secret = aelliSecret()
+  return secret ? { 'x-aelli-secret': secret } : {}
 }
 
-// The Python A2A server authenticates via x-octowiz-secret.
+// The Python A2A server authenticates via x-octowiz-secret when set.
 function a2aServerAuthHeaders() {
-  return { 'x-octowiz-secret': octowizSecret() }
+  const secret = octowizSecret()
+  return secret ? { 'x-octowiz-secret': secret } : {}
 }
 
 // ---------------------------------------------------------- diagnostics ----
