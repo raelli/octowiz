@@ -44,6 +44,20 @@ function _errorToString(err) {
   catch (_) { return String(err ?? 'unknown error') }
 }
 
+function _classifyForwardError(err) {
+  const status = (err && typeof err === 'object')
+    ? (err.status ?? err.statusCode ?? err.response?.status ?? null)
+    : null
+  if (status === 401 || status === 403) return 'a2a-auth'
+  if (status >= 500 && status < 600) return 'a2a-server'
+  const msg = _errorToString(err).toLowerCase()
+  if (/timeout|timed out/.test(msg)) return 'a2a-timeout'
+  if (/unauthorized|forbidden/.test(msg)) return 'a2a-auth'
+  if (/\b5\d{2}\b/.test(msg)) return 'a2a-server'
+  if (/network|econnrefused|enotfound|socket/.test(msg)) return 'a2a-network'
+  return 'a2a-forward-failed'
+}
+
 /**
  * Forward a capability task to the Python A2A server via JSON-RPC 2.0 and
  * return the artifact object (whatever the Python handler returned).
@@ -106,6 +120,9 @@ async function processTask(task) {
       return
     }
     leaseToken = claim.leaseToken
+    if (typeof leaseToken !== 'string' || leaseToken.length === 0) {
+      throw new Error('claimTask returned success without a valid lease token')
+    }
 
     // Avoid mutating the inbound task's payload object.
     const payload = (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload))
@@ -123,7 +140,7 @@ async function processTask(task) {
     if (payload.cwd) {
       try { payload.cwd = validateCwd(payload.cwd) }
       catch (err) {
-        await postResult(id, leaseToken, { status: 'error', message: _errorToString(err) })
+        await postResult(id, leaseToken, { status: 'error', failureKind: 'invalid-cwd', message: _errorToString(err) })
         return
       }
     }
@@ -132,9 +149,17 @@ async function processTask(task) {
     // Log the advisory and echo it back as the artifact.
     if (capability === 'octowiz.observe') {
       const { sessionId } = payload
-      const advisory = payload.advisory ?? {}
-      if (!ALLOWED_ADVISORY_TYPES.has(advisory.type)) {
+      const advisory = payload.advisory
+      if (!advisory || typeof advisory !== 'object' || Array.isArray(advisory)) {
+        await postResult(id, leaseToken, { status: 'error', failureKind: 'invalid-advisory', message: 'advisory must be an object' })
+        return
+      }
+      if (typeof advisory.type !== 'string' || !ALLOWED_ADVISORY_TYPES.has(advisory.type)) {
         await postResult(id, leaseToken, { status: 'error', failureKind: 'unknown-advisory-type', type: advisory.type })
+        return
+      }
+      if (typeof advisory.message !== 'string') {
+        await postResult(id, leaseToken, { status: 'error', failureKind: 'invalid-advisory', message: 'advisory.message must be a string' })
         return
       }
       logger.log(
@@ -167,14 +192,23 @@ async function processTask(task) {
       return
     }
 
-    const artifact = await _forwardToA2A(capability, payload)
-    // normalizeA2AResponse handles null/undefined (returns {}) and adds camelCase
-    // aliases for any recognized snake_case fields (session_id → sessionId, etc.).
-    const normalized = normalizeA2AResponse(artifact)
-    // Normalize: Python capabilities use "error" for failures; queue needs
-    // "completed" vs "error".
-    const queueStatus = normalized.status === 'error' ? 'error' : 'completed'
-    await postResult(id, leaseToken, { ...normalized, status: queueStatus })
+    try {
+      const artifact = await _forwardToA2A(capability, payload)
+      // normalizeA2AResponse handles null/undefined (returns {}) and adds camelCase
+      // aliases for any recognized snake_case fields (session_id → sessionId, etc.).
+      const normalized = normalizeA2AResponse(artifact)
+      // Normalize: Python capabilities use "error" for failures; queue needs
+      // "completed" vs "error".
+      const queueStatus = normalized.status === 'error' ? 'error' : 'completed'
+      await postResult(id, leaseToken, { ...normalized, status: queueStatus })
+    }
+    catch (forwardErr) {
+      await postResult(id, leaseToken, {
+        status: 'error',
+        failureKind: _classifyForwardError(forwardErr),
+        message: _errorToString(forwardErr),
+      })
+    }
   }
   catch (err) {
     const safeId = _sanitizeForLog(id)
