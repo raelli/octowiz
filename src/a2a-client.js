@@ -55,6 +55,8 @@ function parseSseEvents(buffer) {
   const remainder = blocks.pop() // last entry is always the incomplete tail
   const events = []
   for (const block of blocks) {
+    if (!block.trim())
+      continue
     const lines = block.trim().split('\n')
     let event = 'message'
     const dataParts = []
