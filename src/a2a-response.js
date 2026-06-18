@@ -49,8 +49,8 @@ const ALIAS_MAP = Object.freeze([
  * Non-object values are intentionally coerced to `{}` at this normalization
  * boundary to keep downstream consumers on a stable object contract.
  *
- * @param {Record<string, any>|null|undefined} raw - The artifact value parsed
- *   from the Python A2A JSON-RPC response.
+ * @param {unknown} raw - The artifact value parsed from the Python A2A
+ *   JSON-RPC response.
  * @returns {Record<string, any>} A new object with all original fields plus
  *   camelCase aliases for any recognized snake_case fields.
  */
@@ -63,7 +63,7 @@ function normalizeA2AResponse(raw) {
 
   for (const [snakeKey, camelKey] of ALIAS_MAP) {
     // Additive aliasing only; never overwrite an explicitly provided camelCase value.
-    if (result[snakeKey] !== undefined && result[camelKey] === undefined) {
+    if (Object.hasOwn(result, snakeKey) && !Object.hasOwn(result, camelKey)) {
       result[camelKey] = result[snakeKey]
     }
   }
