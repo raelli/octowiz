@@ -55,14 +55,17 @@ function parseSseEvents(buffer) {
   const remainder = blocks.pop() // last entry is always the incomplete tail
   const events = []
   for (const block of blocks) {
-    const lines = block.trim().split('\n')
+    const trimmed = block.trim()
+    if (!trimmed)
+      continue
+    const lines = trimmed.split('\n')
     let event = 'message'
     const dataParts = []
     for (const line of lines) {
-      if (line.startsWith('event: '))
-        event = line.slice(7)
-      if (line.startsWith('data: '))
-        dataParts.push(line.slice(6))
+      if (line.startsWith('event:'))
+        event = line.slice(6).trimStart()
+      if (line.startsWith('data:'))
+        dataParts.push(line.slice(5).trimStart())
     }
     events.push({ event, data: dataParts.join('\n') })
   }
@@ -115,7 +118,7 @@ function _connectSSE(urlStr, headers, onEvent, reconnectMs = 3000, onConnected =
       const nextMs = Math.min(reconnectMs * 2, MAX_RECONNECT_MS)
       logger.error(`[AELLI SSE] HTTP ${res.statusCode} — reconnecting in ${nextMs / 1000}s`)
       res.resume()
-      setTimeout(_connectSSE, nextMs, urlStr, headers, onEvent, nextMs, onConnected)
+      scheduleReconnect(nextMs)
       return
     }
     if (onConnected)
@@ -218,7 +221,7 @@ async function post(eventType, data, { sync = false, timeoutMs = 2000 } = {}) {
   }
 }
 
-// Synchronous routing decision — returns { router, tier, model, workflow } or null (fail-open).
+// Routing decision — returns { router, tier, model, workflow } or null (fail-open).
 //
 // The router endpoint emits an SSE stream terminated by `data: [DONE]`.
 // We use parseSseEvents() for correct multi-line / CRLF handling, skip preamble
