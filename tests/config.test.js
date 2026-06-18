@@ -90,7 +90,7 @@ describe('config', () => {
     })
     it('falls back to the direct dev-advisor URL', () => {
       expect(config.devAdvisorUrl()).toBe('http://localhost:3456/a2a/dev-advisor')
-      expect(config.routerUrl()).toBeNull()
+      expect(config.routerUrl()).toBeUndefined()
     })
     it('honors explicit AELLI_DEV_ADVISOR_URL and AELLI_ROUTER_URL', () => {
       process.env.AELLI_DEV_ADVISOR_URL = 'http://localhost:9999/a2a/dev-advisor'

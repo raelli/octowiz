@@ -87,13 +87,13 @@ function devAdvisorUrl() {
   return env('AELLI_DEV_ADVISOR_URL') || DEFAULTS.AELLI_DEV_ADVISOR_URL
 }
 
-// Returns nullable string: explicit URL, gateway-derived URL, or null when disabled.
+// Returns optional string: explicit URL, gateway-derived URL, or undefined when disabled.
 function routerUrl() {
   const explicit = env('AELLI_ROUTER_URL')
   if (explicit)
     return explicit
   const base = litellmBase()
-  return base ? `${base}/a2a/aelli-router/message/send` : null
+  return base ? `${base}/a2a/aelli-router/message/send` : undefined
 }
 
 // -------------------------------------------------------------- storage ----
