@@ -9,25 +9,52 @@ const VALIDATION_FAILURE_KINDS = Object.freeze({
   COMPILE_ERROR: 'compile-error',
 })
 
-// Checks JavaScript syntax only via Node's vm module.
-// Non-JS content that parses as valid JS is accepted; caller is responsible
-// for any upstream format validation (e.g. JSON.parse before this).
+/**
+ * Validation result for JavaScript syntax checks.
+ *
+ * @typedef {Object} JavaScriptSyntaxValidationResult
+ * @property {boolean} passed - Whether the draft passed syntax validation.
+ * @property {string} [failureKind] - Present when `passed` is false; one of VALIDATION_FAILURE_KINDS.
+ * @property {string} [output] - Human-readable detail about the validation outcome.
+ */
+
+/**
+ * Checks JavaScript syntax only via Node's vm module.
+ * Non-JS content that parses as valid JS is accepted; caller is responsible
+ * for any upstream format validation (e.g. JSON.parse before this).
+ *
+ * @param {string} draft - JavaScript source to validate.
+ * @returns {JavaScriptSyntaxValidationResult}
+ */
 function validateJavaScriptSyntax(draft) {
-  if (typeof draft !== 'string' || draft.trim() === '') {
-    return { passed: false, failureKind: VALIDATION_FAILURE_KINDS.EMPTY_DRAFT, output: 'Draft is empty.' }
+  if (typeof draft !== 'string' || !draft.trim()) {
+    return {
+      passed: false,
+      failureKind: VALIDATION_FAILURE_KINDS.EMPTY_DRAFT,
+      output: 'Draft is empty.',
+    }
   }
 
   try {
-    void new vm.Script(draft)
+    new vm.Script(draft)
     return { passed: true }
   }
   catch (err) {
     // instanceof catches the common case; the name check is the cross-realm fallback.
     if (err instanceof SyntaxError || (err && err.name === 'SyntaxError')) {
-      return { passed: false, failureKind: VALIDATION_FAILURE_KINDS.SYNTAX_ERROR, output: err.message }
+      return {
+        passed: false,
+        failureKind: VALIDATION_FAILURE_KINDS.SYNTAX_ERROR,
+        output: err.message,
+      }
     }
+
     // Non-syntax VM errors (e.g. resource limits) — surface as a distinct failure rather than silently passing.
-    return { passed: false, failureKind: VALIDATION_FAILURE_KINDS.COMPILE_ERROR, output: err instanceof Error ? err.message : 'Compilation failed.' }
+    return {
+      passed: false,
+      failureKind: VALIDATION_FAILURE_KINDS.COMPILE_ERROR,
+      output: err instanceof Error ? err.message : 'Compilation failed.',
+    }
   }
 }
 
