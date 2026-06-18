@@ -177,5 +177,16 @@ describe('config', () => {
       process.env.AELLI_AUTH_TOKEN = 'tok'
       expect(config.configWarnings()).toEqual([])
     })
+    it('warns when OCTOWIZ_INBOUND_SECRET would travel over non-localhost plain HTTP', () => {
+      process.env.OCTOWIZ_INBOUND_SECRET = 'secret'
+      process.env.OCTOWIZ_A2A_URL = 'http://10.0.0.5:8765'
+      const warnings = config.configWarnings()
+      expect(warnings.some(w => w.includes('OCTOWIZ_INBOUND_SECRET'))).toBe(true)
+    })
+    it('does not warn for OCTOWIZ_INBOUND_SECRET on localhost', () => {
+      process.env.OCTOWIZ_INBOUND_SECRET = 'secret'
+      process.env.OCTOWIZ_A2A_URL = 'http://localhost:8765'
+      expect(config.configWarnings()).toEqual([])
+    })
   })
 })

@@ -226,6 +226,16 @@ function configWarnings() {
     }
   }
 
+  const a2aSecret = octowizSecret()
+  if (a2aSecret) {
+    const a2aUrl = a2aServerUrl()
+    if (!a2aUrl.startsWith('https://') && !isLocalhost(a2aUrl)) {
+      warnings.push(
+        '[AELLI A2A] OCTOWIZ_INBOUND_SECRET is set but OCTOWIZ_A2A_URL uses plain HTTP on a non-localhost address. Use HTTPS to protect your secret.',
+      )
+    }
+  }
+
   return warnings
 }
 
