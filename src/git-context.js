@@ -64,8 +64,9 @@ function parseGitStatus(output) {
       .filter(l => l && !l.startsWith('??'))
       .map((l) => {
         const part = l.slice(3).trim()
-        // Rename lines: "R  old.js -> new.js" — keep destination only
-        const arrowIdx = part.indexOf(' -> ')
+        // Rename lines: "R  old.js -> new.js" — keep destination only.
+        // lastIndexOf handles the rare case where the source path itself contains " -> ".
+        const arrowIdx = part.lastIndexOf(' -> ')
         return arrowIdx >= 0 ? part.slice(arrowIdx + 4) : part
       })
       .filter(Boolean),
