@@ -20,9 +20,17 @@ const fs = require('node:fs')
 const path = require('node:path')
 const logger = require('./logger')
 
+function parseAllowedRoots(raw = process.env.OCTOWIZ_ALLOWED_ROOTS || '') {
+  // Intentionally uses ':' not path.delimiter to preserve the infra/Python contract.
+  return raw.split(':').map(r => r.trim()).filter(Boolean)
+}
+
+function normalizeForCompare(p) {
+  return process.platform === 'win32' ? p.toLowerCase() : p
+}
+
 function checkStartup() {
-  const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || ''
-  const roots = raw.split(':').map(r => r.trim()).filter(Boolean)
+  const roots = parseAllowedRoots()
   if (roots.length === 0) {
     logger.error(
       '[policy] Fatal: OCTOWIZ_ALLOWED_ROOTS is not set or empty.\n'
@@ -44,9 +52,10 @@ function validateCwd(cwd) {
     throw new Error(`cwd "${cwd}" does not exist`)
   }
   const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || ''
-  const roots = raw.split(':').map(r => r.trim()).filter(Boolean)
+  const roots = parseAllowedRoots(raw)
   if (roots.length === 0)
     throw new Error('OCTOWIZ_ALLOWED_ROOTS is not set or empty — no paths are allowed')
+  const normalizedCwd = normalizeForCompare(resolved)
   const allowed = roots.some((root) => {
     let resolvedRoot
     try {
@@ -56,7 +65,8 @@ function validateCwd(cwd) {
       logger.warn(`[policy] Root "${root}" could not be resolved and will be ignored. (${err.message || 'unknown error'})`)
       return false
     }
-    return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep)
+    const normalizedRoot = normalizeForCompare(resolvedRoot)
+    return normalizedCwd === normalizedRoot || normalizedCwd.startsWith(normalizedRoot + path.sep)
   })
   if (!allowed) {
     throw new Error(`cwd "${cwd}" is not within an allowed root (OCTOWIZ_ALLOWED_ROOTS=${raw})`)
