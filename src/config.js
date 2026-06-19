@@ -38,6 +38,10 @@ function trimTrailingSlash(url) {
   return url.replace(/\/+$/, '')
 }
 
+function joinUrlPath(base, segment) {
+  return `${trimTrailingSlash(base)}/${String(segment).replace(/^\/+/, '')}`
+}
+
 function isValidHttpUrl(value) {
   try {
     const u = new URL(value)
@@ -63,7 +67,7 @@ function aelliBase() {
 }
 
 function queueUrl() {
-  return `${aelliBase()}/a2a/task-queue`
+  return joinUrlPath(aelliBase(), '/a2a/task-queue')
 }
 
 function authToken() {
@@ -71,6 +75,8 @@ function authToken() {
 }
 
 // Secret for AELLI-inbound calls (task queue claim/result, SSE subscribe).
+// Precedence is intentional: AUTH_TOKEN is canonical and used first;
+// INBOUND_SECRET is a compatibility fallback for direct-secret setups.
 function aelliSecret() {
   return authToken() || env('AELLI_INBOUND_SECRET')
 }
@@ -83,24 +89,28 @@ function litellmBase() {
 function devAdvisorUrl() {
   const base = litellmBase()
   if (base)
-    return `${base}/a2a/aelli-dev-advisor/message/send`
-  return env('AELLI_DEV_ADVISOR_URL') || DEFAULTS.AELLI_DEV_ADVISOR_URL
+    return joinUrlPath(base, '/a2a/aelli-dev-advisor/message/send')
+  return trimTrailingSlash(env('AELLI_DEV_ADVISOR_URL') || DEFAULTS.AELLI_DEV_ADVISOR_URL)
 }
 
 // Returns optional string: explicit URL, gateway-derived URL, or undefined when disabled.
 function routerUrl() {
   const explicit = env('AELLI_ROUTER_URL')
   if (explicit)
-    return explicit
+    return trimTrailingSlash(explicit)
   const base = litellmBase()
-  return base ? `${base}/a2a/aelli-router/message/send` : undefined
+  return base ? joinUrlPath(base, '/a2a/aelli-router/message/send') : undefined
 }
 
 // -------------------------------------------------------------- storage ----
 
 function cacheDir() {
-  return env('AELLI_CACHE_DIR')
-    || path.join(os.homedir(), DEFAULTS.CACHE_SUBDIR, DEFAULTS.CACHE_DIRNAME)
+  const explicit = env('AELLI_CACHE_DIR')
+  if (explicit)
+    return explicit
+
+  const home = os.homedir() || os.tmpdir()
+  return path.join(home, DEFAULTS.CACHE_SUBDIR, DEFAULTS.CACHE_DIRNAME)
 }
 
 function logFile() {
@@ -137,6 +147,7 @@ function a2aTimeoutMs() {
   const dispatchTimeoutSec = Number.isNaN(parsed)
     ? DEFAULTS.DISPATCH_TIMEOUT_SEC
     : Math.max(DEFAULTS.MIN_DISPATCH_TIMEOUT_SEC, parsed)
+
   return dispatchTimeoutSec * 1000 + DEFAULTS.HTTP_TIMEOUT_BUFFER_MS
 }
 
@@ -170,7 +181,7 @@ function a2aServerAuthHeaders() {
 function isLocalhost(urlStr) {
   try {
     const h = new URL(urlStr).hostname
-    return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]'
+    return h === 'localhost' || h === '127.0.0.1' || h === '::1'
   }
   catch {
     return false
@@ -189,6 +200,14 @@ function configWarnings() {
       '[AELLI A2A] AELLI_LITELLM_BASE is set but AELLI_AUTH_TOKEN is missing. '
       + 'All A2A calls through the LiteLLM gateway will get 401 Unauthorized. '
       + 'Set AELLI_AUTH_TOKEN to a valid LiteLLM API key.',
+    )
+  }
+
+  const inboundSecret = env('AELLI_INBOUND_SECRET')
+  if (token && inboundSecret && token !== inboundSecret) {
+    warnings.push(
+      '[AELLI A2A] Both AELLI_AUTH_TOKEN and AELLI_INBOUND_SECRET are set and differ. '
+      + 'aelliSecret() prefers AELLI_AUTH_TOKEN; verify this is intentional.',
     )
   }
 
