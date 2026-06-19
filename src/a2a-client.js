@@ -50,11 +50,14 @@ async function _abortFetch(url, init, timeoutMs) {
 // Pure SSE framing parser. Takes the accumulated buffer string, returns
 // complete events and the leftover partial chunk.
 function parseSseEvents(buffer) {
-  const normalized = buffer.replace(/\r\n/g, '\n')
+  // Normalize CRLF then lone CR — SSE spec allows all three line endings.
+  const normalized = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   const blocks = normalized.split('\n\n')
   const remainder = blocks.pop() // last entry is always the incomplete tail
   const events = []
   for (const block of blocks) {
+    if (!block.trim())
+      continue
     const lines = block.trim().split('\n')
     let event = 'message'
     const dataParts = []
