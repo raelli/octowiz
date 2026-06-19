@@ -51,25 +51,41 @@ function run(args, cwd) {
   }
 }
 
+function contextPath(sessionId) {
+  return path.join(cacheDir(), `git-context-${String(sessionId)}.json`)
+}
+
 // Pure parser for `git status --porcelain` output.
 // Exported so it can be unit-tested without touching the filesystem or git.
 function parseGitStatus(output) {
   if (!output)
     return []
-  const trimmed = output.trimEnd() // trimEnd only — leading spaces carry status codes
-  if (!trimmed)
-    return []
-  return [...new Set(
-    trimmed.split('\n')
-      .filter(l => l && !l.startsWith('??'))
-      .map((l) => {
-        const part = l.slice(3).trim()
-        // Rename lines: "R  old.js -> new.js" — keep destination only
-        const arrowIdx = part.indexOf(' -> ')
-        return arrowIdx >= 0 ? part.slice(arrowIdx + 4) : part
-      })
-      .filter(Boolean),
-  )]
+
+  const lines = output.replace(/\r\n/g, '\n').trimEnd().split('\n')
+  const files = []
+  const seen = new Set()
+
+  for (const line of lines) {
+    if (!line)
+      continue
+    if (line.startsWith('??'))
+      continue
+
+    const rawPath = line.length >= 4 ? line.slice(3).trim() : ''
+    if (!rawPath)
+      continue
+
+    const delim = ' -> '
+    const idx = rawPath.indexOf(delim)
+    const normalizedPath = idx >= 0 ? rawPath.slice(idx + delim.length) : rawPath
+    if (!normalizedPath || seen.has(normalizedPath))
+      continue
+
+    seen.add(normalizedPath)
+    files.push(normalizedPath)
+  }
+
+  return files
 }
 
 function readBranch(repoRoot) {
@@ -84,18 +100,39 @@ function readModifiedFiles(repoRoot) {
   return parseGitStatus(run(['status', '--porcelain'], repoRoot))
 }
 
+function isValidStableContext(value) {
+  return !!value
+    && typeof value === 'object'
+    && typeof value.sessionId === 'string'
+    && (value.repoRoot === null || typeof value.repoRoot === 'string')
+    && (value.repo === null || typeof value.repo === 'string')
+    && typeof value.cwd === 'string'
+}
+
 // Capture the stable git context for a session (repo root + remote) and write
 // it to the cache. Call once at SessionStart.
 function captureContext(sessionId, cwd) {
-  const repoRoot = run(['rev-parse', '--show-toplevel'], cwd)
-  const repo = repoRoot ? run(['remote', 'get-url', 'origin'], repoRoot) : null
-  const ctx = { sessionId, repoRoot, repo, cwd }
+  const stableSessionId = String(sessionId)
+  const stableCwd = String(cwd)
+  const repoRoot = run(['rev-parse', '--show-toplevel'], stableCwd)
+  const repo = repoRoot ? (run(['remote', 'get-url', 'origin'], repoRoot) || null) : null
+
+  const ctx = {
+    sessionId: stableSessionId,
+    repoRoot,
+    repo,
+    cwd: stableCwd,
+  }
+
   const dir = cacheDir()
   fs.mkdirSync(dir, { recursive: true })
-  const tmp = path.join(dir, `git-context-${sessionId}.json.tmp`)
-  const dest = path.join(dir, `git-context-${sessionId}.json`)
+
+  const dest = contextPath(stableSessionId)
+  const tmp = `${dest}.tmp`
+
   fs.writeFileSync(tmp, JSON.stringify(ctx))
-  fs.renameSync(tmp, dest) // atomic on POSIX
+  fs.renameSync(tmp, dest)
+
   return ctx
 }
 
@@ -103,9 +140,8 @@ function captureContext(sessionId, cwd) {
 // Use when you only need repo metadata and want to avoid live git reads.
 function getStableContext(sessionId) {
   try {
-    return JSON.parse(
-      fs.readFileSync(path.join(cacheDir(), `git-context-${sessionId}.json`), 'utf8'),
-    )
+    const parsed = JSON.parse(fs.readFileSync(contextPath(sessionId), 'utf8'))
+    return isValidStableContext(parsed) ? parsed : null
   }
   catch {
     return null
@@ -119,6 +155,7 @@ function getLiveContext(sessionId) {
   const cached = getStableContext(sessionId)
   if (!cached)
     return null
+
   const { repoRoot } = cached
   return {
     branch: readBranch(repoRoot),
@@ -130,15 +167,22 @@ function getLiveContext(sessionId) {
 // Convenience wrapper — safe to call on every hook event.
 // Prefer getStableContext() when only stable fields are needed.
 function getContext(sessionId) {
-  const cached = getStableContext(sessionId)
-  if (!cached)
+  const stable = getStableContext(sessionId)
+  if (!stable)
     return null
-  const { repoRoot } = cached
+
+  const { repoRoot } = stable
   return {
-    ...cached,
-    branch: readBranch(repoRoot),
+    ...stable,
+    branch: readBranch(repoRoot) ?? null,
     modifiedFiles: readModifiedFiles(repoRoot),
   }
 }
 
-module.exports = { captureContext, getStableContext, getLiveContext, getContext, parseGitStatus }
+module.exports = {
+  captureContext,
+  getStableContext,
+  getLiveContext,
+  getContext,
+  parseGitStatus,
+}
