@@ -9,7 +9,7 @@ const RETRY_POLICY = {
     const jitter = Math.random() * 50
     return exponential + jitter
   },
-  isRetryableStatus: (status) => status >= 500,
+  isRetryableStatus: (status) => status === 429 || status >= 500,
 }
 
 function _post(path, body) {
@@ -67,8 +67,6 @@ async function postResult(taskId, leaseToken, result) {
       return false
     }
   }
-
-  return false
 }
 
 module.exports = { claimTask, postResult }
