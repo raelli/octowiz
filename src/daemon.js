@@ -1,4 +1,4 @@
-const crypto = require('crypto')
+const crypto = require('node:crypto')
 const { subscribeToQueue } = require('./a2a-client')
 const { normalizeA2AResponse } = require('./a2a-response')
 const { sendEvent } = require('./a2a-transport')
@@ -33,13 +33,17 @@ function _rpcId() {
 
 function _sanitizeForLog(value, maxLen = 512) {
   const str = typeof value === 'string' ? value : String(value ?? '')
+  // Strip C0 and C1 control characters before logging — intentional control-char range.
+  // eslint-disable-next-line no-control-regex
   const stripped = str.replace(/[\x00-\x1F\x7F-\x9F]/g, ' ')
   return stripped.length > maxLen ? `${stripped.slice(0, maxLen)}…` : stripped
 }
 
 function _errorToString(err) {
-  if (err instanceof Error) return err.message
-  if (typeof err === 'string') return err
+  if (err instanceof Error)
+    return err.message
+  if (typeof err === 'string')
+    return err
   try { return JSON.stringify(err) }
   catch { return String(err ?? 'unknown error') }
 }
@@ -53,7 +57,7 @@ function _clonePayload(rawPayload) {
     try {
       return globalThis.structuredClone(rawPayload)
     }
-    catch (_) {
+    catch {
       // Fall through to JSON-safe clone for non-cloneable values.
     }
   }
@@ -61,7 +65,7 @@ function _clonePayload(rawPayload) {
   try {
     return JSON.parse(JSON.stringify(rawPayload))
   }
-  catch (_) {
+  catch {
     return {}
   }
 }

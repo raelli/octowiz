@@ -9,7 +9,7 @@ const RETRY_POLICY = {
     const jitter = Math.random() * 50
     return exponential + jitter
   },
-  isRetryableStatus: (status) => status === 429 || status >= 500,
+  isRetryableStatus: status => status === 429 || status >= 500,
 }
 
 function _post(path, body) {
@@ -53,7 +53,7 @@ async function postResult(taskId, leaseToken, result) {
       }
 
       logger.error(
-        `[daemon] postResult failed: HTTP ${status}${body?.error ? ` - ${body?.error}` : ''}`
+        `[daemon] postResult failed: HTTP ${status}${body?.error ? ` - ${body?.error}` : ''}`,
       )
       return false
     }
