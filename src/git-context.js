@@ -66,7 +66,9 @@ function parseGitStatus(output) {
         const part = l.slice(3).trim()
         // Rename lines: "R  old.js -> new.js" — keep destination only
         const arrowIdx = part.indexOf(' -> ')
-        return arrowIdx >= 0 ? part.slice(arrowIdx + 4) : part
+        const name = arrowIdx >= 0 ? part.slice(arrowIdx + 4) : part
+        // git --porcelain wraps paths containing spaces or special chars in double quotes
+        return name.startsWith('"') && name.endsWith('"') ? name.slice(1, -1) : name
       })
       .filter(Boolean),
   )]

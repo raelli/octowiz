@@ -31,4 +31,12 @@ describe('parseGitStatus', () => {
     const out = ' M src/a.js\nA  src/b.js\nD  src/c.js\n?? ignored.js'
     expect(parseGitStatus(out)).toEqual(['src/a.js', 'src/b.js', 'src/c.js'])
   })
+
+  it('strips double-quotes from git-quoted filenames containing spaces', () => {
+    expect(parseGitStatus(' M "my file.js"')).toEqual(['my file.js'])
+  })
+
+  it('strips double-quotes from the destination of a quoted rename line', () => {
+    expect(parseGitStatus('R  "old file.js" -> "new file.js"')).toEqual(['new file.js'])
+  })
 })
