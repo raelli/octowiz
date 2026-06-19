@@ -28,7 +28,7 @@ function _rpcId() {
   if (typeof crypto.randomUUID === 'function') {
     return `daemon-${crypto.randomUUID()}`
   }
-  return `daemon-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `daemon-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`
 }
 
 function _sanitizeForLog(value, maxLen = 512) {
@@ -44,25 +44,52 @@ function _errorToString(err) {
   catch (_) { return String(err ?? 'unknown error') }
 }
 
+function _clonePayload(rawPayload) {
+  if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+    return {}
+  }
+
+  if (typeof globalThis.structuredClone === 'function') {
+    try {
+      return globalThis.structuredClone(rawPayload)
+    }
+    catch (_) {
+      // Fall through to JSON-safe clone for non-cloneable values.
+    }
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(rawPayload))
+  }
+  catch (_) {
+    return {}
+  }
+}
+
 /**
  * Forward a capability task to the Python A2A server via JSON-RPC 2.0 and
  * return the artifact object (whatever the Python handler returned).
  *
- * Throws on network errors or non-200 HTTP responses so processTask can catch
- * and postResult with an error.
+ * Throws on network errors or non-200 HTTP responses.
+ * Callers MUST handle rejections (e.g. with try/catch) when using this API.
  */
-function _forwardToA2A(capability, payload) {
-  // The inner event must include `capability` so Python dispatch.py can route
-  // it, plus all payload fields (task, cwd, operation, sessionId, ...).
-  // capability is placed last so a payload.capability field from an untrusted
-  // queue task cannot override the validated outer capability (P2 security fix).
-  return sendEvent(`${config.a2aServerUrl()}/a2a/octowiz`, {
-    method: 'octowiz/event',
-    id: _rpcId(),
-    payload: { ...payload, capability },
-    headers: config.a2aServerAuthHeaders(),
-    timeoutMs: config.a2aTimeoutMs(),
-  })
+async function _forwardToA2A(capability, payload) {
+  try {
+    // capability is placed last so untrusted payload.capability cannot override it.
+    return await sendEvent(`${config.a2aServerUrl()}/a2a/octowiz`, {
+      method: 'octowiz/event',
+      id: _rpcId(),
+      payload: { ...payload, capability },
+      headers: config.a2aServerAuthHeaders(),
+      timeoutMs: config.a2aTimeoutMs(),
+    })
+  }
+  catch (err) {
+    const wrapped = new Error(`A2A forward failed: ${_errorToString(err)}`)
+    wrapped.name = 'A2AForwardError'
+    wrapped.cause = err
+    throw wrapped
+  }
 }
 
 async function processTask(task) {
@@ -72,6 +99,7 @@ async function processTask(task) {
   try {
     if (!task || typeof task !== 'object' || Array.isArray(task)) {
       logger.error('[octowiz - processTask] malformed task: expected object')
+      // NOTE: cannot ack/post result without a valid task id; queue adapter must drop/DLQ malformed envelopes.
       return
     }
 
@@ -80,37 +108,27 @@ async function processTask(task) {
 
     if (typeof id !== 'string' || id.length === 0) {
       logger.error('[octowiz - processTask] malformed task: missing/invalid id')
-      return
-    }
-
-    if (typeof capability !== 'string' || capability.length === 0) {
-      try {
-        const malformedClaim = await claimTask(id)
-        if (!malformedClaim.ok) return
-        await postResult(id, malformedClaim.leaseToken, {
-          status: 'error',
-          message: 'malformed task: missing/invalid capability',
-        })
-      }
-      catch (err) {
-        logger.error(
-          `[octowiz - processTask] failed handling malformed capability for ${_sanitizeForLog(id)}: ${_sanitizeForLog(_errorToString(err))}`,
-        )
-      }
+      // NOTE: cannot claim/post without an id; queue adapter must handle malformed messages.
       return
     }
 
     const claim = await claimTask(id)
     if (!claim.ok) {
-      // 409 = another instance claimed it; silently skip
+      // 409 = another instance claimed it; silently skip.
       return
     }
     leaseToken = claim.leaseToken
 
-    // Avoid mutating the inbound task's payload object.
-    const payload = (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload))
-      ? { ...rawPayload }
-      : {}
+    if (typeof capability !== 'string' || capability.length === 0) {
+      await postResult(id, leaseToken, {
+        status: 'error',
+        failureKind: 'malformed-task',
+        message: 'malformed task: missing/invalid capability',
+      })
+      return
+    }
+
+    const payload = _clonePayload(rawPayload)
 
     if (!KNOWN_CAPABILITIES.has(capability)) {
       await postResult(id, leaseToken, { status: 'error', failureKind: 'unknown-capability', message: `unknown capability: ${_sanitizeForLog(capability, 128)}` })
@@ -146,8 +164,6 @@ async function processTask(task) {
 
     // router.validation-request is handled locally: validate the draft and post
     // the result back so AELLI's onTaskComplete callback resolves the gate.
-    // AELLI_VALIDATOR_PRINCIPAL must match the OCTOWIZ_INBOUND_SECRET value that
-    // this daemon uses when authenticating to AELLI's task queue.
     if (capability === 'router.validation-request') {
       const { workflowTaskId, draft = '' } = payload
       // Validate payload shape before JS syntax check so callers get an explicit
