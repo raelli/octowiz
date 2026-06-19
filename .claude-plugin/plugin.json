@@ -1,7 +1,7 @@
 {
   "name": "octowiz",
   "description": "Octowiz Engineering Agent — Claude Code adapter, A2A bridge, and execution coordinator.",
-  "version": "0.9.21",
+  "version": "0.9.22",
   "author": {
     "name": "IntegraHub",
     "email": "support@integrahub.de"
