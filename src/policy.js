@@ -20,9 +20,13 @@ const fs = require('node:fs')
 const path = require('node:path')
 const logger = require('./logger')
 
-function checkStartup() {
+function parseRoots() {
   const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || ''
-  const roots = raw.split(':').map(r => r.trim()).filter(Boolean)
+  return { raw, roots: raw.split(':').map(r => r.trim()).filter(Boolean) }
+}
+
+function checkStartup() {
+  const { roots } = parseRoots()
   if (roots.length === 0) {
     logger.error(
       '[policy] Fatal: OCTOWIZ_ALLOWED_ROOTS is not set or empty.\n'
@@ -43,8 +47,7 @@ function validateCwd(cwd) {
   catch {
     throw new Error(`cwd "${cwd}" does not exist`)
   }
-  const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || ''
-  const roots = raw.split(':').map(r => r.trim()).filter(Boolean)
+  const { raw, roots } = parseRoots()
   if (roots.length === 0)
     throw new Error('OCTOWIZ_ALLOWED_ROOTS is not set or empty — no paths are allowed')
   const allowed = roots.some((root) => {
