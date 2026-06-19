@@ -27,11 +27,18 @@ const VALIDATION_FAILURE_KINDS = Object.freeze({
  * @returns {JavaScriptSyntaxValidationResult}
  */
 function validateJavaScriptSyntax(draft) {
-  if (typeof draft !== 'string' || !draft.trim()) {
+  if (typeof draft !== 'string') {
     return {
       passed: false,
       failureKind: VALIDATION_FAILURE_KINDS.EMPTY_DRAFT,
-      output: 'Draft is empty.',
+      output: 'Draft must be a string.',
+    }
+  }
+  if (!draft.trim()) {
+    return {
+      passed: false,
+      failureKind: VALIDATION_FAILURE_KINDS.EMPTY_DRAFT,
+      output: 'Draft is empty or whitespace only.',
     }
   }
 
