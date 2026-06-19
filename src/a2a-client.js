@@ -135,7 +135,7 @@ function subscribeToQueue(queueUrl, onTask) {
       if (event === 'task-new' && data) {
         try {
           const task = JSON.parse(data)
-          Promise.resolve(onTask(task)).catch(e =>
+          Promise.resolve().then(() => onTask(task)).catch(e =>
             logger.error('[octowiz] Task processing failed:', e.message),
           )
         }
