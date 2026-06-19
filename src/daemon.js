@@ -41,7 +41,7 @@ function _errorToString(err) {
   if (err instanceof Error) return err.message
   if (typeof err === 'string') return err
   try { return JSON.stringify(err) }
-  catch (_) { return String(err ?? 'unknown error') }
+  catch { return String(err ?? 'unknown error') }
 }
 
 /**
@@ -134,7 +134,7 @@ async function processTask(task) {
       const { sessionId } = payload
       const advisory = payload.advisory ?? {}
       if (!ALLOWED_ADVISORY_TYPES.has(advisory.type)) {
-        await postResult(id, leaseToken, { status: 'error', failureKind: 'unknown-advisory-type', type: advisory.type })
+        await postResult(id, leaseToken, { status: 'error', failureKind: 'unknown-advisory-type', message: `unknown advisory type: ${_sanitizeForLog(advisory.type, 64)}`, type: advisory.type })
         return
       }
       logger.log(
@@ -177,9 +177,9 @@ async function processTask(task) {
     await postResult(id, leaseToken, { ...normalized, status: queueStatus })
   }
   catch (err) {
-    const safeId = _sanitizeForLog(id)
+    const safeId = id ? _sanitizeForLog(id) : ''
     const safeErr = _sanitizeForLog(_errorToString(err))
-    logger.error(`[octowiz - processTask] unhandled error${id ? ` for ${safeId}` : ''}: ${safeErr}`)
+    logger.error(`[octowiz - processTask] unhandled error${safeId ? ` for ${safeId}` : ''}: ${safeErr}`)
 
     if (id && leaseToken) {
       try {
