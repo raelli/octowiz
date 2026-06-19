@@ -48,8 +48,13 @@ class TestBannerToHandleDispatchRoundTrip(unittest.TestCase):
 
     def setUp(self):
         session_owners.clear()
+        # These tests dispatch with cwd="/repo"; pin the allowlist so the path
+        # guard accepts it regardless of the ambient OCTOWIZ_ALLOWED_ROOTS.
+        self._env_patch = patch.dict(os.environ, {"OCTOWIZ_ALLOWED_ROOTS": "/repo"})
+        self._env_patch.start()
 
     def tearDown(self):
+        self._env_patch.stop()
         session_owners.clear()
 
     def _make_fake_run_claude(self, banner, agents_json, logs="task output"):

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "octowiz"
-version = "0.9.20"
+version = "0.9.21"
 description = "Octowiz Engineering Agent — Claude Code plugin, memory cache, and workflow CLI"
 readme = "README.md"
 license = { text = "MIT" }
