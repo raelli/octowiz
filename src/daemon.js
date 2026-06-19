@@ -33,7 +33,7 @@ function _rpcId() {
 
 function _sanitizeForLog(value, maxLen = 512) {
   const str = typeof value === 'string' ? value : String(value ?? '')
-  const stripped = str.replace(/[\x00-\x1F\x7F]/g, ' ')
+  const stripped = str.replace(/[\x00-\x1F\x7F-\x9F]/g, ' ')
   return stripped.length > maxLen ? `${stripped.slice(0, maxLen)}…` : stripped
 }
 
@@ -153,7 +153,12 @@ async function processTask(task) {
       // Validate payload shape before JS syntax check so callers get an explicit
       // error rather than an empty-draft failure for a missing field.
       if (typeof workflowTaskId !== 'string' || typeof draft !== 'string') {
-        await postResult(id, leaseToken, { status: 'completed', workflowTaskId, passed: false, failureKind: 'invalid-payload' })
+        await postResult(id, leaseToken, {
+          status: 'completed',
+          ...(typeof workflowTaskId === 'string' ? { workflowTaskId } : {}),
+          passed: false,
+          failureKind: 'invalid-payload',
+        })
         return
       }
       const validation = validateJavaScriptSyntax(draft)
