@@ -21,6 +21,8 @@
  *     fallback for required fields (e.g. `{ status: "completed" }`).
  *   - Any non-object input (including arrays/primitives/functions) is treated
  *     as malformed for this boundary and normalized to `{}`.
+ *   - Normalization is shallow: the top-level object is copied, but nested
+ *     references (objects/arrays within the payload) are intentionally shared.
  */
 
 /**
@@ -48,6 +50,9 @@ const ALIAS_MAP = Object.freeze([
  *
  * Non-object values are intentionally coerced to `{}` at this normalization
  * boundary to keep downstream consumers on a stable object contract.
+ *
+ * Copy semantics are shallow by design: the returned object is a new top-level
+ * plain object, but nested values are not deep-cloned.
  *
  * @param {unknown} raw - The artifact value parsed from the Python A2A
  *   JSON-RPC response.
