@@ -12,7 +12,7 @@ const VALIDATION_FAILURE_KINDS = Object.freeze({
 /**
  * Validation result for JavaScript syntax checks.
  *
- * @typedef {Object} JavaScriptSyntaxValidationResult
+ * @typedef {object} JavaScriptSyntaxValidationResult
  * @property {boolean} passed - Whether the draft passed syntax validation.
  * @property {string} [failureKind] - Present when `passed` is false; one of VALIDATION_FAILURE_KINDS.
  * @property {string} [output] - Human-readable detail about the validation outcome.
@@ -24,7 +24,7 @@ const VALIDATION_FAILURE_KINDS = Object.freeze({
  * for any upstream format validation (e.g. JSON.parse before this).
  *
  * @param {string} draft - JavaScript source to validate.
- * @returns {JavaScriptSyntaxValidationResult}
+ * @returns {JavaScriptSyntaxValidationResult} Validation result with pass/fail status and optional failure detail.
  */
 function validateJavaScriptSyntax(draft) {
   if (typeof draft !== 'string' || !draft.trim()) {
@@ -36,7 +36,7 @@ function validateJavaScriptSyntax(draft) {
   }
 
   try {
-    new vm.Script(draft)
+    void new vm.Script(draft)
     return { passed: true }
   }
   catch (err) {
