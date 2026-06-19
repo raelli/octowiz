@@ -24,7 +24,13 @@ function _sleep(ms) {
 }
 
 async function claimTask(taskId) {
-  const { status, body } = await _post(`/a2a/task-queue/${taskId}/claim`, {})
+  let status, body
+  try {
+    ({ status, body } = await _post(`/a2a/task-queue/${taskId}/claim`, {}))
+  }
+  catch (err) {
+    return { ok: false, reason: err.message }
+  }
 
   if (status === 200) {
     if (!body || !body.leaseToken)
