@@ -36,7 +36,8 @@ function _sanitizeForLog(value, maxLen = 512) {
   // Strip C0 and C1 control characters before logging — intentional control-char range.
   // eslint-disable-next-line no-control-regex
   const stripped = str.replace(/[\x00-\x1F\x7F-\x9F]/g, ' ')
-  return stripped.length > maxLen ? `${stripped.slice(0, maxLen)}…` : stripped
+  const glyphs = Array.from(stripped)
+  return glyphs.length > maxLen ? `${glyphs.slice(0, maxLen).join('')}…` : stripped
 }
 
 function _errorToString(err) {
@@ -70,6 +71,14 @@ function _clonePayload(rawPayload) {
   }
 }
 
+function _getA2AServerUrl() {
+  const url = config.a2aServerUrl()
+  if (typeof url !== 'string' || url.trim().length === 0) {
+    throw new Error('invalid A2A server URL configuration')
+  }
+  return url
+}
+
 /**
  * Forward a capability task to the Python A2A server via JSON-RPC 2.0 and
  * return the artifact object (whatever the Python handler returned).
@@ -79,8 +88,9 @@ function _clonePayload(rawPayload) {
  */
 async function _forwardToA2A(capability, payload) {
   try {
+    const a2aUrl = _getA2AServerUrl()
     // capability is placed last so untrusted payload.capability cannot override it.
-    return await sendEvent(`${config.a2aServerUrl()}/a2a/octowiz`, {
+    return await sendEvent(`${a2aUrl}/a2a/octowiz`, {
       method: 'octowiz/event',
       id: _rpcId(),
       payload: { ...payload, capability },
@@ -219,6 +229,9 @@ async function processTask(task) {
 
 function start() {
   checkStartup()
+  // Validate early so boot fails fast on misconfiguration.
+  _getA2AServerUrl()
+
   const queueUrl = config.queueUrl()
   subscribeToQueue(queueUrl, processTask)
   logger.log(`[octowiz - startup] subscribed to task queue at ${queueUrl}`)
