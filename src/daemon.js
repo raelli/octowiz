@@ -73,8 +73,15 @@ function _clonePayload(rawPayload) {
 
 function _getA2AServerUrl() {
   const url = config.a2aServerUrl()
-  if (typeof url !== 'string' || url.trim().length === 0) {
-    throw new Error('invalid A2A server URL configuration')
+  let parsed
+  try {
+    parsed = new URL(url)
+  }
+  catch {
+    throw new Error(`invalid A2A server URL: ${url}`)
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`A2A server URL must use http or https (got ${parsed.protocol.slice(0, -1)})`)
   }
   return url
 }
