@@ -164,13 +164,15 @@ function aelliAuthHeaders() {
     : { 'x-aelli-secret': token }
 }
 
-// The task queue (claim/result/subscribe) uses Bearer when routing through
-// the LiteLLM gateway (AELLI_LITELLM_BASE set), x-aelli-secret otherwise.
+// The task queue (claim/result/subscribe) uses Bearer when the queue host
+// is the LiteLLM gateway (AELLI_BASE_URL === AELLI_LITELLM_BASE), and
+// x-aelli-secret when targeting direct AELLI.
 function queueAuthHeaders() {
   const secret = aelliSecret()
   if (!secret)
     return {}
-  return litellmBase()
+  const gateway = litellmBase()
+  return gateway && aelliBase() === gateway
     ? { Authorization: `Bearer ${secret}` }
     : { 'x-aelli-secret': secret }
 }
