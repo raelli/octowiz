@@ -24,16 +24,22 @@ function _sleep(ms) {
 }
 
 async function claimTask(taskId) {
-  const { status, body } = await _post(`/a2a/task-queue/${taskId}/claim`, {})
+  try {
+    const { status, body } = await _post(`/a2a/task-queue/${taskId}/claim`, {})
 
-  if (status === 200) {
-    if (!body?.leaseToken)
-      return { ok: false, reason: 'Malformed response: missing leaseToken' }
+    if (status === 200) {
+      if (!body?.leaseToken)
+        return { ok: false, reason: 'Malformed response: missing leaseToken' }
 
-    return { ok: true, leaseToken: body.leaseToken }
+      return { ok: true, leaseToken: body.leaseToken }
+    }
+
+    return { ok: false, reason: body?.error || `HTTP ${status}` }
   }
-
-  return { ok: false, reason: body?.error || `HTTP ${status}` }
+  catch (err) {
+    logger.error(`[daemon] claimTask failed: ${err.message}`)
+    return { ok: false, reason: err.message }
+  }
 }
 
 async function postResult(taskId, leaseToken, result) {
@@ -53,7 +59,7 @@ async function postResult(taskId, leaseToken, result) {
       }
 
       logger.error(
-        `[daemon] postResult failed: HTTP ${status}${body?.error ? ` - ${body?.error}` : ''}`,
+        `[daemon] postResult failed: HTTP ${status}${body?.error ? ` - ${body.error}` : ''}`,
       )
       return false
     }
@@ -67,6 +73,8 @@ async function postResult(taskId, leaseToken, result) {
       return false
     }
   }
+
+  return false
 }
 
 module.exports = { claimTask, postResult }
