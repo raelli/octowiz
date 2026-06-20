@@ -37,6 +37,7 @@ async function claimTask(taskId) {
     return { ok: false, reason: body?.error || `HTTP ${status}` }
   }
   catch (err) {
+    logger.error(`[daemon] claimTask failed: ${err.message}`)
     return { ok: false, reason: err.message }
   }
 }
