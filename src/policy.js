@@ -9,12 +9,18 @@
 // reach Python or any shell command.
 //
 // apps/a2a-agent/path_guard.py contains a secondary defence-in-depth check.
-// Those two validators MUST stay in sync.  If the logic here changes (separator
+// Those two validators MUST stay in sync. If the logic here changes (separator
 // handling, realpath resolution, allowlist semantics), update path_guard.py as well.
 //
-// path_guard.py (Python side) is kept in sync:
-//   - Roots resolved via os.path.realpath() before comparison (matches realpathSync here).
-//   - Empty/unset OCTOWIZ_ALLOWED_ROOTS raises ValueError (deny-all, matches checkStartup).
+// Sync contract with Python path_guard.py (REQUIRED):
+//   - Split OCTOWIZ_ALLOWED_ROOTS using OS-native separator
+//     (Node: path.delimiter, Python: os.pathsep).
+//   - Resolve cwd and roots via realpath before comparison
+//     (Node: fs.realpathSync, Python: os.path.realpath).
+//   - Empty/unset OCTOWIZ_ALLOWED_ROOTS is deny-all
+//     (checkStartup/process exit here, ValueError there).
+//   - Unresolvable configured roots are ignored for matching, but if all configured
+//     roots are unresolvable, validation must fail with a distinct diagnostic.
 
 const fs = require('node:fs')
 const path = require('node:path')
@@ -22,7 +28,12 @@ const logger = require('./logger')
 
 function parseRoots() {
   const raw = process.env.OCTOWIZ_ALLOWED_ROOTS || ''
-  return { raw, roots: raw.split(':').map(r => r.trim()).filter(Boolean) }
+  const roots = raw
+    .split(path.delimiter)
+    .map(r => r.trim())
+    .filter(Boolean)
+
+  return { raw, roots }
 }
 
 function checkStartup() {
@@ -30,7 +41,7 @@ function checkStartup() {
   if (roots.length === 0) {
     logger.error(
       '[policy] Fatal: OCTOWIZ_ALLOWED_ROOTS is not set or empty.\n'
-      + '  Set it to a colon-separated list of absolute paths the daemon is allowed to operate in.\n'
+      + `  Set it to a ${path.delimiter}-separated list of absolute paths the daemon is allowed to operate in.\n`
       + '  Example: export OCTOWIZ_ALLOWED_ROOTS=/Users/me/Documents/myproject',
     )
     process.exit(1)
@@ -50,10 +61,14 @@ function validateCwd(cwd) {
   const { raw, roots } = parseRoots()
   if (roots.length === 0)
     throw new Error('OCTOWIZ_ALLOWED_ROOTS is not set or empty — no paths are allowed')
+
+  let validRootCount = 0
+
   const allowed = roots.some((root) => {
     let resolvedRoot
     try {
       resolvedRoot = fs.realpathSync(root)
+      validRootCount += 1
     }
     catch (err) {
       logger.warn(`[policy] Root "${root}" could not be resolved and will be ignored. (${err.message || 'unknown error'})`)
@@ -61,9 +76,15 @@ function validateCwd(cwd) {
     }
     return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep)
   })
+
+  if (validRootCount === 0) {
+    throw new Error('OCTOWIZ_ALLOWED_ROOTS is configured but all configured roots are unreachable')
+  }
+
   if (!allowed) {
     throw new Error(`cwd "${cwd}" is not within an allowed root (OCTOWIZ_ALLOWED_ROOTS=${raw})`)
   }
+
   return resolved
 }
 
