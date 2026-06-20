@@ -32,11 +32,15 @@ def validate_cwd(cwd: str) -> str:
     canonical = os.path.realpath(cwd)
     allowed_roots_env = os.environ.get("OCTOWIZ_ALLOWED_ROOTS", "")
     # Match policy.js: empty/unset allowlist is deny-all, not allow-all.
-    roots = [r.strip() for r in allowed_roots_env.split(":") if r.strip()]
+    # Split on the OS-native separator (os.pathsep == ':' on POSIX, ';' on
+    # Windows) to stay in sync with policy.js parseRoots(), which uses
+    # path.delimiter. A hardcoded ':' would mis-split Windows drive-letter
+    # paths the daemon already accepted.
+    roots = [r.strip() for r in allowed_roots_env.split(os.pathsep) if r.strip()]
     if not roots:
         raise ValueError(
             "OCTOWIZ_ALLOWED_ROOTS is not set — all paths denied. "
-            "Set it to a colon-separated list of allowed absolute paths."
+            "Set it to an os.pathsep-separated list of allowed absolute paths."
         )
     # Resolve each root to canonicalize symlinks, matching policy.js fs.realpathSync().
     resolved_roots = []
