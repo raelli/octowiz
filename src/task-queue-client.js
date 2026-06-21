@@ -46,8 +46,8 @@ async function postResult(taskId, leaseToken, result) {
   for (let attempt = 1; attempt <= RETRY_POLICY.maxAttempts; attempt++) {
     try {
       const { status, body } = await _post(`/a2a/task-queue/${taskId}/result`, {
-        leaseToken,
         ...result,
+        leaseToken,
       })
 
       if (status === 200 || status === 409)
