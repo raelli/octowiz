@@ -25,7 +25,7 @@ function _sleep(ms) {
 
 async function claimTask(taskId) {
   try {
-    const { status, body } = await _post(`/a2a/task-queue/${taskId}/claim`, {})
+    const { status, body } = await _post(`/a2a/task-queue/${encodeURIComponent(taskId)}/claim`, {})
 
     if (status === 200) {
       if (!body?.leaseToken)
@@ -45,7 +45,7 @@ async function claimTask(taskId) {
 async function postResult(taskId, leaseToken, result) {
   for (let attempt = 1; attempt <= RETRY_POLICY.maxAttempts; attempt++) {
     try {
-      const { status, body } = await _post(`/a2a/task-queue/${taskId}/result`, {
+      const { status, body } = await _post(`/a2a/task-queue/${encodeURIComponent(taskId)}/result`, {
         ...result,
         leaseToken,
       })
