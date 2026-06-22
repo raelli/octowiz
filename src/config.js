@@ -33,7 +33,7 @@ function env(name) {
   return typeof v === 'string' ? v.trim() : ''
 }
 
-// Expects clean base inputs (no query/hash fragments).
+// Expects callers to pass clean base URLs (no query/hash fragments).
 function trimTrailingSlash(url) {
   return url.replace(/\/+$/, '')
 }
@@ -139,6 +139,7 @@ function octowizSecret() {
 // OCTOWIZ_DISPATCH_TIMEOUT is in *seconds* (matching Python's dispatch.py).
 // The HTTP timeout must exceed the Python ceiling so a POST is never aborted
 // before Python finishes; add a 30 s buffer.
+/** @returns {number} timeout in milliseconds */
 function a2aTimeoutMs() {
   const parsed = Number.parseInt(
     env('OCTOWIZ_DISPATCH_TIMEOUT') || String(DEFAULTS.DISPATCH_TIMEOUT_SEC),
@@ -197,6 +198,7 @@ function isLocalhost(urlStr) {
 
 // Misconfiguration warnings, computed from the same facts production uses.
 // Returns human-readable strings; callers decide where to log them.
+/** @returns {string[]} human-readable misconfiguration warnings */
 function configWarnings() {
   const warnings = []
   const token = authToken()
