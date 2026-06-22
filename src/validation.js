@@ -7,6 +7,13 @@ const vm = require('node:vm')
 // It does not detect source format (e.g., JSON vs JS) and does not execute code.
 // Upstream ingestion should perform any required format parsing/validation first
 // (for example, JSON.parse for JSON payloads) before invoking this validator.
+//
+// NOTE ON COMPILATION BOUNDARIES:
+// `vm.Script` compiles source but does not execute it. This function intentionally
+// does not call `.runInContext()` / `.runInNewContext()`.
+// If strict runtime/resource boundaries are required for broader workflows,
+// enforce size/time limits upstream; non-syntax compilation failures surface as
+// `compile-error` in this API.
 
 // Named failure kinds so callers can branch on constants instead of string literals.
 const VALIDATION_FAILURE_KINDS = Object.freeze({
@@ -23,7 +30,7 @@ const VALIDATION_FAILURE_KINDS = Object.freeze({
  *
  * @typedef {object} JavaScriptSyntaxValidationFailResult
  * @property {false} passed - The draft failed syntax validation.
- * @property {string} failureKind - One of VALIDATION_FAILURE_KINDS.
+ * @property {'empty-draft'|'syntax-error'|'compile-error'} failureKind - Categorical failure identifier.
  * @property {string} [output] - Human-readable detail about the validation outcome.
  *
  * @typedef {JavaScriptSyntaxValidationPassResult | JavaScriptSyntaxValidationFailResult} JavaScriptSyntaxValidationResult
@@ -70,7 +77,7 @@ function validateJavaScriptSyntax(draft) {
       return {
         passed: false,
         failureKind: VALIDATION_FAILURE_KINDS.SYNTAX_ERROR,
-        output: err.message,
+        output: String((err && err.message) || 'Syntax validation failed.'),
       }
     }
 
@@ -78,7 +85,7 @@ function validateJavaScriptSyntax(draft) {
     return {
       passed: false,
       failureKind: VALIDATION_FAILURE_KINDS.COMPILE_ERROR,
-      output: err instanceof Error ? err.message : 'Compilation failed.',
+      output: String((err && err.message) || 'Compilation failed.'),
     }
   }
 }
