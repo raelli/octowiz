@@ -124,10 +124,9 @@ function captureContext(sessionId, cwd) {
     cwd: stableCwd,
   }
 
-  const dir = cacheDir()
-  fs.mkdirSync(dir, { recursive: true })
-
   const dest = contextPath(stableSessionId)
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+
   const tmp = `${dest}.tmp`
 
   fs.writeFileSync(tmp, JSON.stringify(ctx))
@@ -174,7 +173,7 @@ function getContext(sessionId) {
   const { repoRoot } = stable
   return {
     ...stable,
-    branch: readBranch(repoRoot) ?? null,
+    branch: readBranch(repoRoot),
     modifiedFiles: readModifiedFiles(repoRoot),
   }
 }
