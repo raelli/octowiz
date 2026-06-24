@@ -36,6 +36,8 @@ function _sanitizeForLog(value, maxLen = 512) {
   // Strip C0 and C1 control characters before logging — intentional control-char range.
   // eslint-disable-next-line no-control-regex
   const stripped = str.replace(/[\x00-\x1F\x7F-\x9F]/g, ' ')
+  // Code-unit length >= code-point count, so this is a safe early exit for small inputs.
+  if (stripped.length <= maxLen) return stripped
   const glyphs = Array.from(stripped)
   return glyphs.length > maxLen ? `${glyphs.slice(0, maxLen).join('')}…` : stripped
 }
