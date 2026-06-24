@@ -82,7 +82,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    base_url = os.getenv("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/")
+    from .cache import normalize_base_url
+
+    base_url = normalize_base_url(os.getenv("LITELLM_BASE_URL", "http://localhost:4000"))
     admin_api_key = os.getenv("LITELLM_ADMIN_API_KEY")
     api_key = admin_api_key or os.getenv("LITELLM_API_KEY")
 

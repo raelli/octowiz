@@ -25,6 +25,7 @@ from packages.memory_client.cache import (
     hash_bundle,
     hash_memory,
     manifest_is_fresh,
+    normalize_base_url,
     render_bundle,
 )
 
@@ -204,6 +205,54 @@ class TestGetLitellmClient(unittest.TestCase):
                     call_kwargs["headers"]["Authorization"],
                     "Bearer sk-fallback",
                 )
+
+    def test_base_url_trailing_v1_is_stripped(self):
+        """Regression: LITELLM_BASE_URL with a trailing /v1 must not double up."""
+        env = {
+            "LITELLM_API_KEY": "sk-test",
+            "LITELLM_BASE_URL": "https://llm.integrahub.de/v1",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            with patch("httpx.Client") as mock_client_cls:
+                get_litellm_client()
+                call_kwargs = mock_client_cls.call_args.kwargs
+                self.assertEqual(
+                    call_kwargs["base_url"],
+                    "https://llm.integrahub.de",
+                )
+
+
+class TestNormalizeBaseUrl(unittest.TestCase):
+    def test_strips_trailing_v1(self):
+        self.assertEqual(
+            normalize_base_url("https://llm.integrahub.de/v1"),
+            "https://llm.integrahub.de",
+        )
+
+    def test_strips_trailing_v1_with_slash(self):
+        self.assertEqual(
+            normalize_base_url("https://llm.integrahub.de/v1/"),
+            "https://llm.integrahub.de",
+        )
+
+    def test_leaves_bare_root_untouched(self):
+        self.assertEqual(
+            normalize_base_url("http://localhost:4000"),
+            "http://localhost:4000",
+        )
+
+    def test_strips_trailing_slash_only(self):
+        self.assertEqual(
+            normalize_base_url("http://localhost:4000/"),
+            "http://localhost:4000",
+        )
+
+    def test_does_not_strip_v1_in_host(self):
+        # "/v1" only stripped as a trailing path segment, not mid-path
+        self.assertEqual(
+            normalize_base_url("http://v1.example.com/api"),
+            "http://v1.example.com/api",
+        )
 
 
 # ---------------------------------------------------------------------------

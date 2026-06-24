@@ -6,6 +6,8 @@ from urllib.parse import quote
 
 import httpx
 
+from .cache import normalize_base_url
+
 
 def load_project_rules(base_url: str, api_key: str, project_id: str) -> dict:
     """Fetch project rules from LiteLLM Memory: project:{id}:octowiz:rules."""
@@ -20,7 +22,7 @@ def load_role_bundle(base_url: str, api_key: str, role: str, namespace: str) -> 
 
 
 def _fetch(base_url: str, api_key: str, key: str) -> dict:
-    url = f"{base_url.rstrip('/')}/v1/memory/{quote(key, safe=':')}"
+    url = f"{normalize_base_url(base_url)}/v1/memory/{quote(key, safe=':')}"
     response = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"})
     response.raise_for_status()
     data = response.json()

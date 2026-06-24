@@ -23,6 +23,26 @@ import httpx
 
 
 # ---------------------------------------------------------------------------
+# Base URL normalization
+# ---------------------------------------------------------------------------
+
+
+def normalize_base_url(base_url: str) -> str:
+    """Normalize a LiteLLM base URL to the bare proxy root.
+
+    The Memory client always appends ``/v1/memory/...`` itself, so the base URL
+    must NOT already include an API-version suffix. A trailing ``/v1`` (a common
+    misconfiguration in ``LITELLM_BASE_URL``) would otherwise produce a doubled
+    ``/v1/v1/memory/...`` path and silent 404s. This strips trailing slashes and
+    a single trailing ``/v1`` segment so both forms work.
+    """
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/v1"):
+        normalized = normalized[: -len("/v1")]
+    return normalized
+
+
+# ---------------------------------------------------------------------------
 # MemorySource Protocol
 # ---------------------------------------------------------------------------
 
@@ -212,7 +232,9 @@ def get_litellm_client() -> httpx.Client:
 
     Raises RuntimeError with a helpful message if no key is set.
     """
-    base_url = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000").rstrip("/")
+    base_url = normalize_base_url(
+        os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+    )
     api_key = os.environ.get("LITELLM_ADMIN_API_KEY") or os.environ.get("LITELLM_API_KEY")
     if not api_key:
         raise RuntimeError(

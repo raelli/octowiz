@@ -6,6 +6,8 @@ from urllib.parse import quote
 
 import httpx
 
+from .cache import normalize_base_url
+
 
 def write_adr(
     base_url: str,
@@ -27,7 +29,7 @@ def write_adr(
     """
     effective_date = date or str(_date.today())
     key = f"project:{project_id}:octowiz:adr:{effective_date}-{slug}"
-    url = f"{base_url.rstrip('/')}/v1/memory/{quote(key, safe=':')}"
+    url = f"{normalize_base_url(base_url)}/v1/memory/{quote(key, safe=':')}"
     response = httpx.put(
         url,
         json={"content": content},
