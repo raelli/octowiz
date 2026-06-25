@@ -19,7 +19,7 @@ describe('captureContext / getContext', () => {
 
     const loaded = getContext('sess-001')
     expect(loaded).toMatchObject({ sessionId: 'sess-001', cwd: process.cwd() })
-    expect(typeof loaded.branch).toBe('string')
+    expect(typeof loaded.branch === 'string' || loaded.branch === null).toBe(true)
     expect(Array.isArray(loaded.modifiedFiles)).toBe(true)
   })
 

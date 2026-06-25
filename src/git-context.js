@@ -15,8 +15,10 @@
  * Returned by: captureContext() (writes), getStableContext() (reads).
  *
  * @typedef {object} LiveContext
- * @property {string|null} branch        - Current git branch (changes during a session).
- * @property {string[]}    modifiedFiles - Files with staged or unstaged changes (changes often).
+ * @property {string|null} branch        - Current git branch, or null when detached HEAD / unavailable.
+ * @property {string[]}    modifiedFiles - Tracked files with staged or unstaged changes
+ *                                         (untracked `??` files are intentionally excluded).
+ *                                         Order is normalized (sorted) for deterministic output.
  *
  * LiveContext fields are **live**: they are read fresh from git on every call and
  * reflect the current working-tree state.
@@ -39,23 +41,67 @@ const { cacheDir } = require('./config')
 
 function run(args, cwd) {
   try {
-    return execFileSync('git', args, {
+    const out = execFileSync('git', args, {
       cwd,
       encoding: 'utf8',
       timeout: 3000,
       stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim()
+    })
+    return typeof out === 'string' ? out.trim() : null
   }
   catch {
     return null
   }
 }
 
-function contextPath(sessionId) {
-  return path.join(cacheDir(), `git-context-${String(sessionId)}.json`)
+// Strips characters that are unsafe in filenames to prevent path traversal.
+function safeSessionId(sessionId) {
+  return String(sessionId).replace(/[^A-Za-z0-9._-]/g, '_')
 }
 
-// Pure parser for `git status --porcelain` output.
+function contextPath(sessionId) {
+  return path.join(cacheDir(), `git-context-${safeSessionId(sessionId)}.json`)
+}
+
+// Handles git's C-style quoted paths (e.g. paths with spaces or special chars).
+function unquoteGitPath(p) {
+  if (typeof p !== 'string')
+    return ''
+
+  const s = p.trim()
+  if (s.length < 2 || s[0] !== '"' || s[s.length - 1] !== '"')
+    return s
+
+  let out = ''
+  for (let i = 1; i < s.length - 1; i++) {
+    const ch = s[i]
+    if (ch !== '\\') {
+      out += ch
+      continue
+    }
+
+    i++
+    if (i >= s.length - 1)
+      break
+
+    const esc = s[i]
+    switch (esc) {
+      case '"': out += '"'; break
+      case '\\': out += '\\'; break
+      case 'n': out += '\n'; break
+      case 't': out += '\t'; break
+      case 'r': out += '\r'; break
+      case 'b': out += '\b'; break
+      case 'f': out += '\f'; break
+      case 'v': out += '\v'; break
+      default: out += esc; break
+    }
+  }
+
+  return out
+}
+
+// Pure parser for `git status --porcelain=v1` output.
 // Exported so it can be unit-tested without touching the filesystem or git.
 function parseGitStatus(output) {
   if (!output)
@@ -77,7 +123,9 @@ function parseGitStatus(output) {
 
     const delim = ' -> '
     const idx = rawPath.indexOf(delim)
-    const normalizedPath = idx >= 0 ? rawPath.slice(idx + delim.length) : rawPath
+    const candidate = idx >= 0 ? rawPath.slice(idx + delim.length) : rawPath
+    const normalizedPath = unquoteGitPath(candidate)
+
     if (!normalizedPath || seen.has(normalizedPath))
       continue
 
@@ -85,24 +133,32 @@ function parseGitStatus(output) {
     files.push(normalizedPath)
   }
 
+  // Deterministic ordering for stable serialization and testing.
+  files.sort((a, b) => a.localeCompare(b))
   return files
 }
 
 function readBranch(repoRoot) {
   if (!repoRoot)
     return null
-  return run(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot)
+
+  const branch = run(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot)
+  // "HEAD" means detached HEAD state — return null for semantic clarity.
+  if (!branch || branch === 'HEAD')
+    return null
+  return branch
 }
 
 function readModifiedFiles(repoRoot) {
   if (!repoRoot)
     return []
-  return parseGitStatus(run(['status', '--porcelain'], repoRoot))
+  return parseGitStatus(run(['status', '--porcelain=v1'], repoRoot))
 }
 
 function isValidStableContext(value) {
   return !!value
     && typeof value === 'object'
+    && !Array.isArray(value)
     && typeof value.sessionId === 'string'
     && (value.repoRoot === null || typeof value.repoRoot === 'string')
     && (value.repo === null || typeof value.repo === 'string')
@@ -125,12 +181,22 @@ function captureContext(sessionId, cwd) {
   }
 
   const dest = contextPath(stableSessionId)
-  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  const tmp = `${dest}.${process.pid}.${Date.now()}.tmp`
 
-  const tmp = `${dest}.tmp`
-
-  fs.writeFileSync(tmp, JSON.stringify(ctx))
-  fs.renameSync(tmp, dest)
+  try {
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    fs.writeFileSync(tmp, JSON.stringify(ctx))
+    fs.renameSync(tmp, dest)
+  }
+  catch {
+    try {
+      if (fs.existsSync(tmp))
+        fs.unlinkSync(tmp)
+    }
+    catch {
+      // ignore cleanup errors
+    }
+  }
 
   return ctx
 }
@@ -157,7 +223,7 @@ function getLiveContext(sessionId) {
 
   const { repoRoot } = cached
   return {
-    branch: readBranch(repoRoot),
+    branch: readBranch(repoRoot) ?? null,
     modifiedFiles: readModifiedFiles(repoRoot),
   }
 }
