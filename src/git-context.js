@@ -88,6 +88,7 @@ function unquoteGitPath(p) {
     switch (esc) {
       case '"': out += '"'; break
       case '\\': out += '\\'; break
+      case 'a': out += '\x07'; break
       case 'n': out += '\n'; break
       case 't': out += '\t'; break
       case 'r': out += '\r'; break
