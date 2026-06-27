@@ -38,6 +38,20 @@ function trimTrailingSlash(url) {
   return url.replace(/\/+$/, '')
 }
 
+// Returns a stable canonical key for URL equivalence checks (origin + trimmed
+// pathname). Handles protocol-case normalization via URL parser. Returns null
+// when value is not a parseable absolute URL.
+function normalizedUrlKey(value) {
+  try {
+    const u = new URL(value)
+    const normalized = trimTrailingSlash(u.pathname || '/')
+    return `${u.origin}${normalized || ''}`
+  }
+  catch {
+    return null
+  }
+}
+
 function joinUrlPath(base, segment) {
   return `${trimTrailingSlash(base)}/${String(segment).replace(/^\/+/, '')}`
 }
@@ -109,7 +123,7 @@ function cacheDir() {
   if (explicit)
     return explicit
 
-  const home = os.homedir() || os.tmpdir()
+  const home = env('HOME') || os.homedir() || os.tmpdir()
   return path.join(home, DEFAULTS.CACHE_SUBDIR, DEFAULTS.CACHE_DIRNAME)
 }
 
@@ -173,7 +187,10 @@ function queueAuthHeaders() {
   if (!secret)
     return {}
   const gateway = litellmBase()
-  return gateway && aelliBase() === gateway
+  const aelliKey = normalizedUrlKey(aelliBase())
+  const gatewayKey = gateway ? normalizedUrlKey(gateway) : null
+  const sameHost = Boolean(aelliKey && gatewayKey && aelliKey === gatewayKey)
+  return sameHost
     ? { Authorization: `Bearer ${secret}` }
     : { 'x-aelli-secret': secret }
 }
