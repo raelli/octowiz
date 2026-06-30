@@ -68,7 +68,10 @@ function _clonePayload(rawPayload) {
   try {
     return JSON.parse(JSON.stringify(rawPayload))
   }
-  catch {
+  catch (cloneErr) {
+    logger.error(
+      `[octowiz - processTask] payload clone failed, using empty payload: ${_sanitizeForLog(_errorToString(cloneErr))}`,
+    )
     return {}
   }
 }
@@ -86,6 +89,53 @@ function _getA2AServerUrl() {
     throw new Error(`A2A server URL must use http or https (got ${parsed.protocol.slice(0, -1)})`)
   }
   return url
+}
+
+async function _handleObserve(id, leaseToken, payload) {
+  const { sessionId } = payload
+  const advisory = payload.advisory ?? {}
+  if (!ALLOWED_ADVISORY_TYPES.has(advisory.type)) {
+    await postResult(id, leaseToken, {
+      status: 'error',
+      failureKind: 'unknown-advisory-type',
+      message: `unknown advisory type: ${_sanitizeForLog(advisory.type, 64)}`,
+      type: advisory.type,
+    })
+    return
+  }
+  logger.log(
+    `[octowiz - observe] advisory for session ${_sanitizeForLog(sessionId)}: ${_sanitizeForLog(advisory.type)} — ${_sanitizeForLog(advisory.message)}`,
+  )
+  await postResult(id, leaseToken, { status: 'completed', advisory })
+}
+
+async function _handleValidationRequest(id, leaseToken, payload) {
+  const { workflowTaskId, draft } = payload
+  // Validate payload shape before the JS syntax check so callers get an
+  // explicit invalid-payload error rather than an empty-draft failure for a
+  // missing field. (Do not default draft to '' — that would mask a missing one.)
+  if (typeof workflowTaskId !== 'string' || typeof draft !== 'string') {
+    await postResult(id, leaseToken, {
+      status: 'completed',
+      ...(typeof workflowTaskId === 'string' ? { workflowTaskId } : {}),
+      passed: false,
+      failureKind: 'invalid-payload',
+    })
+    return
+  }
+  const validation = validateJavaScriptSyntax(draft)
+  await postResult(id, leaseToken, {
+    status: 'completed',
+    workflowTaskId,
+    passed: validation.passed,
+    ...(validation.failureKind ? { failureKind: validation.failureKind } : {}),
+    ...(validation.output ? { output: validation.output } : {}),
+  })
+}
+
+const _LOCAL_CAPABILITY_HANDLERS = {
+  'octowiz.observe': _handleObserve,
+  'router.validation-request': _handleValidationRequest,
 }
 
 /**
@@ -160,8 +210,10 @@ async function processTask(task) {
 
     // CWD validation is a security boundary that stays in the daemon even though
     // Python also validates cwd. This ensures bad paths are rejected before they
-    // ever leave the trusted JS process.
-    if (payload.cwd) {
+    // ever leave the trusted JS process. Object.hasOwn guards against an
+    // inherited cwd; validateCwd itself rejects non-string/empty values, so a
+    // truthy non-string cwd (e.g. {}) is caught here rather than forwarded.
+    if (Object.hasOwn(payload, 'cwd')) {
       try { payload.cwd = validateCwd(payload.cwd) }
       catch (err) {
         await postResult(id, leaseToken, { status: 'error', message: _errorToString(err) })
@@ -169,45 +221,9 @@ async function processTask(task) {
       }
     }
 
-    // octowiz.observe is handled locally — no A2A forwarding needed.
-    // Log the advisory and echo it back as the artifact.
-    if (capability === 'octowiz.observe') {
-      const { sessionId } = payload
-      const advisory = payload.advisory ?? {}
-      if (!ALLOWED_ADVISORY_TYPES.has(advisory.type)) {
-        await postResult(id, leaseToken, { status: 'error', failureKind: 'unknown-advisory-type', message: `unknown advisory type: ${_sanitizeForLog(advisory.type, 64)}`, type: advisory.type })
-        return
-      }
-      logger.log(
-        `[octowiz - observe] advisory for session ${_sanitizeForLog(sessionId)}: ${_sanitizeForLog(advisory.type)} — ${_sanitizeForLog(advisory.message)}`,
-      )
-      await postResult(id, leaseToken, { status: 'completed', advisory })
-      return
-    }
-
-    // router.validation-request is handled locally: validate the draft and post
-    // the result back so AELLI's onTaskComplete callback resolves the gate.
-    if (capability === 'router.validation-request') {
-      const { workflowTaskId, draft } = payload
-      // Validate payload shape before JS syntax check so callers get an explicit
-      // error rather than an empty-draft failure for a missing field.
-      if (typeof workflowTaskId !== 'string' || typeof draft !== 'string') {
-        await postResult(id, leaseToken, {
-          status: 'completed',
-          ...(typeof workflowTaskId === 'string' ? { workflowTaskId } : {}),
-          passed: false,
-          failureKind: 'invalid-payload',
-        })
-        return
-      }
-      const validation = validateJavaScriptSyntax(draft)
-      await postResult(id, leaseToken, {
-        status: 'completed',
-        workflowTaskId,
-        passed: validation.passed,
-        ...(validation.failureKind ? { failureKind: validation.failureKind } : {}),
-        ...(validation.output ? { output: validation.output } : {}),
-      })
+    const localHandler = _LOCAL_CAPABILITY_HANDLERS[capability]
+    if (localHandler) {
+      await localHandler(id, leaseToken, payload)
       return
     }
 

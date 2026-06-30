@@ -212,6 +212,17 @@ describe('daemon.processTask (forwarding)', () => {
     // No network call needed — rejected before forwarding
   })
 
+  it('posts error when cwd is present but not a string', async () => {
+    // A truthy non-string cwd (e.g. {}) must be rejected locally, not forwarded
+    // — Python's os.path.isabs({}) would raise TypeError → A2A 500 otherwise.
+    await processTask({
+      id: 't3b',
+      capability: 'octowiz.dispatch',
+      payload: { task: 'x', cwd: {} },
+    })
+    expect(postResult).toHaveBeenCalledWith('t3b', 'lt-1', expect.objectContaining({ status: 'error' }))
+  })
+
   it('posts error when A2A server returns non-200', async () => {
     const { server, port } = await mockA2AServer('Unauthorized', 401)
     process.env.OCTOWIZ_A2A_URL = `http://127.0.0.1:${port}`
@@ -444,6 +455,17 @@ describe('daemon.processTask — router.validation-request', () => {
     })
 
     expect(postResult).toHaveBeenCalledWith('t-val-3', 'lt-val', expect.objectContaining({ passed: false, failureKind: 'empty-draft' }))
+  })
+
+  it('fails missing draft — posts failureKind:invalid-payload (not empty-draft)', async () => {
+    // A missing draft is a shape error, distinct from an explicit empty draft.
+    // Guards against re-introducing a `draft = ''` default in the handler.
+    await processTask({
+      id: 't-val-miss',
+      capability: 'router.validation-request',
+      payload: { workflowTaskId: 'wf-miss', task: {} },
+    })
+    expect(postResult).toHaveBeenCalledWith('t-val-miss', 'lt-val', expect.objectContaining({ passed: false, failureKind: 'invalid-payload' }))
   })
   // ── octowiz.observe: artifact type validation ─────────────────────────────
 
