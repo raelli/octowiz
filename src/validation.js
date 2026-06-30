@@ -15,12 +15,29 @@ const vm = require('node:vm')
 // enforce size/time limits upstream; non-syntax compilation failures surface as
 // `compile-error` in this API.
 
+// Defensive ceiling to reduce memory/event-loop risk from unusually large inputs.
+// This is defense-in-depth; upstream should still enforce payload limits.
+const MAX_SOURCE_LENGTH_BYTES = 10 * 1024 * 1024 // 10 MiB
+
+// Bound output size so error payloads remain predictable.
+const MAX_OUTPUT_LENGTH = 512
+
 // Named failure kinds so callers can branch on constants instead of string literals.
 const VALIDATION_FAILURE_KINDS = Object.freeze({
   EMPTY_DRAFT: 'empty-draft',
   SYNTAX_ERROR: 'syntax-error',
   COMPILE_ERROR: 'compile-error',
 })
+
+/**
+ * Safely stringifies and bounds output text.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function safeOutput(value) {
+  return String(value ?? '').slice(0, MAX_OUTPUT_LENGTH)
+}
 
 /**
  * Validation result for JavaScript syntax checks.
@@ -44,11 +61,10 @@ const VALIDATION_FAILURE_KINDS = Object.freeze({
  * Runtime behavior is defensive: non-string input is handled and returned
  * as a structured validation failure rather than throwing.
  *
- * Error detail note: `output` may include raw Node/V8 parser messages.
- * If returning results to untrusted clients, sanitize/truncate `output`
- * in an outer middleware layer.
+ * Error detail note: `output` may include Node/V8 parser messages, but is
+ * truncated to a fixed maximum length.
  *
- * @param {*} draft - Candidate JavaScript source to validate.
+ * @param {unknown} draft - Candidate JavaScript source to validate.
  * @returns {JavaScriptSyntaxValidationResult} Validation result with pass/fail status and optional failure detail.
  */
 function validateJavaScriptSyntax(draft) {
@@ -67,8 +83,16 @@ function validateJavaScriptSyntax(draft) {
     }
   }
 
+  if (Buffer.byteLength(draft, 'utf8') > MAX_SOURCE_LENGTH_BYTES) {
+    return {
+      passed: false,
+      failureKind: VALIDATION_FAILURE_KINDS.COMPILE_ERROR,
+      output: 'Source exceeds compilation size limits.',
+    }
+  }
+
   try {
-    new vm.Script(draft)
+    new vm.Script(draft, { filename: 'draft.js' })
     return { passed: true }
   }
   catch (err) {
@@ -77,7 +101,7 @@ function validateJavaScriptSyntax(draft) {
       return {
         passed: false,
         failureKind: VALIDATION_FAILURE_KINDS.SYNTAX_ERROR,
-        output: String((err && err.message) || 'Syntax validation failed.'),
+        output: safeOutput((err && err.message) || 'Syntax validation failed.'),
       }
     }
 
@@ -85,9 +109,9 @@ function validateJavaScriptSyntax(draft) {
     return {
       passed: false,
       failureKind: VALIDATION_FAILURE_KINDS.COMPILE_ERROR,
-      output: String((err && err.message) || 'Compilation failed.'),
+      output: safeOutput((err && err.message) || 'Compilation failed.'),
     }
   }
 }
 
-module.exports = { validateJavaScriptSyntax, VALIDATION_FAILURE_KINDS }
+module.exports = Object.freeze({ validateJavaScriptSyntax, VALIDATION_FAILURE_KINDS })
