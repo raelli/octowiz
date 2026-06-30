@@ -11,9 +11,32 @@
 //   - aelliBase() → the AELLI A2A host        (local default :3456)
 // When AELLI_BASE_URL is unset they intentionally point at different local
 // ports; when it is set, both follow it.
+//
+// Environment keys used by this module:
+// - AELLI_BASE_URL
+// - AELLI_API_BASE
+// - AELLI_DEV_ADVISOR_URL
+// - AELLI_ROUTER_URL
+// - AELLI_LITELLM_BASE
+// - AELLI_AUTH_TOKEN
+// - AELLI_INBOUND_SECRET
+// - AELLI_CACHE_DIR
+// - OCTOWIZ_A2A_PORT
+// - OCTOWIZ_A2A_URL
+// - OCTOWIZ_INBOUND_SECRET
+// - OCTOWIZ_DISPATCH_TIMEOUT
 
 const os = require('node:os')
 const path = require('node:path')
+
+const VALIDATED_URL_KEYS = [
+  'AELLI_API_BASE',
+  'AELLI_BASE_URL',
+  'AELLI_LITELLM_BASE',
+  'AELLI_DEV_ADVISOR_URL',
+  'AELLI_ROUTER_URL',
+  'OCTOWIZ_A2A_URL',
+]
 
 const DEFAULTS = {
   AELLI_API_BASE: 'http://localhost:3001/api',
@@ -28,6 +51,11 @@ const DEFAULTS = {
   MIN_DISPATCH_TIMEOUT_SEC: 1,
 }
 
+/**
+ * Read and trim an environment variable.
+ * @param {string} name environment variable key
+ * @returns {string} trimmed value or empty string when unset/non-string
+ */
 function env(name) {
   const v = process.env[name]
   return typeof v === 'string' ? v.trim() : ''
@@ -38,6 +66,12 @@ function trimTrailingSlash(url) {
   return url.replace(/\/+$/, '')
 }
 
+/**
+ * Join a base URL and path segment with exactly one slash.
+ * @param {string} base absolute base URL
+ * @param {string} segment path segment (with or without leading slash)
+ * @returns {string}
+ */
 function joinUrlPath(base, segment) {
   return `${trimTrailingSlash(base)}/${String(segment).replace(/^\/+/, '')}`
 }
@@ -49,6 +83,19 @@ function isValidHttpUrl(value) {
   }
   catch {
     return false
+  }
+}
+
+// Canonical comparison key for a base URL: lowercase origin (scheme/host are
+// case-insensitive) but keep the path (case-sensitive, and the thing that
+// distinguishes a reverse-proxy's /aelli from /litellm). Trailing slash trimmed.
+function normalizedBase(urlStr) {
+  try {
+    const u = new URL(urlStr)
+    return u.origin.toLowerCase() + trimTrailingSlash(u.pathname)
+  }
+  catch {
+    return ''
   }
 }
 
@@ -139,7 +186,7 @@ function octowizSecret() {
 // OCTOWIZ_DISPATCH_TIMEOUT is in *seconds* (matching Python's dispatch.py).
 // The HTTP timeout must exceed the Python ceiling so a POST is never aborted
 // before Python finishes; add a 30 s buffer.
-/** @returns {number} timeout in milliseconds */
+/** @returns {number} timeout in milliseconds (dispatch seconds + buffer) */
 function a2aTimeoutMs() {
   const parsed = Number.parseInt(
     env('OCTOWIZ_DISPATCH_TIMEOUT') || String(DEFAULTS.DISPATCH_TIMEOUT_SEC),
@@ -173,7 +220,10 @@ function queueAuthHeaders() {
   if (!secret)
     return {}
   const gateway = litellmBase()
-  return gateway && aelliBase() === gateway
+  const useBearer = gateway
+    && normalizedBase(aelliBase()) !== ''
+    && normalizedBase(aelliBase()) === normalizedBase(gateway)
+  return useBearer
     ? { Authorization: `Bearer ${secret}` }
     : { 'x-aelli-secret': secret }
 }
@@ -220,16 +270,8 @@ function configWarnings() {
     )
   }
 
-  const explicitUrls = [
-    ['AELLI_API_BASE', env('AELLI_API_BASE')],
-    ['AELLI_BASE_URL', env('AELLI_BASE_URL')],
-    ['AELLI_LITELLM_BASE', env('AELLI_LITELLM_BASE')],
-    ['AELLI_DEV_ADVISOR_URL', env('AELLI_DEV_ADVISOR_URL')],
-    ['AELLI_ROUTER_URL', env('AELLI_ROUTER_URL')],
-    ['OCTOWIZ_A2A_URL', env('OCTOWIZ_A2A_URL')],
-  ]
-
-  for (const [name, value] of explicitUrls) {
+  for (const name of VALIDATED_URL_KEYS) {
+    const value = env(name)
     if (value && !isValidHttpUrl(value)) {
       warnings.push(
         `[AELLI A2A] ${name} is set but is not a valid absolute http(s) URL: "${value}".`,

@@ -456,6 +456,17 @@ describe('daemon.processTask — router.validation-request', () => {
 
     expect(postResult).toHaveBeenCalledWith('t-val-3', 'lt-val', expect.objectContaining({ passed: false, failureKind: 'empty-draft' }))
   })
+
+  it('fails missing draft — posts failureKind:invalid-payload (not empty-draft)', async () => {
+    // A missing draft is a shape error, distinct from an explicit empty draft.
+    // Guards against re-introducing a `draft = ''` default in the handler.
+    await processTask({
+      id: 't-val-miss',
+      capability: 'router.validation-request',
+      payload: { workflowTaskId: 'wf-miss', task: {} },
+    })
+    expect(postResult).toHaveBeenCalledWith('t-val-miss', 'lt-val', expect.objectContaining({ passed: false, failureKind: 'invalid-payload' }))
+  })
   // ── octowiz.observe: artifact type validation ─────────────────────────────
 
   it('rejects advisory with unknown type', async () => {

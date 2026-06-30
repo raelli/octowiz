@@ -110,7 +110,10 @@ async function _handleObserve(id, leaseToken, payload) {
 }
 
 async function _handleValidationRequest(id, leaseToken, payload) {
-  const { workflowTaskId, draft = '' } = payload
+  const { workflowTaskId, draft } = payload
+  // Validate payload shape before the JS syntax check so callers get an
+  // explicit invalid-payload error rather than an empty-draft failure for a
+  // missing field. (Do not default draft to '' — that would mask a missing one.)
   if (typeof workflowTaskId !== 'string' || typeof draft !== 'string') {
     await postResult(id, leaseToken, {
       status: 'completed',
@@ -207,10 +210,10 @@ async function processTask(task) {
 
     // CWD validation is a security boundary that stays in the daemon even though
     // Python also validates cwd. This ensures bad paths are rejected before they
-    // ever leave the trusted JS process. hasOwnProperty guards against an
+    // ever leave the trusted JS process. Object.hasOwn guards against an
     // inherited cwd; validateCwd itself rejects non-string/empty values, so a
     // truthy non-string cwd (e.g. {}) is caught here rather than forwarded.
-    if (Object.prototype.hasOwnProperty.call(payload, 'cwd')) {
+    if (Object.hasOwn(payload, 'cwd')) {
       try { payload.cwd = validateCwd(payload.cwd) }
       catch (err) {
         await postResult(id, leaseToken, { status: 'error', message: _errorToString(err) })

@@ -30,8 +30,10 @@ function _sleep(ms) {
  *   { ok: false, reason }
  */
 async function claimTask(taskId) {
-  if (!taskId)
+  if (!taskId) {
+    logger.error('[daemon] claimTask validation failed: taskId is required')
     return { ok: false, reason: 'taskId is required' }
+  }
 
   try {
     const { status, body } = await _post(`/a2a/task-queue/${encodeURIComponent(taskId)}/claim`, {})
@@ -87,8 +89,9 @@ async function postResult(taskId, leaseToken, result) {
         continue
       }
 
+      const afterRetries = RETRY_POLICY.isRetryableStatus(status) ? ' after retries' : ''
       logger.error(
-        `[daemon] postResult failed: HTTP ${status}${body?.error ? ` - ${body.error}` : ''}`,
+        `[daemon] postResult failed${afterRetries}: HTTP ${status}${body?.error ? ` - ${body.error}` : ''}`,
       )
       return false
     }
