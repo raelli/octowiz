@@ -151,6 +151,18 @@ describe('config', () => {
       process.env.AELLI_INBOUND_SECRET = 'inbound'
       expect(config.queueAuthHeaders()).toEqual({ 'x-aelli-secret': 'inbound' })
     })
+    it('queueAuthHeaders uses Bearer when AELLI base and gateway are the same endpoint', () => {
+      process.env.AELLI_INBOUND_SECRET = 'inbound'
+      process.env.AELLI_BASE_URL = 'https://llm.example.com'
+      process.env.AELLI_LITELLM_BASE = 'https://llm.example.com'
+      expect(config.queueAuthHeaders()).toEqual({ Authorization: 'Bearer inbound' })
+    })
+    it('queueAuthHeaders keeps x-aelli-secret when host matches but path prefix differs', () => {
+      process.env.AELLI_INBOUND_SECRET = 'inbound'
+      process.env.AELLI_BASE_URL = 'https://proxy.example.com/aelli'
+      process.env.AELLI_LITELLM_BASE = 'https://proxy.example.com/litellm'
+      expect(config.queueAuthHeaders()).toEqual({ 'x-aelli-secret': 'inbound' })
+    })
     it('a2aServerAuthHeaders uses x-octowiz-secret', () => {
       process.env.OCTOWIZ_INBOUND_SECRET = 's'
       expect(config.a2aServerAuthHeaders()).toEqual({ 'x-octowiz-secret': 's' })
