@@ -10,6 +10,12 @@ describe('parseGitStatus', () => {
     expect(parseGitStatus('R  src/old.js -> src/new.js')).toEqual(['src/new.js'])
   })
 
+  it('splits a rename whose old side ends in a literal backslash', () => {
+    // git quotes "old\" as "old\\" — the closing quote follows an even (2) run
+    // of backslashes, so it must still terminate the quoted segment.
+    expect(parseGitStatus('R  "old\\\\" -> new')).toEqual(['new'])
+  })
+
   it('excludes untracked files (lines starting with ??)', () => {
     expect(parseGitStatus('?? untracked.js\n M tracked.js')).toEqual(['tracked.js'])
   })

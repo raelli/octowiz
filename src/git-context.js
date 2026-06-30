@@ -108,8 +108,15 @@ function splitRenamePath(rawPath) {
   let inQuotes = false
   for (let i = 0; i <= rawPath.length - 4; i++) {
     const ch = rawPath[i]
-    if (ch === '"' && (i === 0 || rawPath[i - 1] !== '\\'))
-      inQuotes = !inQuotes
+    if (ch === '"') {
+      // A quote is escaped only when preceded by an ODD run of backslashes;
+      // an even run (e.g. "old\\") is an escaped backslash + a real quote.
+      let backslashes = 0
+      for (let j = i - 1; j >= 0 && rawPath[j] === '\\'; j--)
+        backslashes++
+      if (backslashes % 2 === 0)
+        inQuotes = !inQuotes
+    }
     if (!inQuotes && rawPath.slice(i, i + 4) === ' -> ')
       return [rawPath.slice(0, i), rawPath.slice(i + 4)]
   }
