@@ -188,7 +188,7 @@ async function processTask(task) {
     // router.validation-request is handled locally: validate the draft and post
     // the result back so AELLI's onTaskComplete callback resolves the gate.
     if (capability === 'router.validation-request') {
-      const { workflowTaskId, draft = '' } = payload
+      const { workflowTaskId, draft } = payload
       // Validate payload shape before JS syntax check so callers get an explicit
       // error rather than an empty-draft failure for a missing field.
       if (typeof workflowTaskId !== 'string' || typeof draft !== 'string') {
