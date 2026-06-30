@@ -207,8 +207,10 @@ async function processTask(task) {
 
     // CWD validation is a security boundary that stays in the daemon even though
     // Python also validates cwd. This ensures bad paths are rejected before they
-    // ever leave the trusted JS process.
-    if (Object.prototype.hasOwnProperty.call(payload, 'cwd') && typeof payload.cwd === 'string') {
+    // ever leave the trusted JS process. hasOwnProperty guards against an
+    // inherited cwd; validateCwd itself rejects non-string/empty values, so a
+    // truthy non-string cwd (e.g. {}) is caught here rather than forwarded.
+    if (Object.prototype.hasOwnProperty.call(payload, 'cwd')) {
       try { payload.cwd = validateCwd(payload.cwd) }
       catch (err) {
         await postResult(id, leaseToken, { status: 'error', message: _errorToString(err) })

@@ -212,6 +212,17 @@ describe('daemon.processTask (forwarding)', () => {
     // No network call needed — rejected before forwarding
   })
 
+  it('posts error when cwd is present but not a string', async () => {
+    // A truthy non-string cwd (e.g. {}) must be rejected locally, not forwarded
+    // — Python's os.path.isabs({}) would raise TypeError → A2A 500 otherwise.
+    await processTask({
+      id: 't3b',
+      capability: 'octowiz.dispatch',
+      payload: { task: 'x', cwd: {} },
+    })
+    expect(postResult).toHaveBeenCalledWith('t3b', 'lt-1', expect.objectContaining({ status: 'error' }))
+  })
+
   it('posts error when A2A server returns non-200', async () => {
     const { server, port } = await mockA2AServer('Unauthorized', 401)
     process.env.OCTOWIZ_A2A_URL = `http://127.0.0.1:${port}`
