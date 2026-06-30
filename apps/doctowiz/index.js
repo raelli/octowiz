@@ -33,6 +33,7 @@ const BRIDGE_PY = path.join(
 const CACHE_DIR = config.cacheDir()
 const LOG_FILE = config.logFile()
 const DAEMON_LOG = path.join(CACHE_DIR, 'octowiz-daemon.log')
+const DAEMON_ERR_LOG = path.join(CACHE_DIR, 'octowiz-daemon-err.log')
 
 const NODE_PORT = 3456
 const A2A_PORT = config.a2aPort()
@@ -146,14 +147,16 @@ function runBridge(event) {
 // ── Phase 1: Processes ────────────────────────────────────────────────────────
 
 function checkProcesses() {
-  // Daemon
-  const daemonLines = psLines('octowiz/index.js')
-  if (daemonLines.length) {
-    const pid = daemonLines[0].trim().split(/\s+/)[1]
-    addCheck('process', 'Octowiz daemon', PASS, `PID ${pid}`)
+  // Daemon — runs as launchd service (0.9.4+); check via launchctl, not ps
+  const lctl = spawnSync('launchctl', ['list', 'de.integrahub.octowiz-daemon'], { encoding: 'utf8', timeout: 3000 })
+  const lctlOut = lctl.stdout || ''
+  const daemonPid = (lctlOut.match(/"PID"\s*=\s*(\d+)/) || [])[1]
+  if (daemonPid) {
+    addCheck('process', 'Octowiz daemon', PASS, `PID ${daemonPid} (launchd service)`)
   }
   else {
-    addCheck('process', 'Octowiz daemon', FAIL, 'Not running — start: node ~/Documents/octowiz/index.js')
+    const exitCode = (lctlOut.match(/"LastExitStatus"\s*=\s*(\d+)/) || [])[1] || 'unknown'
+    addCheck('process', 'Octowiz daemon', FAIL, `launchd service not running (LastExitStatus=${exitCode}) — run: launchctl load ~/Library/LaunchAgents/de.integrahub.octowiz-daemon.plist`)
   }
 
   // AELLI Node — may be local or remote (Docker on integra42).
@@ -236,6 +239,9 @@ async function checkEndpoints() {
     }
     else if (r.status === 401 || r.status === 403) {
       addCheck('endpoint', 'AELLI Node (remote)', WARN, `${aeBaseUrl}/health → HTTP ${r.status} — reachable but auth token may be wrong`)
+    }
+    else if (r.status === null) {
+      addCheck('endpoint', 'AELLI Node (remote)', WARN, `${aeBaseUrl}/health unreachable (${r.error || 'no response'}) — LiteLLM delivery route is authoritative`)
     }
     else {
       addCheck('endpoint', 'AELLI Node (remote)', FAIL, `${aeBaseUrl}/health → HTTP ${r.status}`)
@@ -405,23 +411,22 @@ function checkLogs() {
     )
   }
 
-  // Daemon log
-  if (fs.existsSync(DAEMON_LOG)) {
-    const dlog = fs.readFileSync(DAEMON_LOG, 'utf8')
-    if (dlog.includes('Daemon subscribed')) {
-      const m = dlog.match(/subscribed to ([^\n]+)/)
-      addCheck('logs', 'Daemon log', PASS, `Subscribed to ${(m ? m[1] : 'task queue').trim()}`,
-      )
-    }
-    else if (dlog.includes('daemon ready')) {
-      addCheck('logs', 'Daemon log', WARN, 'Ready — subscription line not found')
-    }
-    else {
-      addCheck('logs', 'Daemon log', WARN, 'Unexpected content')
-    }
+  // Daemon log — runtime output (subscription, tasks) goes to stderr log; stdout only has plugin-ready
+  const daemonErrLog = fs.existsSync(DAEMON_ERR_LOG) ? fs.readFileSync(DAEMON_ERR_LOG, 'utf8') : ''
+  const daemonStdLog = fs.existsSync(DAEMON_LOG) ? fs.readFileSync(DAEMON_LOG, 'utf8') : ''
+  const daemonCombined = daemonErrLog + daemonStdLog
+  if (daemonCombined.includes('Daemon subscribed') || daemonCombined.includes('subscribed to task queue')) {
+    const m = daemonCombined.match(/subscribed to ([^\n]+)/)
+    addCheck('logs', 'Daemon log', PASS, `Subscribed to ${(m ? m[1] : 'task queue').trim()}`)
+  }
+  else if (daemonCombined.includes('daemon ready') || daemonCombined.includes('plugin-ready')) {
+    addCheck('logs', 'Daemon log', WARN, 'Ready — subscription line not found')
+  }
+  else if (daemonCombined.length === 0) {
+    addCheck('logs', 'Daemon log', WARN, 'No log files found — daemon may not be running')
   }
   else {
-    addCheck('logs', 'Daemon log', WARN, 'Not found at /private/tmp/octowiz-daemon.log — daemon may not be running')
+    addCheck('logs', 'Daemon log', WARN, 'Unexpected content')
   }
 }
 
