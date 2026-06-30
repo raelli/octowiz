@@ -63,13 +63,7 @@ function contextPath(sessionId) {
   return path.join(cacheDir(), `git-context-${safeSessionId(sessionId)}.json`)
 }
 
-// Decodes a byte array as UTF-8; used for octal-escaped sequences in git paths.
-function decodeBytes(bytes) {
-  return Buffer.from(bytes).toString('utf8')
-}
-
-// Handles git's C-style quoted paths (e.g. paths with spaces or special chars),
-// including octal byte escapes (\NNN) used for non-ASCII filenames.
+// Handles git's C-style quoted paths (e.g. paths with spaces or special chars).
 function unquoteGitPath(p) {
   if (typeof p !== 'string')
     return ''
@@ -79,52 +73,21 @@ function unquoteGitPath(p) {
     return s
 
   let out = ''
-  const bytes = []
-
-  const flushBytes = () => {
-    if (bytes.length === 0)
-      return
-    out += decodeBytes(bytes)
-    bytes.length = 0
-  }
-
   for (let i = 1; i < s.length - 1; i++) {
     const ch = s[i]
     if (ch !== '\\') {
-      flushBytes()
       out += ch
       continue
     }
 
     i++
-    if (i >= s.length - 1) {
-      flushBytes()
+    if (i >= s.length - 1)
       break
-    }
 
     const esc = s[i]
-
-    // Octal escape: up to 3 octal digits, used by git for raw non-ASCII bytes.
-    if (esc >= '0' && esc <= '7') {
-      let oct = esc
-      let consumed = 0
-      while (consumed < 2 && i + 1 < s.length - 1) {
-        const next = s[i + 1]
-        if (next < '0' || next > '7')
-          break
-        i++
-        oct += next
-        consumed++
-      }
-      bytes.push(parseInt(oct, 8) & 0xFF)
-      continue
-    }
-
-    flushBytes()
     switch (esc) {
       case '"': out += '"'; break
       case '\\': out += '\\'; break
-      case 'a': out += '\x07'; break
       case 'n': out += '\n'; break
       case 't': out += '\t'; break
       case 'r': out += '\r'; break
@@ -135,7 +98,6 @@ function unquoteGitPath(p) {
     }
   }
 
-  flushBytes()
   return out
 }
 
@@ -171,8 +133,8 @@ function parseGitStatus(output) {
     files.push(normalizedPath)
   }
 
-  // Deterministic ordering across environments and locales.
-  files.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  // Deterministic ordering for stable serialization and testing.
+  files.sort((a, b) => a.localeCompare(b))
   return files
 }
 
@@ -277,7 +239,7 @@ function getContext(sessionId) {
   const { repoRoot } = stable
   return {
     ...stable,
-    branch: readBranch(repoRoot) ?? null,
+    branch: readBranch(repoRoot),
     modifiedFiles: readModifiedFiles(repoRoot),
   }
 }

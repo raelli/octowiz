@@ -63,7 +63,7 @@ function env(name) {
 
 // Expects callers to pass clean base URLs (no query/hash fragments).
 function trimTrailingSlash(url) {
-  return url.replace(/\/+$/, '')
+  return String(url || '').replace(/\/+$/, '')
 }
 
 /**
@@ -86,17 +86,37 @@ function isValidHttpUrl(value) {
   }
 }
 
-// Canonical comparison key for a base URL: lowercase origin (scheme/host are
-// case-insensitive) but keep the path (case-sensitive, and the thing that
-// distinguishes a reverse-proxy's /aelli from /litellm). Trailing slash trimmed.
-function normalizedBase(urlStr) {
+// Returns a normalised form (default ports stripped, trailing slashes removed,
+// hash/search dropped) so semantically identical URLs compare equal as strings.
+// The pathname is preserved (case-sensitive) so a reverse-proxy's /aelli and
+// /litellm mounts on the same host stay distinct.
+function canonicalHttpUrl(value) {
   try {
-    const u = new URL(urlStr)
-    return u.origin.toLowerCase() + trimTrailingSlash(u.pathname)
+    const u = new URL(value)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:')
+      return undefined
+    u.hash = ''
+    u.search = ''
+    const isDefaultPort = (u.protocol === 'http:' && u.port === '80')
+      || (u.protocol === 'https:' && u.port === '443')
+    if (isDefaultPort)
+      u.port = ''
+    u.pathname = trimTrailingSlash(u.pathname || '/')
+    return u.href
   }
   catch {
-    return ''
+    return undefined
   }
+}
+
+function areUrlsEquivalent(a, b) {
+  const ca = canonicalHttpUrl(a)
+  const cb = canonicalHttpUrl(b)
+  return Boolean(ca && cb && ca === cb)
+}
+
+function sanitizeHeaderValue(value) {
+  return String(value).replace(/[\r\n\t]/g, '')
 }
 
 // ---------------------------------------------------------------- AELLI ----
@@ -167,8 +187,13 @@ function logFile() {
 // ------------------------------------------------- Python A2A server -------
 
 function a2aPort() {
-  const parsed = Number.parseInt(env('OCTOWIZ_A2A_PORT') || String(DEFAULTS.A2A_PORT), 10)
-  // valid user-space TCP range; fallback on invalid or out-of-range input
+  const raw = env('OCTOWIZ_A2A_PORT')
+  if (!raw)
+    return DEFAULTS.A2A_PORT
+  // Reject non-numeric or clearly out-of-range strings before parsing
+  if (!/^\d{1,5}$/.test(raw))
+    return DEFAULTS.A2A_PORT
+  const parsed = Number(raw)
   return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : DEFAULTS.A2A_PORT
 }
 
@@ -207,9 +232,10 @@ function aelliAuthHeaders() {
   const token = authToken()
   if (!token)
     return {}
+  const safe = sanitizeHeaderValue(token)
   return litellmBase()
-    ? { Authorization: `Bearer ${token}` }
-    : { 'x-aelli-secret': token }
+    ? { Authorization: `Bearer ${safe}` }
+    : { 'x-aelli-secret': safe }
 }
 
 // The task queue (claim/result/subscribe) uses Bearer when the queue host
@@ -220,25 +246,28 @@ function queueAuthHeaders() {
   if (!secret)
     return {}
   const gateway = litellmBase()
-  const useBearer = gateway
-    && normalizedBase(aelliBase()) !== ''
-    && normalizedBase(aelliBase()) === normalizedBase(gateway)
-  return useBearer
-    ? { Authorization: `Bearer ${secret}` }
-    : { 'x-aelli-secret': secret }
+  const safe = sanitizeHeaderValue(secret)
+  // areUrlsEquivalent handles semantically equal URLs that differ in default
+  // port or normalisation (e.g. example.com:443 vs example.com), while keeping
+  // distinct reverse-proxy path mounts (/aelli vs /litellm) separate.
+  return gateway && areUrlsEquivalent(aelliBase(), gateway)
+    ? { Authorization: `Bearer ${safe}` }
+    : { 'x-aelli-secret': safe }
 }
 
 // The Python A2A server authenticates via x-octowiz-secret when set.
 function a2aServerAuthHeaders() {
   const secret = octowizSecret()
-  return secret ? { 'x-octowiz-secret': secret } : {}
+  return secret ? { 'x-octowiz-secret': sanitizeHeaderValue(secret) } : {}
 }
 
 // ---------------------------------------------------------- diagnostics ----
 
 function isLocalhost(urlStr) {
   try {
-    const h = new URL(urlStr).hostname
+    // Node's URL parser includes brackets in the hostname for IPv6 literals
+    // (e.g. "[::1]"), so strip them before comparing.
+    const h = new URL(urlStr).hostname.replace(/^\[|\]$/g, '')
     return h === 'localhost' || h === '127.0.0.1' || h === '::1'
   }
   catch {
