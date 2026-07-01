@@ -116,7 +116,7 @@ function areUrlsEquivalent(a, b) {
 }
 
 function sanitizeHeaderValue(value) {
-  return String(value).replace(/[\r\n\t]/g, '')
+  return String(value).replace(/[\r\n\t\0]/g, '')
 }
 
 // ---------------------------------------------------------------- AELLI ----
