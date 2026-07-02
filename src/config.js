@@ -49,6 +49,7 @@ const DEFAULTS = {
   DISPATCH_TIMEOUT_SEC: 600,
   HTTP_TIMEOUT_BUFFER_MS: 30_000,
   MIN_DISPATCH_TIMEOUT_SEC: 1,
+  MAX_DISPATCH_TIMEOUT_SEC: 86_400,
 }
 
 /**
@@ -101,7 +102,7 @@ function canonicalHttpUrl(value) {
       || (u.protocol === 'https:' && u.port === '443')
     if (isDefaultPort)
       u.port = ''
-    u.pathname = trimTrailingSlash(u.pathname || '/')
+    u.pathname = trimTrailingSlash(u.pathname || '/') || '/'
     return u.href
   }
   catch {
@@ -116,7 +117,7 @@ function areUrlsEquivalent(a, b) {
 }
 
 function sanitizeHeaderValue(value) {
-  return String(value).replace(/[\r\n\t\0]/g, '')
+  return String(value).trim().replace(/[\r\n\t\0]/g, '')
 }
 
 // ---------------------------------------------------------------- AELLI ----
@@ -217,9 +218,10 @@ function a2aTimeoutMs() {
     env('OCTOWIZ_DISPATCH_TIMEOUT') || String(DEFAULTS.DISPATCH_TIMEOUT_SEC),
     10,
   )
-  const dispatchTimeoutSec = Number.isNaN(parsed)
+  const dispatchTimeoutSecRaw = Number.isNaN(parsed)
     ? DEFAULTS.DISPATCH_TIMEOUT_SEC
     : Math.max(DEFAULTS.MIN_DISPATCH_TIMEOUT_SEC, parsed)
+  const dispatchTimeoutSec = Math.min(dispatchTimeoutSecRaw, DEFAULTS.MAX_DISPATCH_TIMEOUT_SEC)
 
   return dispatchTimeoutSec * 1000 + DEFAULTS.HTTP_TIMEOUT_BUFFER_MS
 }
@@ -265,8 +267,8 @@ function a2aServerAuthHeaders() {
 
 function isLocalhost(urlStr) {
   try {
-    // Node's URL parser includes brackets in the hostname for IPv6 literals
-    // (e.g. "[::1]"), so strip them before comparing.
+    // .hostname is normally already bracket-free for valid IPv6 URLs; the
+    // replacement below is a harmless defensive guard for malformed input.
     const h = new URL(urlStr).hostname.replace(/^\[|\]$/g, '')
     return h === 'localhost' || h === '127.0.0.1' || h === '::1'
   }
