@@ -101,7 +101,7 @@ function canonicalHttpUrl(value) {
       || (u.protocol === 'https:' && u.port === '443')
     if (isDefaultPort)
       u.port = ''
-    u.pathname = trimTrailingSlash(u.pathname || '/')
+    u.pathname = trimTrailingSlash(u.pathname || '/') || '/'
     return u.href
   }
   catch {
@@ -213,10 +213,11 @@ function octowizSecret() {
 // before Python finishes; add a 30 s buffer.
 /** @returns {number} timeout in milliseconds (dispatch seconds + buffer) */
 function a2aTimeoutMs() {
-  const parsed = Number.parseInt(
-    env('OCTOWIZ_DISPATCH_TIMEOUT') || String(DEFAULTS.DISPATCH_TIMEOUT_SEC),
-    10,
-  )
+  const raw = env('OCTOWIZ_DISPATCH_TIMEOUT')
+  const parsed = raw && /^-?\d+$/.test(raw)
+    ? Number.parseInt(raw, 10)
+    : DEFAULTS.DISPATCH_TIMEOUT_SEC
+
   const dispatchTimeoutSec = Number.isNaN(parsed)
     ? DEFAULTS.DISPATCH_TIMEOUT_SEC
     : Math.max(DEFAULTS.MIN_DISPATCH_TIMEOUT_SEC, parsed)
