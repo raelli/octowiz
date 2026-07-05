@@ -73,11 +73,11 @@ function validateJavaScriptSyntax(draft) {
   }
   catch (err) {
     // instanceof catches the common case; the name check is the cross-realm fallback.
-    if (err instanceof SyntaxError || (err && err.name === 'SyntaxError')) {
+    if (err instanceof SyntaxError || err.name === 'SyntaxError') {
       return {
         passed: false,
         failureKind: VALIDATION_FAILURE_KINDS.SYNTAX_ERROR,
-        output: String((err && err.message) || 'Syntax validation failed.'),
+        output: String(err.message || 'Syntax validation failed.'),
       }
     }
 
@@ -85,7 +85,7 @@ function validateJavaScriptSyntax(draft) {
     return {
       passed: false,
       failureKind: VALIDATION_FAILURE_KINDS.COMPILE_ERROR,
-      output: String((err && err.message) || 'Compilation failed.'),
+      output: String(err.message || 'Compilation failed.'),
     }
   }
 }
