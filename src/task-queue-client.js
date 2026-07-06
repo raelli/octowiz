@@ -2,6 +2,19 @@ const { httpJson } = require('./a2a-transport')
 const config = require('./config')
 const logger = require('./logger')
 
+function _safeErrMessage(err) {
+  return err?.message || String(err)
+}
+
+function _extractBodyError(body) {
+  if (body?.error) return body.error
+  if (typeof body === 'object' && body !== null && !Array.isArray(body) && Object.keys(body).length > 0) {
+    try { return JSON.stringify(body) }
+    catch (_) { return null }
+  }
+  return null
+}
+
 const RETRY_POLICY = {
   maxAttempts: 3,
   calculateBackoffMs(attempt) {
@@ -30,16 +43,22 @@ function _sleep(ms) {
  *   { ok: false, reason }
  */
 async function claimTask(taskId) {
-  if (!taskId) {
+  if (typeof taskId !== 'string') {
+    logger.error('[daemon] claimTask validation failed: taskId must be a string')
+    return { ok: false, reason: 'taskId is required' }
+  }
+
+  const normalizedTaskId = taskId.trim()
+  if (!normalizedTaskId) {
     logger.error('[daemon] claimTask validation failed: taskId is required')
     return { ok: false, reason: 'taskId is required' }
   }
 
   try {
-    const { status, body } = await _post(`/a2a/task-queue/${encodeURIComponent(taskId)}/claim`, {})
+    const { status, body } = await _post(`/a2a/task-queue/${encodeURIComponent(normalizedTaskId)}/claim`, {})
 
     if (status === 200) {
-      if (!body || typeof body.leaseToken !== 'string' || body.leaseToken.length === 0) {
+      if (!body || typeof body.leaseToken !== 'string' || body.leaseToken.trim().length === 0) {
         logger.error('[daemon] claimTask malformed 200 response: missing/invalid leaseToken')
         return { ok: false, reason: 'Malformed response: missing leaseToken' }
       }
@@ -50,8 +69,8 @@ async function claimTask(taskId) {
     return { ok: false, reason: body?.error || `HTTP ${status}` }
   }
   catch (err) {
-    logger.error(`[daemon] claimTask failed: ${err?.message || String(err)}`)
-    return { ok: false, reason: err?.message || 'Unknown error' }
+    logger.error(`[daemon] claimTask failed: ${_safeErrMessage(err)}`)
+    return { ok: false, reason: _safeErrMessage(err) }
   }
 }
 
@@ -61,11 +80,11 @@ async function claimTask(taskId) {
  * otherwise false.
  */
 async function postResult(taskId, leaseToken, result) {
-  if (!taskId) {
+  if (!taskId || typeof taskId !== 'string' || !taskId.trim()) {
     logger.error('[daemon] postResult validation failed: taskId is required')
     return false
   }
-  if (!leaseToken) {
+  if (!leaseToken || typeof leaseToken !== 'string' || !leaseToken.trim()) {
     logger.error('[daemon] postResult validation failed: leaseToken is required')
     return false
   }
@@ -90,8 +109,9 @@ async function postResult(taskId, leaseToken, result) {
       }
 
       const afterRetries = RETRY_POLICY.isRetryableStatus(status) ? ' after retries' : ''
+      const bodyErr = _extractBodyError(body)
       logger.error(
-        `[daemon] postResult failed${afterRetries}: HTTP ${status}${body?.error ? ` - ${body.error}` : ''}`,
+        `[daemon] postResult failed${afterRetries}: HTTP ${status}${bodyErr ? ` - ${bodyErr}` : ''}`,
       )
       return false
     }
@@ -101,7 +121,7 @@ async function postResult(taskId, leaseToken, result) {
         continue
       }
 
-      logger.error(`[daemon] postResult failed after retries: ${err?.message || String(err)}`)
+      logger.error(`[daemon] postResult failed after retries: ${_safeErrMessage(err)}`)
       return false
     }
   }
