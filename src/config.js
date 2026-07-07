@@ -160,7 +160,8 @@ function devAdvisorUrl() {
   return trimTrailingSlash(env('AELLI_DEV_ADVISOR_URL') || DEFAULTS.AELLI_DEV_ADVISOR_URL)
 }
 
-// Returns optional string: explicit URL, gateway-derived URL, or undefined when disabled.
+// Optional router URL: explicit, gateway-derived, or undefined when disabled.
+// NOTE: This is intentionally the only optional URL getter in this module.
 function routerUrl() {
   const explicit = env('AELLI_ROUTER_URL')
   if (explicit)
@@ -213,13 +214,14 @@ function octowizSecret() {
 // before Python finishes; add a 30 s buffer.
 /** @returns {number} timeout in milliseconds (dispatch seconds + buffer) */
 function a2aTimeoutMs() {
-  const parsed = Number.parseInt(
-    env('OCTOWIZ_DISPATCH_TIMEOUT') || String(DEFAULTS.DISPATCH_TIMEOUT_SEC),
-    10,
-  )
-  const dispatchTimeoutSec = Number.isNaN(parsed)
-    ? DEFAULTS.DISPATCH_TIMEOUT_SEC
-    : Math.max(DEFAULTS.MIN_DISPATCH_TIMEOUT_SEC, parsed)
+  const raw = env('OCTOWIZ_DISPATCH_TIMEOUT')
+  const parsed = raw
+    ? (/^\d+$/.test(raw) ? Number(raw) : DEFAULTS.DISPATCH_TIMEOUT_SEC)
+    : DEFAULTS.DISPATCH_TIMEOUT_SEC
+
+  const dispatchTimeoutSec = Number.isInteger(parsed)
+    ? Math.max(DEFAULTS.MIN_DISPATCH_TIMEOUT_SEC, parsed)
+    : DEFAULTS.DISPATCH_TIMEOUT_SEC
 
   return dispatchTimeoutSec * 1000 + DEFAULTS.HTTP_TIMEOUT_BUFFER_MS
 }
