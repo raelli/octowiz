@@ -1,23 +1,6 @@
 #!/usr/bin/env node
 'use strict'
-const fs = require('node:fs')
-const path = require('node:path')
-const { cacheDir } = require('../../src/config')
 const logger = require('../../src/logger')
-
-function killSubscriber(sessionId) {
-  const pidFile = path.join(cacheDir(), `${sessionId}.pid`)
-  if (!fs.existsSync(pidFile))
-    return
-  try {
-    const pid = Number.parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10)
-    if (!Number.isNaN(pid))
-      process.kill(pid, 'SIGTERM')
-  }
-  catch {}
-  try { fs.unlinkSync(pidFile) }
-  catch {}
-}
 
 async function handleStop(input) {
   const { post } = require('../../src/a2a-client')
@@ -28,8 +11,6 @@ async function handleStop(input) {
     return
 
   logger.log('[octowiz - stop] session ending', sessionId)
-
-  killSubscriber(sessionId)
 
   const ctx = getStableContext(sessionId)
 
