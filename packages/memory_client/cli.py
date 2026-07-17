@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import cache as octowiz_cache
 from .cache import (
+    BUNDLE_SOURCE_LIVE_FETCH,
     DEFAULT_CACHE_DIR,
     DEFAULT_TTL_SECONDS,
     ROLE_REGISTRY,
@@ -24,7 +25,7 @@ from .cache import (
     RoleStatus,
     build_bundles,
     cache_status,
-    get_bundle,
+    get_bundle_with_source,
 )
 from .env import mark_routing_verified
 
@@ -65,7 +66,7 @@ def cmd_get(args) -> int:
         or os.getenv("OCTOWIZ_CACHE_REFRESH") == "1"
     )
     try:
-        content = get_bundle(
+        result = get_bundle_with_source(
             role=args.role,
             namespace=args.namespace,
             cache_dir=_cache_dir(args),
@@ -75,7 +76,7 @@ def cmd_get(args) -> int:
     except (KeyError, ValueError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    if args.role == "routing":
+    if args.role == "routing" and result.source == BUNDLE_SOURCE_LIVE_FETCH:
         try:
             mark_routing_verified()
         except OSError as exc:
@@ -84,7 +85,7 @@ def cmd_get(args) -> int:
                 file=sys.stderr,
             )
             return 1
-    sys.stdout.write(content)
+    sys.stdout.write(result.content)
     return 0
 
 
