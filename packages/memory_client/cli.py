@@ -26,6 +26,7 @@ from .cache import (
     cache_status,
     get_bundle,
 )
+from .env import mark_routing_verified
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +75,15 @@ def cmd_get(args) -> int:
     except (KeyError, ValueError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    if args.role == "routing":
+        try:
+            mark_routing_verified()
+        except OSError as exc:
+            print(
+                f"[octowiz-cache] failed to update routing verification timestamp: {exc}",
+                file=sys.stderr,
+            )
+            return 1
     sys.stdout.write(content)
     return 0
 
