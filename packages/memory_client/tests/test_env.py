@@ -15,6 +15,7 @@ from packages.memory_client.env import (
     save_repo_state,
     init_machine_state,
     init_repo_state,
+    mark_routing_verified,
     _now_iso,
 )
 from packages.memory_client.env import detect_plugin, detect_all_plugins, REQUIRED_PLUGINS
@@ -67,6 +68,26 @@ class TestMachineStateIO(unittest.TestCase):
         save_machine_state(state, self.path)
         state2 = init_machine_state(self.path)
         self.assertEqual(state2.plugins, {"superpowers": "verified"})
+
+    def test_mark_routing_verified_creates_machine_state_when_missing(self):
+        self.assertIsNone(load_machine_state(self.path))
+        mark_routing_verified(self.path)
+        updated = load_machine_state(self.path)
+        self.assertIsNotNone(updated)
+        self.assertIsInstance(updated.litellm.get("routing_verified_at"), str)
+        self.assertTrue(updated.litellm["routing_verified_at"])
+
+    def test_mark_routing_verified_preserves_other_litellm_fields(self):
+        state = init_machine_state(self.path)
+        state.litellm["planner_verified_at"] = "2026-01-01T00:00:00Z"
+        save_machine_state(state, self.path)
+
+        mark_routing_verified(self.path)
+        updated = load_machine_state(self.path)
+
+        self.assertEqual(updated.litellm["planner_verified_at"], "2026-01-01T00:00:00Z")
+        self.assertIsInstance(updated.litellm["routing_verified_at"], str)
+        self.assertTrue(updated.litellm["routing_verified_at"])
 
 
 class TestRepoStateIO(unittest.TestCase):

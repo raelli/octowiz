@@ -93,6 +93,16 @@ def init_machine_state(path: Path = MACHINE_STATE_PATH) -> MachineState:
     return state
 
 
+def mark_routing_verified(machine_state_path: Path = MACHINE_STATE_PATH) -> None:
+    """Persist a fresh LiteLLM routing verification timestamp."""
+    state = load_machine_state(machine_state_path) or MachineState(first_seen=_now_iso())
+    litellm = state.litellm if isinstance(state.litellm, dict) else {}
+    normalized_litellm = {**MachineState().litellm, **litellm}
+    normalized_litellm["routing_verified_at"] = _now_iso()
+    state.litellm = normalized_litellm
+    save_machine_state(state, machine_state_path)
+
+
 def load_repo_state(cwd: Path) -> Optional[RepoState]:
     state_path = cwd / OCTOWIZ_DIR / SETUP_STATE_FILENAME
     if not state_path.exists():
