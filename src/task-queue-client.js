@@ -105,8 +105,6 @@ async function postResult(taskId, leaseToken, result) {
       return false
     }
   }
-
-  return false
 }
 
 module.exports = { claimTask, postResult }
