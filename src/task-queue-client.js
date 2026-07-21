@@ -89,7 +89,7 @@ async function postResult(taskId, leaseToken, result) {
         continue
       }
 
-      const afterRetries = RETRY_POLICY.isRetryableStatus(status) ? ' after retries' : ''
+      const afterRetries = attempt > 1 ? ' after retries' : ''
       logger.error(
         `[daemon] postResult failed${afterRetries}: HTTP ${status}${body?.error ? ` - ${body.error}` : ''}`,
       )
@@ -105,6 +105,8 @@ async function postResult(taskId, leaseToken, result) {
       return false
     }
   }
+
+  return false
 }
 
 module.exports = { claimTask, postResult }
