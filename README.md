@@ -291,10 +291,10 @@ octowiz-cache seed                    # seed project namespace into LiteLLM Memo
 octowiz-cache check                   # environment health check
 octowiz-cache init                    # bootstrap missing state files
 ```
-Successful routing verification now refreshes `litellm.routing_verified_at` in
-`~/.octowiz/machine-state.json` when you run `octowiz-cache get --role routing`.
-`octowiz-cache check` uses that timestamp (24h TTL) for the `litellm_cache`
-hard gate.
+Successful routing verification refreshes `litellm.routing_verified_at` in
+`~/.octowiz/machine-state.json` only when `octowiz-cache get --role routing`
+completes with a live LiteLLM fetch (not a stale-cache fallback). `octowiz-cache check`
+uses that timestamp (24h TTL) for the `litellm_cache` hard gate.
 
 If the cache is stale and LiteLLM is unreachable, `octowiz-cache` serves the stale bundle with a stderr warning rather than failing. If no cached bundle exists at all, it falls back to built-in routing.
 

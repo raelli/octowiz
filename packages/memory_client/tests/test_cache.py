@@ -13,6 +13,9 @@ import httpx
 
 from packages.memory_client import cache as octowiz_cache
 from packages.memory_client.cache import (
+    BUNDLE_SOURCE_FRESH_CACHE,
+    BUNDLE_SOURCE_LIVE_FETCH,
+    BUNDLE_SOURCE_STALE_FALLBACK,
     BuildFailure,
     BuildResult,
     FailureKind,
@@ -21,6 +24,7 @@ from packages.memory_client.cache import (
     cache_status,
     fetch_memory,
     get_bundle,
+    get_bundle_with_source,
     get_litellm_client,
     hash_bundle,
     hash_memory,
@@ -401,6 +405,69 @@ class TestGetBundle(unittest.TestCase):
                 with patch.dict(os.environ, {"OCTOWIZ_CACHE_DIR": tmpdir}):
                     result = get_bundle("planner", "allspark", cache_dir=None)
             self.assertIn("Octowiz Doctrine Bundle", result)
+
+
+class TestGetBundleWithSource(unittest.TestCase):
+    def _mock_memories(self, role="routing", namespace="allspark"):
+        keys = octowiz_cache.ROLE_REGISTRY.get_keys(role, namespace)
+        return [{"key": k, "value": f"content for {k}", "metadata": {}} for k in keys]
+
+    def _make_mock_client(self, role="routing", namespace="allspark"):
+        memories = self._mock_memories(role, namespace)
+        mem_by_key = {m["key"]: m for m in memories}
+
+        def fake_get(url, **kwargs):
+            import urllib.parse
+
+            encoded_key = url.split("/v1/memory/")[-1]
+            key = urllib.parse.unquote(encoded_key)
+            mock_resp = MagicMock()
+            if key in mem_by_key:
+                mock_resp.status_code = 200
+                mock_resp.json.return_value = mem_by_key[key]
+            else:
+                mock_resp.status_code = 404
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = fake_get
+        return mock_client
+
+    def test_reports_live_fetch_source_on_successful_network_load(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_client = self._make_mock_client()
+            with patch("packages.memory_client.cache.get_litellm_client", return_value=mock_client):
+                result = get_bundle_with_source("routing", "allspark", cache_dir=tmpdir, refresh=True)
+        self.assertEqual(result.source, BUNDLE_SOURCE_LIVE_FETCH)
+        self.assertIn("Octowiz Doctrine Bundle", result.content)
+
+    def test_reports_fresh_cache_source_when_served_without_network(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_client = self._make_mock_client()
+            with patch("packages.memory_client.cache.get_litellm_client", return_value=mock_client):
+                get_bundle("routing", "allspark", cache_dir=tmpdir)
+                result = get_bundle_with_source("routing", "allspark", cache_dir=tmpdir)
+        self.assertEqual(result.source, BUNDLE_SOURCE_FRESH_CACHE)
+        self.assertIn("Octowiz Doctrine Bundle", result.content)
+
+    def test_reports_stale_fallback_source_when_network_fails_and_stale_cache_exists(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_client = self._make_mock_client()
+            with patch("packages.memory_client.cache.get_litellm_client", return_value=mock_client):
+                get_bundle("routing", "allspark", cache_dir=tmpdir)
+
+            failing_client = MagicMock()
+            failing_client.get.side_effect = Exception("LiteLLM down")
+            with patch("packages.memory_client.cache.get_litellm_client", return_value=failing_client):
+                result = get_bundle_with_source(
+                    "routing",
+                    "allspark",
+                    cache_dir=tmpdir,
+                    ttl_seconds=0,
+                    refresh=True,
+                )
+        self.assertEqual(result.source, BUNDLE_SOURCE_STALE_FALLBACK)
+        self.assertIn("Octowiz Doctrine Bundle", result.content)
 
 
 # ---------------------------------------------------------------------------

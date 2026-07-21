@@ -461,6 +461,83 @@ class CacheStore:
 # Public API
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class BundleGetResult:
+    content: str
+    source: str
+
+
+BUNDLE_SOURCE_FRESH_CACHE = "fresh_cache"
+BUNDLE_SOURCE_LIVE_FETCH = "live_fetch"
+BUNDLE_SOURCE_STALE_FALLBACK = "stale_fallback"
+
+
+def get_bundle_with_source(
+    role: str,
+    namespace: str,
+    cache_dir: Any = None,  # Path | str | None
+    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    refresh: bool = False,
+    source: Optional[MemorySource] = None,
+) -> BundleGetResult:
+    """
+    Return bundle content plus source metadata for *role* and *namespace*.
+
+    source values:
+      - fresh_cache: served from a fresh local cache entry
+      - live_fetch: fetched from LiteLLM and written to cache
+      - stale_fallback: LiteLLM fetch failed; stale cache served with warning
+    """
+    if not ROLE_REGISTRY.has_role(role):
+        raise ValueError(
+            f"Unknown role {role!r}. Valid roles: {sorted(ROLE_REGISTRY)}"
+        )
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+", namespace):
+        raise ValueError(
+            f"Invalid namespace {namespace!r}. Use only letters, digits, hyphens, and underscores."
+        )
+
+    resolved_dir = Path(cache_dir) if cache_dir is not None else Path(
+        os.environ.get("OCTOWIZ_CACHE_DIR", str(DEFAULT_CACHE_DIR))
+    )
+    store = CacheStore(resolved_dir, ttl_seconds)
+
+    # Step 1: serve from cache if fresh and not forced refresh
+    if not refresh:
+        cached = store._get_fresh(role, namespace)
+        if cached is not None:
+            return BundleGetResult(content=cached, source=BUNDLE_SOURCE_FRESH_CACHE)
+
+    # Step 2: Fetch via injected source or construct default LiteLLM source
+    client = None
+    try:
+        if source is None:
+            client = get_litellm_client()
+            source = LiteLLMMemorySource(client)
+        memories = fetch_role_memories(source, role, namespace)
+    except Exception as exc:
+        stale = store.get_best_available(
+            role,
+            namespace,
+            on_stale_fallback=(
+                f"WARNING: LiteLLM unavailable ({exc}); serving stale cache for "
+                f"role={role!r} namespace={namespace!r}."
+            ),
+        )
+        if stale is not None:
+            return BundleGetResult(content=stale, source=BUNDLE_SOURCE_STALE_FALLBACK)
+        raise
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+    # Step 3: Build bundle and write to disk
+    content = store.put(role, namespace, memories)
+    return BundleGetResult(content=content, source=BUNDLE_SOURCE_LIVE_FETCH)
+
 
 def get_bundle(
     role: str,
@@ -483,55 +560,14 @@ def get_bundle(
     from get_litellm_client(). Pass a DictMemorySource (or any MemorySource) in tests
     to avoid network calls.
     """
-    if not ROLE_REGISTRY.has_role(role):
-        raise ValueError(
-            f"Unknown role {role!r}. Valid roles: {sorted(ROLE_REGISTRY)}"
-        )
-    if not re.fullmatch(r"[a-zA-Z0-9_-]+", namespace):
-        raise ValueError(
-            f"Invalid namespace {namespace!r}. Use only letters, digits, hyphens, and underscores."
-        )
-
-    resolved_dir = Path(cache_dir) if cache_dir is not None else Path(
-        os.environ.get("OCTOWIZ_CACHE_DIR", str(DEFAULT_CACHE_DIR))
-    )
-    store = CacheStore(resolved_dir, ttl_seconds)
-
-    # Step 1: serve from cache if fresh and not forced refresh
-    if not refresh:
-        cached = store._get_fresh(role, namespace)
-        if cached is not None:
-            return cached
-
-    # Step 2: Fetch via injected source or construct default LiteLLM source
-    client = None
-    try:
-        if source is None:
-            client = get_litellm_client()
-            source = LiteLLMMemorySource(client)
-        memories = fetch_role_memories(source, role, namespace)
-    except Exception as exc:
-        stale = store.get_best_available(
-            role,
-            namespace,
-            on_stale_fallback=(
-                f"WARNING: LiteLLM unavailable ({exc}); serving stale cache for "
-                f"role={role!r} namespace={namespace!r}."
-            ),
-        )
-        if stale is not None:
-            return stale
-        raise
-    finally:
-        if client is not None:
-            try:
-                client.close()
-            except Exception:
-                pass
-
-    # Step 3: Build bundle and write to disk
-    content = store.put(role, namespace, memories)
-    return content
+    return get_bundle_with_source(
+        role=role,
+        namespace=namespace,
+        cache_dir=cache_dir,
+        ttl_seconds=ttl_seconds,
+        refresh=refresh,
+        source=source,
+    ).content
 
 
 # ---------------------------------------------------------------------------
