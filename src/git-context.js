@@ -216,7 +216,7 @@ function isValidStableContext(value) {
     && typeof value === 'object'
     && !Array.isArray(value)
     && typeof value.sessionId === 'string'
-    && (value.repoRoot === null || typeof value.repoRoot === 'string')
+    && (value.repoRoot === null || (typeof value.repoRoot === 'string' && value.repoRoot.length > 0))
     && (value.repo === null || typeof value.repo === 'string')
     && typeof value.cwd === 'string'
 }
@@ -245,13 +245,8 @@ function captureContext(sessionId, cwd) {
     fs.renameSync(tmp, dest)
   }
   catch {
-    try {
-      if (fs.existsSync(tmp))
-        fs.unlinkSync(tmp)
-    }
-    catch {
-      // ignore cleanup errors
-    }
+    try { fs.unlinkSync(tmp) }
+    catch { /* ignore cleanup errors */ }
   }
 
   return ctx
