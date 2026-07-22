@@ -237,7 +237,7 @@ describe('daemon.processTask (forwarding)', () => {
     server.close()
   })
 
-  it('posts error when A2A server is unreachable', async () => {
+  it('posts error with failureKind a2a-forward-failed when A2A server is unreachable', async () => {
     process.env.OCTOWIZ_A2A_URL = 'http://127.0.0.1:1' // nothing listening
 
     await processTask({
@@ -246,7 +246,29 @@ describe('daemon.processTask (forwarding)', () => {
       payload: { task: 'fix', cwd: '/allowed/repo' },
     })
 
-    expect(postResult).toHaveBeenCalledWith('t5', 'lt-1', expect.objectContaining({ status: 'error' }))
+    expect(postResult).toHaveBeenCalledWith('t5', 'lt-1', expect.objectContaining({ status: 'error', failureKind: 'a2a-forward-failed' }))
+  })
+
+  it('posts failureKind internal-error for unexpected non-forwarding failures', async () => {
+    const { server, port } = await mockA2AServer(
+      makeA2AResponse({ status: 'completed' }),
+    )
+    process.env.OCTOWIZ_A2A_URL = `http://127.0.0.1:${port}`
+
+    // First postResult (the success post) blows up unexpectedly; the outer
+    // catch must post an error result with the generic internal-error kind.
+    postResult
+      .mockRejectedValueOnce(new Error('queue write failed'))
+      .mockResolvedValue()
+
+    await processTask({
+      id: 't5b',
+      capability: 'octowiz.dispatch',
+      payload: { task: 'fix', cwd: '/allowed/repo' },
+    })
+
+    expect(postResult).toHaveBeenLastCalledWith('t5b', 'lt-1', expect.objectContaining({ status: 'error', failureKind: 'internal-error' }))
+    server.close()
   })
 
   it('normalizes A2A error artifact to queue error status', async () => {
