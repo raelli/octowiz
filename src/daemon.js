@@ -256,8 +256,12 @@ async function processTask(task) {
     logger.error(`[octowiz - processTask] unhandled error${safeId ? ` for ${safeId}` : ''}: ${_sanitizeForLog(errMsg)}`)
 
     if (id && leaseToken) {
+      // A2AForwardError is an expected transport failure (network, timeout,
+      // non-200), not a daemon defect; give consumers a distinct kind so retry
+      // and alerting policies can treat it differently from internal errors.
+      const failureKind = err && err.name === 'A2AForwardError' ? 'a2a-forward-failed' : 'internal-error'
       try {
-        await postResult(id, leaseToken, { status: 'error', failureKind: 'internal-error', message: errMsg })
+        await postResult(id, leaseToken, { status: 'error', failureKind, message: errMsg })
       }
       catch (postErr) {
         logger.error(`[octowiz - processTask] failed to post error result for ${safeId}: ${_sanitizeForLog(_errorToString(postErr))}`)
