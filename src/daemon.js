@@ -230,7 +230,7 @@ async function processTask(task) {
     if (Object.hasOwn(payload, 'cwd')) {
       try { payload.cwd = validateCwd(payload.cwd) }
       catch (err) {
-        await postResult(id, leaseToken, { status: 'error', message: _errorToString(err) })
+        await postResult(id, leaseToken, { status: 'error', failureKind: 'invalid-cwd', message: _errorToString(err) })
         return
       }
     }
@@ -257,7 +257,7 @@ async function processTask(task) {
 
     if (id && leaseToken) {
       try {
-        await postResult(id, leaseToken, { status: 'error', message: errMsg })
+        await postResult(id, leaseToken, { status: 'error', failureKind: 'internal-error', message: errMsg })
       }
       catch (postErr) {
         logger.error(`[octowiz - processTask] failed to post error result for ${safeId}: ${_sanitizeForLog(_errorToString(postErr))}`)
