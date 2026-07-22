@@ -196,7 +196,7 @@ function a2aPort() {
   if (!/^\d{1,5}$/.test(raw))
     return DEFAULTS.A2A_PORT
   const parsed = Number(raw)
-  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : DEFAULTS.A2A_PORT
+  return parsed > 0 && parsed <= 65535 ? parsed : DEFAULTS.A2A_PORT
 }
 
 function a2aServerUrl() {
