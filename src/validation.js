@@ -56,7 +56,7 @@ function validateJavaScriptSyntax(draft) {
     return {
       passed: false,
       failureKind: VALIDATION_FAILURE_KINDS.EMPTY_DRAFT,
-      output: `Draft must be a string; received ${typeof draft}.`,
+      output: `Draft must be a string; received ${draft === null ? 'null' : typeof draft}.`,
     }
   }
   if (!/\S/.test(draft)) {
