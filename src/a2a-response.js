@@ -43,18 +43,6 @@ const ALIAS_MAP = Object.freeze([
 ])
 
 /**
- * Stable own-property check resilient against objects that shadow
- * `hasOwnProperty` (e.g. `Object.create(null)` or `{ hasOwnProperty: 5 }`).
- *
- * @param {object} obj
- * @param {string} key
- * @returns {boolean}
- */
-function hasOwn(obj, key) {
-  return Object.prototype.hasOwnProperty.call(obj, key)
-}
-
-/**
  * Normalize a raw Python A2A response object into the JS-canonical shape.
  *
  * JS camelCase keys are the authoritative contract for all queue consumers and
@@ -82,7 +70,7 @@ function normalizeA2AResponse(raw) {
 
   for (const [snakeKey, camelKey] of ALIAS_MAP) {
     // Additive aliasing only; never overwrite an explicitly provided camelCase value.
-    if (hasOwn(result, snakeKey) && !hasOwn(result, camelKey)) {
+    if (Object.hasOwn(result, snakeKey) && !Object.hasOwn(result, camelKey)) {
       result[camelKey] = result[snakeKey]
     }
   }
