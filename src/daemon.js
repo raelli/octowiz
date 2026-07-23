@@ -100,8 +100,8 @@ async function _handleObserve(id, leaseToken, payload) {
     await postResult(id, leaseToken, {
       status: 'error',
       failureKind: 'unknown-advisory-type',
-      message: `unknown advisory type: ${_sanitizeForLog(advisory.type, 64)}`,
-      type: advisory.type,
+      message: `unknown advisory type: ${_sanitizeForLog(advisory.type ?? '(none)', 64)}`,
+      ...(advisory.type != null ? { type: advisory.type } : {}),
     })
     return
   }
