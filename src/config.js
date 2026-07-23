@@ -192,7 +192,7 @@ function a2aPort() {
   const raw = env('OCTOWIZ_A2A_PORT')
   if (!raw)
     return DEFAULTS.A2A_PORT
-  // Reject non-numeric or clearly out-of-range strings before parsing
+  // Reject non-digit characters and strings longer than 5 digits; range is validated below
   if (!/^\d{1,5}$/.test(raw))
     return DEFAULTS.A2A_PORT
   const parsed = Number(raw)
@@ -317,7 +317,7 @@ function configWarnings() {
       ...(router ? [['AELLI_ROUTER_URL', router]] : []),
     ]
     for (const [name, url] of urlsToCheck) {
-      if (isValidHttpUrl(url) && !url.startsWith('https://') && !isLocalhost(url)) {
+      if (isValidHttpUrl(url) && !/^https:\/\//i.test(url) && !isLocalhost(url)) {
         warnings.push(
           `[AELLI A2A] AELLI_AUTH_TOKEN is set but ${name} uses plain HTTP on a non-localhost address. Use HTTPS to protect your token.`,
         )
@@ -328,7 +328,7 @@ function configWarnings() {
   const a2aSecret = octowizSecret()
   if (a2aSecret) {
     const a2aUrl = a2aServerUrl()
-    if (!a2aUrl.startsWith('https://') && !isLocalhost(a2aUrl)) {
+    if (!/^https:\/\//i.test(a2aUrl) && !isLocalhost(a2aUrl)) {
       warnings.push(
         '[AELLI A2A] OCTOWIZ_INBOUND_SECRET is set but OCTOWIZ_A2A_URL uses plain HTTP on a non-localhost address. Use HTTPS to protect your secret.',
       )
