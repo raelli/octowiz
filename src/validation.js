@@ -77,7 +77,7 @@ function validateJavaScriptSyntax(draft) {
       return {
         passed: false,
         failureKind: VALIDATION_FAILURE_KINDS.SYNTAX_ERROR,
-        output: String(err?.message || 'Syntax validation failed.'),
+        output: String(err?.message ?? 'Syntax validation failed.'),
       }
     }
 
@@ -85,7 +85,7 @@ function validateJavaScriptSyntax(draft) {
     return {
       passed: false,
       failureKind: VALIDATION_FAILURE_KINDS.COMPILE_ERROR,
-      output: String(err?.message || 'Compilation failed.'),
+      output: String(err?.message ?? 'Compilation failed.'),
     }
   }
 }
