@@ -167,6 +167,27 @@ describe('config', () => {
       process.env.OCTOWIZ_INBOUND_SECRET = 's'
       expect(config.a2aServerAuthHeaders()).toEqual({ 'x-octowiz-secret': 's' })
     })
+
+    it('aelliAuthHeaders omits the header for a control-character-only token', () => {
+      process.env.AELLI_AUTH_TOKEN = '\x00\x01\x1F'
+      expect(config.aelliAuthHeaders()).toEqual({})
+    })
+    it('aelliAuthHeaders omits the header for a whitespace-only token', () => {
+      process.env.AELLI_AUTH_TOKEN = '   '
+      expect(config.aelliAuthHeaders()).toEqual({})
+    })
+    it('queueAuthHeaders omits the header for a control-character-only secret', () => {
+      process.env.AELLI_INBOUND_SECRET = '\x00\x00'
+      expect(config.queueAuthHeaders()).toEqual({})
+    })
+    it('a2aServerAuthHeaders omits the header for a control-character-only secret', () => {
+      process.env.OCTOWIZ_INBOUND_SECRET = '\x7F'
+      expect(config.a2aServerAuthHeaders()).toEqual({})
+    })
+    it('sanitizes internal control characters out of an otherwise-valid token', () => {
+      process.env.AELLI_AUTH_TOKEN = 'to\x00ken'
+      expect(config.aelliAuthHeaders()).toEqual({ 'x-aelli-secret': 'token' })
+    })
   })
 
   describe('configWarnings', () => {
@@ -198,6 +219,19 @@ describe('config', () => {
     it('does not warn for OCTOWIZ_INBOUND_SECRET on localhost', () => {
       process.env.OCTOWIZ_INBOUND_SECRET = 'secret'
       process.env.OCTOWIZ_A2A_URL = 'http://localhost:8765'
+      expect(config.configWarnings()).toEqual([])
+    })
+    it('warns exactly once for a malformed OCTOWIZ_A2A_URL, not twice', () => {
+      process.env.OCTOWIZ_INBOUND_SECRET = 'secret'
+      process.env.OCTOWIZ_A2A_URL = 'not-a-url'
+      const warnings = config.configWarnings()
+      const malformedWarnings = warnings.filter(w => w.includes('not a valid absolute http(s) URL'))
+      expect(malformedWarnings).toHaveLength(1)
+      expect(warnings.some(w => w.includes('plain HTTP'))).toBe(false)
+    })
+    it('recognizes an uppercase-scheme OCTOWIZ_A2A_URL as HTTPS', () => {
+      process.env.OCTOWIZ_INBOUND_SECRET = 'secret'
+      process.env.OCTOWIZ_A2A_URL = 'HTTPS://a2a.example.com'
       expect(config.configWarnings()).toEqual([])
     })
   })
