@@ -33,7 +33,7 @@ Most AI coding tools give agents either a giant system prompt or nothing. Octowi
 
 | Name | What it is |
 |---|---|
-| **ÆLLI** | The orchestration brain (private IntegraHub repository). Hosts all A2A agents listed below. Makes strategic decisions and delegates coding work via A2A. |
+| **ÆLLI** | The orchestration brain (private ÆLLI repository). Hosts all A2A agents listed below. Makes strategic decisions and delegates coding work via A2A. |
 | **Octowiz Bridge** | This repo. The Claude Code plugin. Connects developer sessions to ÆLLI, routes to skills, seeds project memory. Install name: `octowiz`. |
 | **LiteLLM** | Platform layer. A2A gateway, Memory API, and IntegraHub Marketplace. |
 
