@@ -30,6 +30,13 @@ describe('validateJavaScriptSyntax', () => {
     expect(validateJavaScriptSyntax(undefined)).toMatchObject({ passed: false, failureKind: 'empty-draft' })
   })
 
+  it('names the received type for non-string input', () => {
+    expect(validateJavaScriptSyntax(['const x = 1']).output).toContain('received array')
+    expect(validateJavaScriptSyntax({}).output).toContain('received object')
+    expect(validateJavaScriptSyntax(42).output).toContain('received number')
+    expect(validateJavaScriptSyntax(null).output).toContain('received null')
+  })
+
   it('fails a JS syntax error with syntax-error and error message', () => {
     const result = validateJavaScriptSyntax('function broken( {')
     expect(result).toMatchObject({ passed: false, failureKind: 'syntax-error' })
