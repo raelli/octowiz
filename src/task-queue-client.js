@@ -31,27 +31,44 @@ function _sleep(ms) {
  */
 async function claimTask(taskId) {
   if (!taskId) {
-    logger.error('[daemon] claimTask validation failed: taskId is required')
+    logger.error('[task-queue-client] claimTask validation failed: taskId is required')
     return { ok: false, reason: 'taskId is required' }
   }
 
-  try {
-    const { status, body } = await _post(`/a2a/task-queue/${encodeURIComponent(taskId)}/claim`, {})
+  for (let attempt = 1; attempt <= RETRY_POLICY.maxAttempts; attempt++) {
+    try {
+      const { status, body } = await _post(`/a2a/task-queue/${encodeURIComponent(taskId)}/claim`, {})
 
-    if (status === 200) {
-      if (!body || typeof body.leaseToken !== 'string' || body.leaseToken.length === 0) {
-        logger.error('[daemon] claimTask malformed 200 response: missing/invalid leaseToken')
-        return { ok: false, reason: 'Malformed response: missing leaseToken' }
+      if (status === 200) {
+        if (!body || typeof body.leaseToken !== 'string' || body.leaseToken.length === 0) {
+          logger.error('[task-queue-client] claimTask malformed 200 response: missing/invalid leaseToken')
+          return { ok: false, reason: 'Malformed response: missing leaseToken' }
+        }
+        return { ok: true, leaseToken: body.leaseToken }
       }
 
-      return { ok: true, leaseToken: body.leaseToken }
-    }
+      // Safe to retry: a retryable status means the server responded and told
+      // us the claim did not succeed (aelli's claim() only ever mutates state
+      // and returns 200 together — see src/task-queue.js in raelli/aelli).
+      if (RETRY_POLICY.isRetryableStatus(status) && attempt < RETRY_POLICY.maxAttempts) {
+        await _sleep(RETRY_POLICY.calculateBackoffMs(attempt))
+        continue
+      }
 
-    return { ok: false, reason: body?.error || `HTTP ${status}` }
-  }
-  catch (err) {
-    logger.error(`[daemon] claimTask failed: ${err?.message || String(err)}`)
-    return { ok: false, reason: err?.message || 'Unknown error' }
+      return { ok: false, reason: body?.error || `HTTP ${status}` }
+    }
+    catch (err) {
+      // Do NOT retry here, unlike postResult. A network/timeout error means we
+      // don't know whether the server already committed the claim before the
+      // response was lost. aelli's claim() is a one-shot pending->claimed
+      // transition with no idempotency key: retrying would only ever hit our
+      // own already-claimed lease as a 409 (wasted round trip, never a fix),
+      // while this daemon actually holds a lease it would otherwise abandon.
+      // Fail fast instead; the caller treats any claim failure as "someone
+      // else has it" and moves on, so a spurious retry buys nothing here.
+      logger.error(`[task-queue-client] claimTask failed: ${err?.message || String(err)}`)
+      return { ok: false, reason: err?.message || 'Unknown error' }
+    }
   }
 }
 
@@ -62,15 +79,15 @@ async function claimTask(taskId) {
  */
 async function postResult(taskId, leaseToken, result) {
   if (!taskId) {
-    logger.error('[daemon] postResult validation failed: taskId is required')
+    logger.error('[task-queue-client] postResult validation failed: taskId is required')
     return false
   }
   if (!leaseToken) {
-    logger.error('[daemon] postResult validation failed: leaseToken is required')
+    logger.error('[task-queue-client] postResult validation failed: leaseToken is required')
     return false
   }
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
-    logger.error('[daemon] postResult validation failed: result must be an object')
+    logger.error('[task-queue-client] postResult validation failed: result must be an object')
     return false
   }
 
@@ -91,7 +108,7 @@ async function postResult(taskId, leaseToken, result) {
 
       const afterRetries = attempt > 1 ? ' after retries' : ''
       logger.error(
-        `[daemon] postResult failed${afterRetries}: HTTP ${status}${body?.error ? ` - ${body.error}` : ''}`,
+        `[task-queue-client] postResult failed${afterRetries}: HTTP ${status}${body?.error ? ` - ${body.error}` : ''}`,
       )
       return false
     }
@@ -101,12 +118,10 @@ async function postResult(taskId, leaseToken, result) {
         continue
       }
 
-      logger.error(`[daemon] postResult failed${attempt > 1 ? ' after retries' : ''}: ${err?.message || String(err)}`)
+      logger.error(`[task-queue-client] postResult failed${attempt > 1 ? ' after retries' : ''}: ${err?.message || String(err)}`)
       return false
     }
   }
-
-  return false
 }
 
 module.exports = { claimTask, postResult }
