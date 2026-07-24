@@ -22,18 +22,22 @@ describe('validateJavaScriptSyntax', () => {
     expect(validateJavaScriptSyntax('   ')).toMatchObject({ passed: false, failureKind: 'empty-draft' })
   })
 
-  it('fails null with empty-draft', () => {
-    expect(validateJavaScriptSyntax(null)).toMatchObject({ passed: false, failureKind: 'empty-draft' })
+  it('fails null with invalid-type', () => {
+    expect(validateJavaScriptSyntax(null)).toMatchObject({ passed: false, failureKind: 'invalid-type' })
   })
 
-  it('fails undefined with empty-draft', () => {
-    expect(validateJavaScriptSyntax(undefined)).toMatchObject({ passed: false, failureKind: 'empty-draft' })
+  it('fails undefined with invalid-type', () => {
+    expect(validateJavaScriptSyntax(undefined)).toMatchObject({ passed: false, failureKind: 'invalid-type' })
   })
 
   it('names the received type for non-string input', () => {
+    expect(validateJavaScriptSyntax(['const x = 1'])).toMatchObject({ failureKind: 'invalid-type' })
     expect(validateJavaScriptSyntax(['const x = 1']).output).toContain('received array')
+    expect(validateJavaScriptSyntax({})).toMatchObject({ failureKind: 'invalid-type' })
     expect(validateJavaScriptSyntax({}).output).toContain('received object')
+    expect(validateJavaScriptSyntax(42)).toMatchObject({ failureKind: 'invalid-type' })
     expect(validateJavaScriptSyntax(42).output).toContain('received number')
+    expect(validateJavaScriptSyntax(null)).toMatchObject({ failureKind: 'invalid-type' })
     expect(validateJavaScriptSyntax(null).output).toContain('received null')
   })
 
@@ -51,8 +55,9 @@ describe('validateJavaScriptSyntax', () => {
   })
 
   it('exposes failure kinds as a frozen constant matching emitted values', () => {
-    expect(VALIDATION_FAILURE_KINDS).toEqual({ EMPTY_DRAFT: 'empty-draft', SYNTAX_ERROR: 'syntax-error', COMPILE_ERROR: 'compile-error' })
+    expect(VALIDATION_FAILURE_KINDS).toEqual({ INVALID_TYPE: 'invalid-type', EMPTY_DRAFT: 'empty-draft', SYNTAX_ERROR: 'syntax-error', COMPILE_ERROR: 'compile-error' })
     expect(Object.isFrozen(VALIDATION_FAILURE_KINDS)).toBe(true)
+    expect(validateJavaScriptSyntax(42).failureKind).toBe(VALIDATION_FAILURE_KINDS.INVALID_TYPE)
     expect(validateJavaScriptSyntax('').failureKind).toBe(VALIDATION_FAILURE_KINDS.EMPTY_DRAFT)
     expect(validateJavaScriptSyntax('function broken( {').failureKind).toBe(VALIDATION_FAILURE_KINDS.SYNTAX_ERROR)
   })

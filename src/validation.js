@@ -17,6 +17,7 @@ const vm = require('node:vm')
 
 // Named failure kinds so callers can branch on constants instead of string literals.
 const VALIDATION_FAILURE_KINDS = Object.freeze({
+  INVALID_TYPE: 'invalid-type',
   EMPTY_DRAFT: 'empty-draft',
   SYNTAX_ERROR: 'syntax-error',
   COMPILE_ERROR: 'compile-error',
@@ -30,7 +31,7 @@ const VALIDATION_FAILURE_KINDS = Object.freeze({
  *
  * @typedef {object} JavaScriptSyntaxValidationFailResult
  * @property {false} passed - The draft failed syntax validation.
- * @property {'empty-draft'|'syntax-error'|'compile-error'} failureKind - Categorical failure identifier.
+ * @property {'invalid-type'|'empty-draft'|'syntax-error'|'compile-error'} failureKind - Categorical failure identifier.
  * @property {string} output - Human-readable detail about the validation outcome.
  *
  * @typedef {JavaScriptSyntaxValidationPassResult | JavaScriptSyntaxValidationFailResult} JavaScriptSyntaxValidationResult
@@ -41,8 +42,8 @@ const VALIDATION_FAILURE_KINDS = Object.freeze({
  * Non-JS content that parses as valid JS is accepted; caller is responsible
  * for any upstream format validation (e.g. JSON.parse before this).
  *
- * Runtime behavior is defensive: non-string input is handled and returned
- * as a structured validation failure rather than throwing.
+ * Runtime behavior is defensive: non-string input (including null/undefined)
+ * is returned as a structured `invalid-type` failure rather than throwing.
  *
  * Error detail note: `output` may include raw Node/V8 parser messages.
  * If returning results to untrusted clients, sanitize/truncate `output`
@@ -55,7 +56,7 @@ function validateJavaScriptSyntax(draft) {
   if (typeof draft !== 'string') {
     return {
       passed: false,
-      failureKind: VALIDATION_FAILURE_KINDS.EMPTY_DRAFT,
+      failureKind: VALIDATION_FAILURE_KINDS.INVALID_TYPE,
       output: `Draft must be a string; received ${draft === null ? 'null' : Array.isArray(draft) ? 'array' : typeof draft}.`,
     }
   }
