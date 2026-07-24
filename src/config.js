@@ -121,6 +121,15 @@ function sanitizeHeaderValue(value) {
   return String(value).replace(/[\x00-\x1F\x7F]/g, '')
 }
 
+// Returns the sanitized value only if non-empty after trimming, else undefined.
+// Guards against tokens that are whitespace-only or consist entirely of
+// control characters that sanitizeHeaderValue would strip to an empty string.
+/** @returns {string | undefined} */
+function sanitizedNonEmptyHeaderValue(value) {
+  const sanitized = sanitizeHeaderValue(value).trim()
+  return sanitized || undefined
+}
+
 // ---------------------------------------------------------------- AELLI ----
 
 function apiBase() {
@@ -227,11 +236,11 @@ function a2aTimeoutMs() {
 
 // Headers for AELLI-bound calls: Bearer through the LiteLLM gateway,
 // x-aelli-secret when calling AELLI directly, nothing without a token.
+/** @returns {{ Authorization: string } | { 'x-aelli-secret': string } | Record<string, never>} */
 function aelliAuthHeaders() {
-  const token = authToken()
-  if (!token)
+  const safe = sanitizedNonEmptyHeaderValue(authToken())
+  if (!safe)
     return {}
-  const safe = sanitizeHeaderValue(token)
   return litellmBase()
     ? { Authorization: `Bearer ${safe}` }
     : { 'x-aelli-secret': safe }
@@ -240,12 +249,12 @@ function aelliAuthHeaders() {
 // The task queue (claim/result/subscribe) uses Bearer when the queue host
 // is the LiteLLM gateway (AELLI_BASE_URL === AELLI_LITELLM_BASE), and
 // x-aelli-secret when targeting direct AELLI.
+/** @returns {{ Authorization: string } | { 'x-aelli-secret': string } | Record<string, never>} */
 function queueAuthHeaders() {
-  const secret = aelliSecret()
-  if (!secret)
+  const safe = sanitizedNonEmptyHeaderValue(aelliSecret())
+  if (!safe)
     return {}
   const gateway = litellmBase()
-  const safe = sanitizeHeaderValue(secret)
   // areUrlsEquivalent handles semantically equal URLs that differ in default
   // port or normalisation (e.g. example.com:443 vs example.com), while keeping
   // distinct reverse-proxy path mounts (/aelli vs /litellm) separate.
@@ -255,9 +264,10 @@ function queueAuthHeaders() {
 }
 
 // The Python A2A server authenticates via x-octowiz-secret when set.
+/** @returns {{ 'x-octowiz-secret': string } | Record<string, never>} */
 function a2aServerAuthHeaders() {
-  const secret = octowizSecret()
-  return secret ? { 'x-octowiz-secret': sanitizeHeaderValue(secret) } : {}
+  const safe = sanitizedNonEmptyHeaderValue(octowizSecret())
+  return safe ? { 'x-octowiz-secret': safe } : {}
 }
 
 // ---------------------------------------------------------- diagnostics ----
@@ -328,7 +338,11 @@ function configWarnings() {
   const a2aSecret = octowizSecret()
   if (a2aSecret) {
     const a2aUrl = a2aServerUrl()
-    if (!/^https:\/\//i.test(a2aUrl) && !isLocalhost(a2aUrl)) {
+    // A malformed OCTOWIZ_A2A_URL is already reported by the VALIDATED_URL_KEYS
+    // loop above (it runs unconditionally whenever the env var is set), so
+    // only check transport security here once we know the URL is valid —
+    // otherwise this and that loop would both warn about the same value.
+    if (isValidHttpUrl(a2aUrl) && !/^https:\/\//i.test(a2aUrl) && !isLocalhost(a2aUrl)) {
       warnings.push(
         '[AELLI A2A] OCTOWIZ_INBOUND_SECRET is set but OCTOWIZ_A2A_URL uses plain HTTP on a non-localhost address. Use HTTPS to protect your secret.',
       )
