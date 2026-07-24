@@ -11,7 +11,7 @@
 ![LiteLLM Proxy compatible](https://img.shields.io/badge/LiteLLM_Proxy-compatible-7C3AED.svg)
 ![26 memories](https://img.shields.io/badge/memories-26-22c55e.svg)
 
-[**Live overview ↗**](https://raelli.github.io/octowiz/) &nbsp;·&nbsp; [ÆLLI — orchestration brain](https://github.com/raelli/aelli) &nbsp;·&nbsp; [Install](#setup) &nbsp;·&nbsp; [Diagnostics](#diagnostics)
+[**Live overview ↗**](https://raelli.github.io/octowiz/) &nbsp;·&nbsp; [Install](#setup) &nbsp;·&nbsp; [Diagnostics](#diagnostics)
 
 [Architecture](#architecture) &nbsp;·&nbsp; [Setup](#setup) &nbsp;·&nbsp; [Using /octowiz](#using-octowiz) &nbsp;·&nbsp; [Reference](#reference)
 
@@ -33,13 +33,13 @@ Most AI coding tools give agents either a giant system prompt or nothing. Octowi
 
 | Name | What it is |
 |---|---|
-| **ÆLLI** | The orchestration brain ([raelli/aelli](https://github.com/raelli/aelli)). Hosts all A2A agents listed below. Makes strategic decisions and delegates coding work via A2A. |
+| **ÆLLI** | The orchestration brain (private ÆLLI repository). Hosts all A2A agents listed below. Makes strategic decisions and delegates coding work via A2A. |
 | **Octowiz Bridge** | This repo. The Claude Code plugin. Connects developer sessions to ÆLLI, routes to skills, seeds project memory. Install name: `octowiz`. |
 | **LiteLLM** | Platform layer. A2A gateway, Memory API, and IntegraHub Marketplace. |
 
 ### A2A agents
 
-All agents live in [raelli/aelli](https://github.com/raelli/aelli) and are registered in LiteLLM as the gateway layer.
+All agents live in the private ÆLLI repository and are registered in LiteLLM as the gateway layer.
 
 | LiteLLM name | AELLI endpoint | Description |
 |---|---|---|
@@ -389,6 +389,6 @@ MIT. See [`LICENSE`](LICENSE).
 
 —
 
-**[octowiz](https://github.com/raelli/octowiz)** &nbsp;·&nbsp; part of the **IntegraHub** engineering ecosystem &nbsp;·&nbsp; [ÆLLI ↗](https://github.com/raelli/aelli)
+**[octowiz](https://github.com/raelli/octowiz)** &nbsp;·&nbsp; part of the **IntegraHub** engineering ecosystem
 
 </div>
