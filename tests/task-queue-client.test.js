@@ -72,6 +72,54 @@ describe('claimTask', () => {
 
     expect(result).toEqual({ ok: false, reason: 'HTTP 404' })
   })
+
+  it('retries exactly 3 times on persistent 500, then resolves ok:false', async () => {
+    const ctx = await makeServer([{ status: 500 }]) // repeats on every call
+    server = ctx.server; port = ctx.port
+    process.env.AELLI_BASE_URL = `http://127.0.0.1:${port}`;
+    ({ claimTask } = require('../src/task-queue-client'))
+
+    const result = await claimTask('task-4')
+
+    expect(ctx.requests).toHaveLength(3)
+    expect(result).toEqual({ ok: false, reason: 'HTTP 500' })
+  })
+
+  it('retries on 503 (5xx is retried) then succeeds once the server recovers', async () => {
+    const ctx = await makeServer([{ status: 503 }, { status: 503 }, { status: 200, body: { leaseToken: 'tok-recovered' } }])
+    server = ctx.server; port = ctx.port
+    process.env.AELLI_BASE_URL = `http://127.0.0.1:${port}`;
+    ({ claimTask } = require('../src/task-queue-client'))
+
+    const result = await claimTask('task-5')
+
+    expect(ctx.requests).toHaveLength(3)
+    expect(result).toEqual({ ok: true, leaseToken: 'tok-recovered' })
+  })
+
+  it('does NOT retry on a network error — fails fast instead', async () => {
+    // A network/timeout error is ambivalent: the server may have already
+    // committed the claim before the response was lost. aelli's claim() has
+    // no idempotency key, so a retry here can only ever hit our own
+    // already-claimed lease as a 409 and cause this daemon to abandon a task
+    // it actually holds. Unlike postResult, claimTask must fail fast here.
+    server = null // no server — connections will be refused
+    process.env.AELLI_BASE_URL = 'http://127.0.0.1:1' // port 1 always refuses
+    jest.resetModules();
+    ({ claimTask } = require('../src/task-queue-client'))
+
+    const logger = require('../src/logger')
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => {})
+
+    const result = await claimTask('task-6')
+
+    expect(result.ok).toBe(false)
+    expect(errorSpy).toHaveBeenCalledTimes(1) // single attempt — no retry loop entered
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('claimTask failed:'),
+    )
+    errorSpy.mockRestore()
+  })
 })
 
 // ── postResult ─────────────────────────────────────────────────────────────

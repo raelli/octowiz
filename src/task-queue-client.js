@@ -47,6 +47,9 @@ async function claimTask(taskId) {
         return { ok: true, leaseToken: body.leaseToken }
       }
 
+      // Safe to retry: a retryable status means the server responded and told
+      // us the claim did not succeed (aelli's claim() only ever mutates state
+      // and returns 200 together — see src/task-queue.js in raelli/aelli).
       if (RETRY_POLICY.isRetryableStatus(status) && attempt < RETRY_POLICY.maxAttempts) {
         await _sleep(RETRY_POLICY.calculateBackoffMs(attempt))
         continue
@@ -55,17 +58,18 @@ async function claimTask(taskId) {
       return { ok: false, reason: body?.error || `HTTP ${status}` }
     }
     catch (err) {
-      if (attempt < RETRY_POLICY.maxAttempts) {
-        await _sleep(RETRY_POLICY.calculateBackoffMs(attempt))
-        continue
-      }
-
-      logger.error(`[task-queue-client] claimTask failed after retries: ${err?.message || String(err)}`)
+      // Do NOT retry here, unlike postResult. A network/timeout error means we
+      // don't know whether the server already committed the claim before the
+      // response was lost. aelli's claim() is a one-shot pending->claimed
+      // transition with no idempotency key: retrying would only ever hit our
+      // own already-claimed lease as a 409 (wasted round trip, never a fix),
+      // while this daemon actually holds a lease it would otherwise abandon.
+      // Fail fast instead; the caller treats any claim failure as "someone
+      // else has it" and moves on, so a spurious retry buys nothing here.
+      logger.error(`[task-queue-client] claimTask failed: ${err?.message || String(err)}`)
       return { ok: false, reason: err?.message || 'Unknown error' }
     }
   }
-
-  return { ok: false, reason: 'Max retries exceeded' }
 }
 
 /**
