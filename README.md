@@ -394,7 +394,7 @@ Claude Code's `statusLine` replaces the default status bar, which is why the scr
 
 The badge reads `.octowiz/state.json`, the durable engineering state written by `octowiz state`. This line does not ship that state model, so the badge stays dark here and the status line degrades to directory and model only — it becomes useful on projects carrying `.octowiz/state.json`. It deliberately never reads machine-local runtime or daemon liveness: a daemon can be up while no work is in flight, and a badge that reports "active" for an idle process is worse than no badge.
 
-Two boundaries keep the reading honest: the upward walk stops at a repository root (`.git`), so a repository without its own state never wears an ancestor's badge; and `$HOME`'s state applies only when the working directory is exactly `$HOME`. Nothing is printed when there is no state to report or once `status` is `done`; a trailing `!` marks a blocked work item.
+Three boundaries keep the reading honest: the upward walk stops at a repository root (`.git`), so a repository without its own state never wears an ancestor's badge; `$HOME`'s state applies only when the working directory is exactly `$HOME`; and the walk never goes above `$HOME`. Fields are read from top-level keys only, so a nested `status` cannot shadow the work item's own. Nothing is printed when there is no state to report or once `status` is `done`; a trailing `!` marks a blocked work item.
 
 ## Attribution
 

@@ -17,30 +17,61 @@
 # work item is done. Projects on octowiz lines without the state model (anything
 # predating src/state) simply stay dark.
 #
-# Pure bash on purpose: a status line re-renders constantly, so no python/jq per
-# frame.
+# Parsing is bash-native (no python/jq/grep/sed per frame) because a status line
+# re-renders constantly. Requires bash 3.2+, which is what macOS ships.
+#
+# Known limitation: values containing escaped quotes (JSON \") are truncated at
+# the escape. Directory names and model names containing a double quote are the
+# only realistic trigger, and the failure is cosmetic — a short label, never a
+# wrong badge.
 
-payload="$(cat)"
+payload=""
+IFS= read -r -d '' payload || true
 
-# Pull the first "key": "value" match out of the status line JSON on stdin.
-jstr() { printf '%s' "$payload" | grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -n1 | sed 's/.*"\([^"]*\)"$/\1/'; }
+nl=$'\n'
+
+# First "key": "value" match in the status line JSON on stdin.
+jstr() {
+    local re="\"$1\"[[:space:]]*:[[:space:]]*\"([^\"]*)\""
+    [[ $payload =~ $re ]] && printf '%s' "${BASH_REMATCH[1]}"
+}
 
 dir="$(jstr current_dir)"
 [ -z "$dir" ] && dir="$(jstr cwd)"
 [ -z "$dir" ] && dir="$PWD"
+
+# Resolve relative input against $PWD. Without this the upward walk below never
+# terminates ("." has no parent), which would hang every status line render.
+case "$dir" in
+    /*) ;;
+    *) dir="$PWD/$dir" ;;
+esac
+# Trim trailing "/." and "/" so the $HOME comparison below is a real comparison:
+# "$PWD/." would otherwise never equal "$HOME" and would leak the home badge.
+while :; do
+    case "$dir" in
+        /) break ;;
+        */.) dir="${dir%/.}" ;;
+        */) dir="${dir%/}" ;;
+        *) break ;;
+    esac
+    [ -z "$dir" ] && { dir=/; break; }
+done
 
 model="$(jstr display_name)"
 [ -z "$model" ] && model="$(jstr model)"
 
 # ---- dir: home-relative, and only the last two segments when deep ------------
 short="$dir"
-case "$short" in
-    "$HOME") short="~" ;;
-    "$HOME"/*) short="~/${short#"$HOME"/}" ;;
-esac
+if [ -n "$HOME" ]; then
+    case "$short" in
+        "$HOME") short="~" ;;
+        "$HOME"/*) short="~/${short#"$HOME"/}" ;;
+    esac
+fi
 # ~/a/b/c/d -> …/c/d  (a bare ~ or a one-level path stays whole)
-segs="$(printf '%s' "$short" | tr -cd '/' | wc -c | tr -d ' ')"
-if [ "$segs" -gt 2 ]; then
+slashes="${short//[!\/]/}"
+if [ "${#slashes}" -gt 2 ]; then
     parent="${short%/*}"
     short="…/${parent##*/}/${short##*/}"
 fi
@@ -50,24 +81,40 @@ out="$(printf '\033[38;5;110m%s\033[0m' "$short")"
 
 # ---- badge: nearest .octowiz/state.json, walking up from the cwd -------------
 # The walk is convenience — `octowiz state` itself resolves .octowiz in the
-# literal cwd and never walks up. Two boundaries keep the badge honest:
+# literal cwd and never walks up. Three boundaries keep the badge honest:
 #   * never inherit across a repository root: stop at a directory containing
-#     .git, so a repo without its own state never wears an ancestor's badge
-#   * $HOME's state counts only when sitting exactly in $HOME, otherwise every
-#     non-repo directory on the machine would wear the badge
+#     .git, so a repository without its own state never wears an ancestor's badge
+#   * $HOME's state counts only when the working directory is exactly $HOME
+#   * never walk above $HOME, so nothing inherits a badge from /Users or /
 badge=""
 if [ -d "$dir" ]; then
     d="$dir"
-    while [ -n "$d" ] && [ "$d" != "/" ]; do
+    while [ -n "$d" ]; do
         if [ -f "$d/.octowiz/state.json" ]; then
-            { [ "$d" != "$HOME" ] || [ "$dir" = "$HOME" ]; } && break
+            if [ -n "$HOME" ] && [ "$d" = "$HOME" ] && [ "$dir" != "$HOME" ]; then
+                d=""            # home state, but not sitting in home
+            fi
+            break
         fi
-        [ -e "$d/.git" ] && { d=""; break; }   # repository root: do not inherit upward
-        d="$(dirname "$d")"
+        # repository root, or the home boundary: stop without inheriting upward
+        if [ -e "$d/.git" ] || { [ -n "$HOME" ] && [ "$d" = "$HOME" ]; }; then
+            d=""
+            break
+        fi
+        parent="${d%/*}"
+        [ "$parent" = "$d" ] && d="" && break   # no further parent to try
+        d="$parent"                             # "/a" -> "" ends the walk
     done
-    state="$d/.octowiz/state.json"
-    if [ -f "$state" ]; then
-        field() { grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$state" | head -n1 | sed 's/.*"\([^"]*\)"$/\1/'; }
+
+    if [ -n "$d" ] && [ -f "$d/.octowiz/state.json" ]; then
+        statetxt="$(<"$d/.octowiz/state.json")"
+        # Anchored to top-level keys (two-space indent). Unanchored matching would
+        # pick up nested objects — acceptanceCriteria[].status would shadow the
+        # work item's own status and silently suppress or mislabel the badge.
+        field() {
+            local re="(^|${nl})  \"$1\"[[:space:]]*:[[:space:]]*\"([^\"]*)\""
+            [[ $statetxt =~ $re ]] && printf '%s' "${BASH_REMATCH[2]}"
+        }
         phase="$(field phase)"     # A | B | C | D
         work="$(field state)"      # explore … blocked, ready-to-ship, shipped
         status="$(field status)"   # active | blocked | done
